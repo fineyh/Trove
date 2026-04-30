@@ -1,0 +1,62 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-app: 246 247 249;
+  --color-app-fg: 22 24 28;
+  --color-app-subtle: 234 236 240;
+  --color-panel: 255 255 255;
+  --color-border: 222 225 231;
+  --color-accent: 0 122 255;
+  --color-muted: 130 134 142;
+}
+
+.dark {
+  --color-app: 16 18 22;
+  --color-app-fg: 232 234 238;
+  --color-app-subtle: 24 26 31;
+  --color-panel: 22 24 30;
+  --color-border: 38 41 48;
+  --color-accent: 10 132 255;
+  --color-muted: 142 146 154;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  background-color: rgb(var(--color-app));
+  color: rgb(var(--color-app-fg));
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  -webkit-user-select: none;
+  user-select: none;
+  overflow: hidden;
+}
+
+input,
+textarea {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--color-border));
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--color-muted) / 0.6);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}

@@ -1,0 +1,30 @@
+# node
+node_modules
+dist
+dist-ssr
+*.local
+
+# editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.swp
+
+# tauri / rust
+src-tauri/target
+src-tauri/gen
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# env
+.env
+.env.local
+.env.*.local
+
+# trove app data (only relevant if dev'd in tree)
+*.trove-cache
