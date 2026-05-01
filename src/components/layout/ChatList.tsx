@@ -1,9 +1,11 @@
-import { Plus, Search, Image, Video, FileText, Pin, Folder } from "lucide-react";
-import { useMemo } from "react";
+import { Plus, Search, Image, Video, FileText, Pin, Folder, MessageSquare } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { useConversationsStore } from "../../stores/conversations";
 import { useSessionStore } from "../../stores/session";
-import type { Conversation } from "../../types";
+import * as ipc from "../../ipc/client";
+import type { Conversation, SearchHit } from "../../types";
 import { cn } from "../../lib/cn";
+import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 
 function formatTimeAgo(ts: number): string {
   const diff = Date.now() - ts;
@@ -43,13 +45,8 @@ function ConversationRow({ c }: { c: Conversation }) {
         active && "bg-app-subtle",
       )}
     >
-      <div className="relative flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-app-accent/10 text-app-accent">
+      <div className="relative flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-app-accent/10 font-semibold text-app-accent">
         {c.kind === "folder_watch" ? <Folder size={20} /> : c.name.slice(0, 1)}
-        {c.unreadCount > 0 && (
-          <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-app-accent px-1 text-[11px] font-medium text-white">
-            {c.unreadCount > 99 ? "99+" : c.unreadCount}
-          </span>
-        )}
       </div>
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex items-center justify-between gap-2">
@@ -63,10 +60,27 @@ function ConversationRow({ c }: { c: Conversation }) {
           <span className="truncate text-xs text-app-muted">
             {c.preview ?? "暂无消息"}
           </span>
-          {c.pinned && (
-            <Pin size={12} className="ml-auto text-app-muted" />
-          )}
+          {c.pinned && <Pin size={12} className="ml-auto text-app-muted" />}
         </div>
+      </div>
+    </button>
+  );
+}
+
+function MessageHitRow({ hit }: { hit: SearchHit }) {
+  const setActive = useSessionStore((s) => s.setActiveConversation);
+  return (
+    <button
+      type="button"
+      onClick={() => setActive(hit.convId)}
+      className="flex w-full items-start gap-3 px-3 py-2.5 text-left hover:bg-app-subtle"
+    >
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-app-accent/10 text-app-accent">
+        <MessageSquare size={16} />
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <div className="truncate text-xs text-app-muted">{hit.convName}</div>
+        <div className="truncate text-sm">{hit.snippet}</div>
       </div>
     </button>
   );
@@ -74,10 +88,39 @@ function ConversationRow({ c }: { c: Conversation }) {
 
 export function ChatList() {
   const list = useConversationsStore((s) => s.list);
+  const refresh = useConversationsStore((s) => s.refresh);
   const search = useConversationsStore((s) => s.search);
   const setSearch = useConversationsStore((s) => s.setSearch);
+  const setNewConvOpen = useSessionStore((s) => s.setNewConversationOpen);
 
-  const filtered = useMemo(() => {
+  const [hits, setHits] = useState<SearchHit[]>([]);
+  const debounced = useDebouncedValue(search, 200);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    const q = debounced.trim();
+    if (q.length === 0) {
+      setHits([]);
+      return;
+    }
+    let cancelled = false;
+    void ipc
+      .search(q)
+      .then((res) => {
+        if (!cancelled) setHits(res);
+      })
+      .catch((e) => {
+        if (!cancelled) console.error("search failed", e);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [debounced]);
+
+  const filteredConvs = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return list;
     return list.filter(
@@ -86,6 +129,13 @@ export function ChatList() {
         (c.preview?.toLowerCase().includes(q) ?? false),
     );
   }, [list, search]);
+
+  const messageHits = useMemo(
+    () => hits.filter((h) => h.messageId !== null),
+    [hits],
+  );
+
+  const showingSearch = search.trim().length > 0;
 
   return (
     <div className="flex h-full w-80 shrink-0 flex-col border-r border-app-border bg-app-panel">
@@ -107,6 +157,7 @@ export function ChatList() {
         <button
           type="button"
           title="新建会话"
+          onClick={() => setNewConvOpen(true)}
           className="flex h-8 w-8 items-center justify-center rounded-md text-app-fg/70 hover:bg-app-subtle hover:text-app-fg"
         >
           <Plus size={18} />
@@ -114,14 +165,42 @@ export function ChatList() {
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {filtered.length === 0 && (
+        {!showingSearch && filteredConvs.length === 0 && list.length === 0 && (
           <div className="px-4 py-8 text-center text-sm text-app-muted">
-            没有找到会话
+            还没有会话，点击右上 + 新建一个
           </div>
         )}
-        {filtered.map((c) => (
+
+        {showingSearch && (
+          <div className="px-3 pt-2 text-xs font-medium uppercase tracking-wide text-app-muted">
+            会话
+          </div>
+        )}
+        {filteredConvs.map((c) => (
           <ConversationRow key={c.id} c={c} />
         ))}
+        {showingSearch && filteredConvs.length === 0 && (
+          <div className="px-4 py-2 text-xs text-app-muted">
+            没有匹配的会话
+          </div>
+        )}
+
+        {showingSearch && (
+          <>
+            <div className="border-t border-app-border px-3 pt-3 text-xs font-medium uppercase tracking-wide text-app-muted">
+              消息
+            </div>
+            {messageHits.length === 0 ? (
+              <div className="px-4 py-2 text-xs text-app-muted">
+                没有匹配的消息
+              </div>
+            ) : (
+              messageHits.map((h) => (
+                <MessageHitRow key={`${h.convId}-${h.messageId}`} hit={h} />
+              ))
+            )}
+          </>
+        )}
       </div>
     </div>
   );

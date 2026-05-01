@@ -1,58 +1,64 @@
 import { create } from "zustand";
+import * as ipc from "../ipc/client";
 import type { Conversation } from "../types";
 
 interface ConversationsState {
   list: Conversation[];
   search: string;
+  loading: boolean;
   setSearch: (q: string) => void;
-  setList: (list: Conversation[]) => void;
+  refresh: () => Promise<void>;
+  createManual: (name: string) => Promise<number>;
+  createFolderWatch: (name: string, sourcePath: string) => Promise<number>;
+  togglePinned: (id: number, pinned: boolean) => Promise<void>;
+  archive: (id: number) => Promise<void>;
+  remove: (id: number) => Promise<void>;
+  rename: (id: number, name: string) => Promise<void>;
 }
 
-const SAMPLE: Conversation[] = [
-  {
-    id: 1,
-    name: "我的旅行",
-    avatarPath: null,
-    kind: "manual",
-    encrypted: false,
-    pinned: true,
-    archived: false,
-    unreadCount: 0,
-    preview: "巴黎.jpg",
-    previewKind: "image",
-    updatedAt: Date.now() - 12 * 60_000,
-  },
-  {
-    id: 2,
-    name: "表情包",
-    avatarPath: null,
-    kind: "manual",
-    encrypted: false,
-    pinned: false,
-    archived: false,
-    unreadCount: 0,
-    preview: "搞笑视频.mp4",
-    previewKind: "video",
-    updatedAt: Date.now() - 3 * 86_400_000,
-  },
-  {
-    id: 3,
-    name: "Mom 文件夹",
-    avatarPath: null,
-    kind: "folder_watch",
-    encrypted: false,
-    pinned: false,
-    archived: false,
-    unreadCount: 10,
-    preview: "10 个新文件",
-    previewKind: "text",
-    updatedAt: Date.now() - 30 * 60_000,
-  },
-];
-
-export const useConversationsStore = create<ConversationsState>((set) => ({
-  list: SAMPLE,
+export const useConversationsStore = create<ConversationsState>((set, get) => ({
+  list: [],
   search: "",
+  loading: false,
   setSearch: (q) => set({ search: q }),
-  setList: (list) => set({ list }),
+  refresh: async () => {
+    set({ loading: true });
+    try {
+      const list = await ipc.listConversations();
+      set({ list, loading: false });
+    } catch (e) {
+      console.error("listConversations failed", e);
+      set({ loading: false });
+    }
+  },
+  createManual: async (name) => {
+    const id = await ipc.createConversation({ name, kind: "manual" });
+    await get().refresh();
+    return id;
+  },
+  createFolderWatch: async (name, sourcePath) => {
+    const id = await ipc.createConversation({
+      name,
+      kind: "folder_watch",
+      sourcePath,
+    });
+    await get().refresh();
+    return id;
+  },
+  togglePinned: async (id, pinned) => {
+    await ipc.updateConversation({ id, pinned });
+    await get().refresh();
+  },
+  archive: async (id) => {
+    await ipc.updateConversation({ id, archived: true });
+    await get().refresh();
+  },
+  remove: async (id) => {
+    await ipc.deleteConversation(id);
+    await get().refresh();
+  },
+  rename: async (id, name) => {
+    await ipc.updateConversation({ id, name });
+    await get().refresh();
+  },
 }));

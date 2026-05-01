@@ -1,6 +1,7 @@
 mod commands;
 mod db;
 mod error;
+mod services;
 
 pub use error::{AppError, AppResult};
 
@@ -24,6 +25,15 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::health::ping,
             commands::conversations::list_conversations,
+            commands::conversations::create_conversation,
+            commands::conversations::update_conversation,
+            commands::conversations::delete_conversation,
+            commands::messages::list_messages,
+            commands::messages::send_text,
+            commands::messages::increment_play_count,
+            commands::messages::delete_message,
+            commands::media::import_files,
+            commands::search::search,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Trove");

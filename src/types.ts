@@ -8,33 +8,37 @@ export interface Conversation {
   encrypted: boolean;
   pinned: boolean;
   archived: boolean;
-  unreadCount: number;
-  preview: string | null;
-  previewKind: "text" | "image" | "video" | null;
+  createdAt: number;
   updatedAt: number;
+  messageCount: number;
+  preview: string | null;
+  previewKind: "text" | "image" | "video" | "other" | null;
 }
 
-export interface MediaAsset {
+export interface MediaPayload {
   id: number;
-  volumeId: number;
-  relpath: string;
-  sizeBytes: number;
-  mtime: number;
-  blake3: string;
   kind: "image" | "video" | "other";
   width: number | null;
   height: number | null;
   durationMs: number | null;
-  thumbPath: string | null;
+  absolutePath: string;
   state: "live" | "broken";
+  sizeBytes: number;
 }
 
 export interface Message {
   id: number;
   convId: number;
-  mediaId: number | null;
   caption: string | null;
   playCount: number;
   createdAt: number;
-  media: MediaAsset | null;
+  media: MediaPayload | null;
+}
+
+export interface SearchHit {
+  convId: number;
+  convName: string;
+  messageId: number | null;
+  snippet: string;
+  createdAt: number | null;
 }
