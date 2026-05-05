@@ -1,6 +1,7 @@
-use crate::{db, AppError, AppResult};
+use crate::{db, services, AppError, AppResult};
 use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -91,20 +92,33 @@ pub fn create_conversation(args: CreateConversationArgs) -> AppResult<i64> {
     }
 
     let now = now_ms();
+    let watch_root: Option<PathBuf>;
     let (source_volume_id, source_relpath) = if args.kind == "folder_watch" {
         let path = args
             .source_path
             .as_ref()
             .ok_or_else(|| AppError::InvalidArg("folder_watch needs source_path".into()))?;
-        let resolved = crate::services::volume_resolver::resolve(std::path::Path::new(path))
+        let raw = std::path::Path::new(path);
+        if !raw.is_dir() {
+            return Err(AppError::InvalidArg(format!(
+                "not a directory: {}",
+                raw.display()
+            )));
+        }
+        let resolved = services::volume_resolver::resolve(raw)
             .map_err(|e| AppError::InvalidArg(e))?;
         let vid = ensure_volume(&resolved.platform_id, &resolved.label, &resolved.mount_point)?;
+        watch_root = Some(services::volume_resolver::absolute_for(
+            &resolved.mount_point,
+            &resolved.relpath,
+        ));
         (Some(vid), Some(resolved.relpath))
     } else {
+        watch_root = None;
         (None, None)
     };
 
-    db::with_conn(|conn| {
+    let conv_id = db::with_conn(|conn| {
         conn.execute(
             "INSERT INTO conversations
                 (name, avatar_path, kind, source_volume_id, source_relpath,
@@ -119,8 +133,22 @@ pub fn create_conversation(args: CreateConversationArgs) -> AppResult<i64> {
                 now
             ],
         )?;
-        Ok(conn.last_insert_rowid())
-    })
+        Ok::<i64, AppError>(conn.last_insert_rowid())
+    })?;
+
+    if let Some(root) = watch_root {
+        let paths = services::folder_scanner::enumerate_media(&root);
+        for p in paths {
+            if let Err(e) = super::media::ingest_one(conv_id, &p, false, true) {
+                eprintln!("folder_watch initial scan: {e}");
+            }
+        }
+        if let Err(e) = services::file_watcher::start(conv_id, root) {
+            eprintln!("folder_watch start watcher: {e}");
+        }
+    }
+
+    Ok(conv_id)
 }
 
 pub(crate) fn ensure_volume(
@@ -202,8 +230,39 @@ pub fn update_conversation(args: UpdateConversationArgs) -> AppResult<()> {
 
 #[tauri::command]
 pub fn delete_conversation(id: i64) -> AppResult<()> {
+    services::file_watcher::stop(id);
     db::with_conn(|conn| {
         conn.execute("DELETE FROM conversations WHERE id = ?1", params![id])?;
         Ok(())
     })
+}
+
+/// Iterate every existing folder_watch conversation and start a watcher for
+/// it. Called once at app boot so live updates resume after restart.
+pub fn boot_existing_watchers() -> AppResult<()> {
+    let rows: Vec<(i64, String, String)> =
+        db::with_conn(|conn| -> AppResult<Vec<(i64, String, String)>> {
+            let mut stmt = conn.prepare(
+                "SELECT c.id, v.last_mount, c.source_relpath
+                 FROM conversations c
+                 JOIN volumes v ON v.id = c.source_volume_id
+                 WHERE c.kind = 'folder_watch' AND c.archived = 0",
+            )?;
+            let rows = stmt
+                .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            Ok(rows)
+        })?;
+    for (conv_id, mount, relpath) in rows {
+        let root =
+            services::volume_resolver::absolute_for(std::path::Path::new(&mount), &relpath);
+        if !root.is_dir() {
+            // volume not currently mounted — leave watcher off
+            continue;
+        }
+        if let Err(e) = services::file_watcher::start(conv_id, root) {
+            eprintln!("boot watcher #{conv_id}: {e}");
+        }
+    }
+    Ok(())
 }

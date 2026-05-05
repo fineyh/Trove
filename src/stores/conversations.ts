@@ -9,6 +9,10 @@ interface ConversationsState {
   setSearch: (q: string) => void;
   refresh: () => Promise<void>;
   createManual: (name: string) => Promise<number>;
+  createManualFromFolder: (
+    folderPath: string,
+    name?: string,
+  ) => Promise<{ convId: number; imported: number }>;
   createFolderWatch: (name: string, sourcePath: string) => Promise<number>;
   togglePinned: (id: number, pinned: boolean) => Promise<void>;
   archive: (id: number) => Promise<void>;
@@ -35,6 +39,11 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
     const id = await ipc.createConversation({ name, kind: "manual" });
     await get().refresh();
     return id;
+  },
+  createManualFromFolder: async (folderPath, name) => {
+    const result = await ipc.createManualFromFolder(folderPath, name);
+    await get().refresh();
+    return result;
   },
   createFolderWatch: async (name, sourcePath) => {
     const id = await ipc.createConversation({

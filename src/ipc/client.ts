@@ -1,8 +1,10 @@
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { convertFileSrc as tauriConvertFileSrc } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   Conversation,
   ConversationKind,
+  ConvChangedEvent,
   Message,
   SearchHit,
 } from "../types";
@@ -80,6 +82,24 @@ export async function importFiles(
   return invoke("import_files", { args: { convId, paths } });
 }
 
+export interface CreateManualFromFolderResult {
+  convId: number;
+  imported: number;
+}
+
+export async function createManualFromFolder(
+  folderPath: string,
+  name?: string,
+): Promise<CreateManualFromFolderResult> {
+  return invoke<CreateManualFromFolderResult>("create_manual_from_folder", {
+    args: { folderPath, name },
+  });
+}
+
+export async function rescanFolder(convId: number): Promise<{ added: number }> {
+  return invoke<{ added: number }>("rescan_folder", { convId });
+}
+
 export async function incrementPlayCount(messageId: number): Promise<number> {
   return invoke<number>("increment_play_count", { messageId });
 }
@@ -96,4 +116,12 @@ export async function search(query: string): Promise<SearchHit[]> {
 export function mediaUrl(absolutePath: string): string {
   if (!isTauri()) return absolutePath;
   return tauriConvertFileSrc(absolutePath);
+}
+
+/** Subscribe to backend `conv:changed` events (folder watcher updates). */
+export async function onConvChanged(
+  handler: (payload: ConvChangedEvent) => void,
+): Promise<UnlistenFn> {
+  if (!isTauri()) return () => {};
+  return listen<ConvChangedEvent>("conv:changed", (e) => handler(e.payload));
 }

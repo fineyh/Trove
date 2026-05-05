@@ -1,6 +1,7 @@
 mod commands;
 mod db;
 mod error;
+mod events;
 mod services;
 
 pub use error::{AppError, AppResult};
@@ -20,6 +21,10 @@ pub fn run() {
                 .app_data_dir()
                 .expect("failed to resolve app data dir");
             db::init(&data_dir).expect("failed to initialize database");
+            events::init(app.handle().clone());
+            if let Err(e) = commands::conversations::boot_existing_watchers() {
+                eprintln!("boot_existing_watchers: {e}");
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -33,6 +38,8 @@ pub fn run() {
             commands::messages::increment_play_count,
             commands::messages::delete_message,
             commands::media::import_files,
+            commands::folders::create_manual_from_folder,
+            commands::folders::rescan_folder,
             commands::search::search,
         ])
         .run(tauri::generate_context!())

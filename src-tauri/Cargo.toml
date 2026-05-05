@@ -30,6 +30,8 @@ chrono = { version = "0.4", features = ["serde"] }
 blake3 = "1.5"
 mime_guess = "2"
 dunce = "1"
+notify = "6"
+walkdir = "2"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]

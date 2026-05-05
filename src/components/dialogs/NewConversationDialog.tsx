@@ -1,4 +1,4 @@
-import { Folder, MessageSquare, X } from "lucide-react";
+import { Folder, FolderInput, MessageSquare, X } from "lucide-react";
 import { useState } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useConversationsStore } from "../../stores/conversations";
@@ -6,13 +6,16 @@ import { useSessionStore } from "../../stores/session";
 import { isTauri } from "../../hooks/useIsTauri";
 import { cn } from "../../lib/cn";
 
-type Mode = "manual" | "folder_watch";
+type Mode = "manual" | "folder_bulk" | "folder_watch";
 
 export function NewConversationDialog() {
   const open = useSessionStore((s) => s.newConversationOpen);
   const setOpen = useSessionStore((s) => s.setNewConversationOpen);
   const setActive = useSessionStore((s) => s.setActiveConversation);
   const createManual = useConversationsStore((s) => s.createManual);
+  const createManualFromFolder = useConversationsStore(
+    (s) => s.createManualFromFolder,
+  );
   const createFolderWatch = useConversationsStore((s) => s.createFolderWatch);
 
   const [mode, setMode] = useState<Mode>("manual");
@@ -46,18 +49,21 @@ export function NewConversationDialog() {
     }
   };
 
+  const needsFolder = mode === "folder_bulk" || mode === "folder_watch";
+  const canSubmit =
+    !busy && name.trim().length > 0 && (!needsFolder || sourcePath.length > 0);
+
   const submit = async () => {
+    if (!canSubmit) return;
     const trimmedName = name.trim();
-    if (!trimmedName) return;
     setBusy(true);
     try {
       let id: number;
       if (mode === "folder_watch") {
-        if (!sourcePath) {
-          setBusy(false);
-          return;
-        }
         id = await createFolderWatch(trimmedName, sourcePath);
+      } else if (mode === "folder_bulk") {
+        const result = await createManualFromFolder(sourcePath, trimmedName);
+        id = result.convId;
       } else {
         id = await createManual(trimmedName);
       }
@@ -89,20 +95,27 @@ export function NewConversationDialog() {
           </button>
         </div>
 
-        <div className="grid grid-cols-2 gap-2">
-          <ModeCard
+        <div className="flex flex-col gap-2">
+          <ModeRow
             active={mode === "manual"}
             onClick={() => setMode("manual")}
             icon={<MessageSquare size={18} />}
             title="手动会话"
             desc="空会话，自己上传文件"
           />
-          <ModeCard
+          <ModeRow
+            active={mode === "folder_bulk"}
+            onClick={() => setMode("folder_bulk")}
+            icon={<FolderInput size={18} />}
+            title="从文件夹批量创建"
+            desc="一次性导入文件夹里的全部媒体（之后仍可继续上传）"
+          />
+          <ModeRow
             active={mode === "folder_watch"}
             onClick={() => setMode("folder_watch")}
             icon={<Folder size={18} />}
             title="路径会话"
-            desc="绑定文件夹自动同步"
+            desc="绑定文件夹自动同步，新增/删除即时生效"
           />
         </div>
 
@@ -118,7 +131,7 @@ export function NewConversationDialog() {
           />
         </div>
 
-        {mode === "folder_watch" && (
+        {needsFolder && (
           <div className="flex flex-col gap-1">
             <label className="text-xs text-app-muted">文件夹路径</label>
             <div className="flex gap-2">
@@ -138,7 +151,9 @@ export function NewConversationDialog() {
               </button>
             </div>
             <div className="text-xs text-app-muted">
-              文件夹内的媒体会自动出现在对话里，路径会话不支持手动上传。
+              {mode === "folder_bulk"
+                ? "导入文件夹里的所有图片和视频，文件保留在原位置。"
+                : "文件夹内的媒体会自动出现在对话里，路径会话不支持手动上传。"}
             </div>
           </div>
         )}
@@ -153,15 +168,11 @@ export function NewConversationDialog() {
           </button>
           <button
             type="button"
-            disabled={
-              busy ||
-              !name.trim() ||
-              (mode === "folder_watch" && !sourcePath)
-            }
+            disabled={!canSubmit}
             onClick={submit}
             className="rounded-md bg-app-accent px-3 py-1.5 text-sm text-white hover:opacity-90 disabled:opacity-40"
           >
-            创建
+            {busy ? "创建中..." : "创建"}
           </button>
         </div>
       </div>
@@ -169,7 +180,7 @@ export function NewConversationDialog() {
   );
 }
 
-interface ModeCardProps {
+interface ModeRowProps {
   active: boolean;
   onClick: () => void;
   icon: React.ReactNode;
@@ -177,23 +188,25 @@ interface ModeCardProps {
   desc: string;
 }
 
-function ModeCard({ active, onClick, icon, title, desc }: ModeCardProps) {
+function ModeRow({ active, onClick, icon, title, desc }: ModeRowProps) {
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
-        "flex flex-col items-start gap-1 rounded-md border p-3 text-left transition",
+        "flex items-start gap-3 rounded-md border p-3 text-left transition",
         active
           ? "border-app-accent bg-app-accent/5"
           : "border-app-border hover:bg-app-subtle",
       )}
     >
-      <div className="flex h-8 w-8 items-center justify-center rounded-md bg-app-accent/10 text-app-accent">
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-app-accent/10 text-app-accent">
         {icon}
       </div>
-      <div className="text-sm font-medium">{title}</div>
-      <div className="text-xs text-app-muted">{desc}</div>
+      <div className="flex min-w-0 flex-col">
+        <div className="text-sm font-medium">{title}</div>
+        <div className="text-xs text-app-muted">{desc}</div>
+      </div>
     </button>
   );
 }

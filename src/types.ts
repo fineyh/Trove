@@ -42,3 +42,9 @@ export interface SearchHit {
   snippet: string;
   createdAt: number | null;
 }
+
+export interface ConvChangedEvent {
+  convId: number;
+  added: number;
+  broken: number;
+}
