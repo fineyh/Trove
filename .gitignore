@@ -10,6 +10,7 @@ dist-ssr
 .idea
 .DS_Store
 *.swp
+.claude/
 
 # tauri / rust
 src-tauri/target
