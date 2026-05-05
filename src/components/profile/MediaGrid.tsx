@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Play } from "lucide-react";
+import { ImageOff, Play } from "lucide-react";
 import type { Message } from "../../types";
 import { mediaUrl } from "../../ipc/client";
 import { useSessionStore } from "../../stores/session";
@@ -68,6 +68,16 @@ function GridItem({
   message: Message;
   onOpen: () => void;
 }) {
+  if (message.media!.state === "broken") {
+    return (
+      <div
+        title="文件暂时不可用"
+        className="flex aspect-square items-center justify-center rounded-md border border-dashed border-app-border bg-app-subtle/40 text-app-muted"
+      >
+        <ImageOff size={20} />
+      </div>
+    );
+  }
   const url = mediaUrl(message.media!.absolutePath);
   return (
     <button

@@ -22,6 +22,7 @@ pub fn run() {
                 .expect("failed to resolve app data dir");
             db::init(&data_dir).expect("failed to initialize database");
             events::init(app.handle().clone());
+            services::volume_monitor::start();
             if let Err(e) = commands::conversations::boot_existing_watchers() {
                 eprintln!("boot_existing_watchers: {e}");
             }
@@ -41,6 +42,12 @@ pub fn run() {
             commands::folders::create_manual_from_folder,
             commands::folders::rescan_folder,
             commands::search::search,
+            commands::settings::get_all_settings,
+            commands::settings::get_setting,
+            commands::settings::set_setting,
+            commands::volumes::list_volumes,
+            commands::volumes::rescan_volumes,
+            commands::volumes::forget_volume,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Trove");

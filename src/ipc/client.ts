@@ -2,11 +2,14 @@ import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { convertFileSrc as tauriConvertFileSrc } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
+  AppSettings,
   Conversation,
   ConversationKind,
   ConvChangedEvent,
+  MissingFileStrategy,
   Message,
   SearchHit,
+  VolumePayload,
 } from "../types";
 import { isTauri } from "../hooks/useIsTauri";
 
@@ -124,4 +127,43 @@ export async function onConvChanged(
 ): Promise<UnlistenFn> {
   if (!isTauri()) return () => {};
   return listen<ConvChangedEvent>("conv:changed", (e) => handler(e.payload));
+}
+
+/** Subscribe to volume mount/unmount events. */
+export async function onVolumesChanged(
+  handler: () => void,
+): Promise<UnlistenFn> {
+  if (!isTauri()) return () => {};
+  return listen("volumes:changed", () => handler());
+}
+
+const DEFAULT_SETTINGS: AppSettings = { missingFileStrategy: "hide" };
+
+export async function getAllSettings(): Promise<AppSettings> {
+  if (!isTauri()) return DEFAULT_SETTINGS;
+  const raw = await invoke<Record<string, string>>("get_all_settings");
+  const strategy = raw["missing_file_strategy"];
+  return {
+    missingFileStrategy:
+      strategy === "placeholder" ? "placeholder" : "hide",
+  };
+}
+
+export async function setMissingFileStrategy(
+  value: MissingFileStrategy,
+): Promise<void> {
+  await invoke("set_setting", { key: "missing_file_strategy", value });
+}
+
+export async function listVolumes(): Promise<VolumePayload[]> {
+  if (!isTauri()) return [];
+  return invoke<VolumePayload[]>("list_volumes");
+}
+
+export async function rescanVolumes(): Promise<void> {
+  await invoke("rescan_volumes");
+}
+
+export async function forgetVolume(id: number): Promise<void> {
+  await invoke("forget_volume", { id });
 }

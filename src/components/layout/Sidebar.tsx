@@ -1,4 +1,5 @@
 import { Lock, Settings, User } from "lucide-react";
+import { useSessionStore } from "../../stores/session";
 import { cn } from "../../lib/cn";
 
 interface SidebarButtonProps {
@@ -26,6 +27,7 @@ function SidebarButton({ icon, label, onClick, active }: SidebarButtonProps) {
 }
 
 export function Sidebar() {
+  const setSettingsOpen = useSessionStore((s) => s.setSettingsOpen);
   return (
     <aside className="flex h-full w-16 shrink-0 flex-col items-center border-r border-app-border bg-app-panel py-3">
       <button
@@ -40,7 +42,11 @@ export function Sidebar() {
 
       <div className="flex flex-col gap-1">
         <SidebarButton icon={<Lock size={18} />} label="锁定" />
-        <SidebarButton icon={<Settings size={18} />} label="设置" />
+        <SidebarButton
+          icon={<Settings size={18} />}
+          label="设置"
+          onClick={() => setSettingsOpen(true)}
+        />
       </div>
     </aside>
   );

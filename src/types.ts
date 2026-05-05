@@ -48,3 +48,20 @@ export interface ConvChangedEvent {
   added: number;
   broken: number;
 }
+
+export type MissingFileStrategy = "hide" | "placeholder";
+
+export interface AppSettings {
+  missingFileStrategy: MissingFileStrategy;
+}
+
+export interface VolumePayload {
+  id: number;
+  platformId: string;
+  label: string;
+  lastMount: string | null;
+  currentMount: string | null;
+  online: boolean;
+  mediaCount: number;
+  brokenCount: number;
+}

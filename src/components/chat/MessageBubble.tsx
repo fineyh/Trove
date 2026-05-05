@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Play } from "lucide-react";
+import { ImageOff, Play } from "lucide-react";
 import type { Message } from "../../types";
 import { mediaUrl } from "../../ipc/client";
 import { useSessionStore } from "../../stores/session";
@@ -80,6 +80,28 @@ function VideoMessage({ message }: MessageBubbleProps) {
   );
 }
 
+function BrokenMediaPlaceholder({ message }: MessageBubbleProps) {
+  const kindLabel =
+    message.media!.kind === "image"
+      ? "图片"
+      : message.media!.kind === "video"
+        ? "视频"
+        : "文件";
+  return (
+    <div className="flex max-w-md items-center gap-3 rounded-lg border border-dashed border-app-border bg-app-subtle/40 px-3 py-3 text-sm text-app-muted">
+      <ImageOff size={20} />
+      <div className="flex flex-col">
+        <span className="font-medium text-app-fg/70">
+          {kindLabel}文件暂时不可用
+        </span>
+        <span className="text-xs">
+          所在卷未挂载或文件已被移走
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function FileMessage({ message }: MessageBubbleProps) {
   return (
     <div className="max-w-md rounded-lg border border-app-border bg-app-panel px-3 py-2 text-sm">
@@ -106,7 +128,9 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   });
 
   let body: React.ReactNode;
-  if (message.media?.kind === "image") body = <ImageMessage message={message} />;
+  if (message.media?.state === "broken")
+    body = <BrokenMediaPlaceholder message={message} />;
+  else if (message.media?.kind === "image") body = <ImageMessage message={message} />;
   else if (message.media?.kind === "video") body = <VideoMessage message={message} />;
   else if (message.media) body = <FileMessage message={message} />;
   else body = <TextMessage message={message} />;

@@ -27,3 +27,9 @@ pub fn emit_conv_changed(payload: ConvChanged) {
         let _ = h.emit("conv:changed", payload);
     }
 }
+
+pub fn emit_volumes_changed() {
+    if let Some(h) = APP_HANDLE.get() {
+        let _ = h.emit("volumes:changed", ());
+    }
+}

@@ -26,25 +26,57 @@ fn now_ms() -> i64 {
 
 #[tauri::command]
 pub fn list_conversations() -> AppResult<Vec<Conversation>> {
+    let strategy = read_missing_strategy()?;
+    let hide_broken = strategy == "hide";
+
     db::with_conn(|conn| {
-        let mut stmt = conn.prepare(
+        let mut sql = String::from(
             "SELECT
                 c.id, c.name, c.avatar_path, c.kind, c.encrypted, c.pinned, c.archived,
                 c.created_at, c.updated_at,
-                (SELECT COUNT(*) FROM messages m WHERE m.conv_id = c.id) AS msg_count,
-                (SELECT m.caption FROM messages m WHERE m.conv_id = c.id ORDER BY m.created_at DESC LIMIT 1) AS preview,
+                (SELECT COUNT(*) FROM messages m
+                    LEFT JOIN media md ON md.id = m.media_id
+                    WHERE m.conv_id = c.id
+                    AND (?1 = 0 OR m.media_id IS NULL OR md.state = 'live')) AS msg_count,
+                (SELECT m.caption FROM messages m
+                    LEFT JOIN media md ON md.id = m.media_id
+                    WHERE m.conv_id = c.id
+                    AND (?1 = 0 OR m.media_id IS NULL OR md.state = 'live')
+                    ORDER BY m.created_at DESC LIMIT 1) AS preview,
                 (SELECT
                     CASE
                         WHEN m.media_id IS NULL THEN 'text'
-                        ELSE COALESCE((SELECT kind FROM media WHERE id = m.media_id), 'text')
+                        ELSE COALESCE(md.kind, 'text')
                     END
-                 FROM messages m WHERE m.conv_id = c.id ORDER BY m.created_at DESC LIMIT 1) AS preview_kind
+                 FROM messages m
+                 LEFT JOIN media md ON md.id = m.media_id
+                 WHERE m.conv_id = c.id
+                 AND (?1 = 0 OR m.media_id IS NULL OR md.state = 'live')
+                 ORDER BY m.created_at DESC LIMIT 1) AS preview_kind
              FROM conversations c
-             WHERE c.archived = 0
-             ORDER BY c.pinned DESC, c.updated_at DESC",
-        )?;
+             WHERE c.archived = 0",
+        );
+        if hide_broken {
+            // Hide a conversation when it has messages but all of them
+            // reference broken media — i.e. nothing live to show.
+            sql.push_str(
+                " AND (
+                    (SELECT COUNT(*) FROM messages WHERE conv_id = c.id) = 0
+                    OR EXISTS (
+                        SELECT 1 FROM messages m
+                        LEFT JOIN media md ON md.id = m.media_id
+                        WHERE m.conv_id = c.id
+                        AND (m.media_id IS NULL OR md.state = 'live')
+                    )
+                )",
+            );
+        }
+        sql.push_str(" ORDER BY c.pinned DESC, c.updated_at DESC");
+
+        let mut stmt = conn.prepare(&sql)?;
+        let hide_param: i64 = if hide_broken { 1 } else { 0 };
         let rows = stmt
-            .query_map([], |row| {
+            .query_map(params![hide_param], |row| {
                 Ok(Conversation {
                     id: row.get(0)?,
                     name: row.get(1)?,
@@ -62,6 +94,18 @@ pub fn list_conversations() -> AppResult<Vec<Conversation>> {
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(rows)
+    })
+}
+
+fn read_missing_strategy() -> AppResult<String> {
+    db::with_conn(|conn| {
+        conn.query_row(
+            "SELECT value FROM settings WHERE key = 'missing_file_strategy'",
+            [],
+            |r| r.get::<_, String>(0),
+        )
+        .or_else(|_| Ok::<_, rusqlite::Error>("hide".to_string()))
+        .map_err(AppError::from)
     })
 }
 
