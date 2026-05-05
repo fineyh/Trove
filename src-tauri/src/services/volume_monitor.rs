@@ -32,7 +32,8 @@ const POLL_INTERVAL: Duration = Duration::from_secs(8);
 static LAST_MOUNTED: Lazy<Mutex<HashSet<String>>> =
     Lazy::new(|| Mutex::new(HashSet::new()));
 
-/// Fire the boot scan and spawn the background poller. Idempotent.
+/// Spawn the background poller. The poll loop tolerates a locked DB and
+/// noops until the user unlocks. Idempotent.
 pub fn start() {
     static STARTED: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
     let mut g = STARTED.lock();
@@ -42,19 +43,25 @@ pub fn start() {
     *g = true;
     drop(g);
 
-    if let Err(e) = boot_scan() {
-        eprintln!("volume_monitor: boot scan failed: {e}");
-    }
-
     std::thread::Builder::new()
         .name("trove-volume-monitor".into())
         .spawn(poll_loop)
         .expect("spawn volume monitor");
 }
 
+/// Run the boot reconciliation. Caller must ensure the DB is unlocked.
+pub fn run_boot_scan() {
+    if let Err(e) = boot_scan() {
+        eprintln!("volume_monitor: boot scan failed: {e}");
+    }
+}
+
 fn poll_loop() {
     loop {
         std::thread::sleep(POLL_INTERVAL);
+        if !db::is_open() {
+            continue;
+        }
         if let Err(e) = poll_once() {
             eprintln!("volume_monitor: poll failed: {e}");
         }

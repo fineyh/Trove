@@ -2,21 +2,37 @@ import { useEffect } from "react";
 import { Sidebar } from "./components/layout/Sidebar";
 import { ChatList } from "./components/layout/ChatList";
 import { ChatView } from "./components/layout/ChatView";
+import { UnlockScreen } from "./components/layout/UnlockScreen";
 import { NewConversationDialog } from "./components/dialogs/NewConversationDialog";
 import { SettingsDialog } from "./components/dialogs/SettingsDialog";
+import { VaultDialog } from "./components/dialogs/VaultDialog";
+import { ConvUnlockDialog } from "./components/dialogs/ConvUnlockDialog";
 import { ProfileDrawer } from "./components/profile/ProfileDrawer";
 import { onConvChanged, onVolumesChanged } from "./ipc/client";
 import { useConversationsStore } from "./stores/conversations";
 import { useMessagesStore } from "./stores/messages";
 import { useSessionStore } from "./stores/session";
 import { useSettingsStore } from "./stores/settings";
+import { useVaultStore } from "./stores/vault";
 
 export default function App() {
-  useEffect(() => {
-    void useSettingsStore.getState().load();
-  }, []);
+  const vaultReady = useVaultStore((s) => s.ready);
+  const vaultStatus = useVaultStore((s) => s.status);
+  const refreshVault = useVaultStore((s) => s.refresh);
 
   useEffect(() => {
+    void refreshVault();
+  }, [refreshVault]);
+
+  const locked = vaultStatus.hasMasterPassword && !vaultStatus.unlocked;
+
+  useEffect(() => {
+    if (locked) return;
+    void useSettingsStore.getState().load();
+  }, [locked]);
+
+  useEffect(() => {
+    if (locked) return;
     let unlistenConv: (() => void) | null = null;
     let unlistenVol: (() => void) | null = null;
     let cancelled = false;
@@ -52,7 +68,15 @@ export default function App() {
       unlistenConv?.();
       unlistenVol?.();
     };
-  }, []);
+  }, [locked]);
+
+  if (!vaultReady) {
+    return <div className="flex h-screen w-screen bg-app-bg" />;
+  }
+
+  if (locked) {
+    return <UnlockScreen />;
+  }
 
   return (
     <div className="flex h-screen w-screen">
@@ -61,6 +85,8 @@ export default function App() {
       <ChatView />
       <NewConversationDialog />
       <SettingsDialog />
+      <VaultDialog />
+      <ConvUnlockDialog />
       <ProfileDrawer />
     </div>
   );

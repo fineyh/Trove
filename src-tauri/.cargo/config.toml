@@ -1,0 +1,12 @@
+# Local build config for Trove.
+#
+# `rusqlite` is built with the `bundled-sqlcipher` feature which requires
+# OpenSSL headers + libs at link time. On Windows we point at the OpenSSL
+# distribution that ships with Anaconda (any prebuilt 1.1+ install works).
+#
+# If your toolchain is somewhere else, override these via env or replace
+# the paths below.
+
+[env]
+OPENSSL_LIB_DIR = { value = "E:/Tools/anaconda3/Library/lib", force = false }
+OPENSSL_INCLUDE_DIR = { value = "E:/Tools/anaconda3/Library/include", force = false }

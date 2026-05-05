@@ -9,6 +9,7 @@ import type {
   MissingFileStrategy,
   Message,
   SearchHit,
+  VaultStatus,
   VolumePayload,
 } from "../types";
 import { isTauri } from "../hooks/useIsTauri";
@@ -32,6 +33,8 @@ export interface CreateConversationArgs {
   avatarPath?: string | null;
   kind?: ConversationKind;
   sourcePath?: string | null;
+  encrypt?: boolean;
+  password?: string | null;
 }
 
 export async function createConversation(
@@ -166,4 +169,50 @@ export async function rescanVolumes(): Promise<void> {
 
 export async function forgetVolume(id: number): Promise<void> {
   await invoke("forget_volume", { id });
+}
+
+const DEFAULT_VAULT: VaultStatus = { hasMasterPassword: false, unlocked: true };
+
+export async function vaultStatus(): Promise<VaultStatus> {
+  if (!isTauri()) return DEFAULT_VAULT;
+  return invoke<VaultStatus>("vault_status");
+}
+
+export async function vaultSetMasterPassword(password: string): Promise<void> {
+  await invoke("vault_set_master_password", { password });
+}
+
+export async function vaultUnlock(password: string): Promise<void> {
+  await invoke("vault_unlock", { password });
+}
+
+export async function vaultLock(): Promise<void> {
+  await invoke("vault_lock");
+}
+
+export async function vaultChangePassword(
+  oldPassword: string,
+  newPassword: string,
+): Promise<void> {
+  await invoke("vault_change_password", { oldPassword, newPassword });
+}
+
+export async function vaultRemoveMasterPassword(password: string): Promise<void> {
+  await invoke("vault_remove_master_password", { password });
+}
+
+export async function unlockConversation(
+  convId: number,
+  password: string,
+): Promise<void> {
+  await invoke("unlock_conversation", { args: { convId, password } });
+}
+
+export async function lockConversation(convId: number): Promise<void> {
+  await invoke("lock_conversation", { convId });
+}
+
+export async function listUnlockedConversations(): Promise<number[]> {
+  if (!isTauri()) return [];
+  return invoke<number[]>("list_unlocked_conversations");
 }

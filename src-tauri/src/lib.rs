@@ -20,11 +20,21 @@ pub fn run() {
                 .path()
                 .app_data_dir()
                 .expect("failed to resolve app data dir");
-            db::init(&data_dir).expect("failed to initialize database");
+            db::init_slot(&data_dir).expect("init db slot");
+            let has_master = services::vault::init(&data_dir).expect("init vault");
+            // No master password configured → open the DB right away so the
+            // UI doesn't have to wait. Otherwise leave it locked until the
+            // user enters their password via `vault_unlock`.
+            if !has_master {
+                db::open_unencrypted().expect("open unencrypted db");
+            }
             events::init(app.handle().clone());
             services::volume_monitor::start();
-            if let Err(e) = commands::conversations::boot_existing_watchers() {
-                eprintln!("boot_existing_watchers: {e}");
+            if !has_master {
+                services::volume_monitor::run_boot_scan();
+                if let Err(e) = commands::conversations::boot_existing_watchers() {
+                    eprintln!("boot_existing_watchers: {e}");
+                }
             }
             Ok(())
         })
@@ -34,6 +44,9 @@ pub fn run() {
             commands::conversations::create_conversation,
             commands::conversations::update_conversation,
             commands::conversations::delete_conversation,
+            commands::conversations::unlock_conversation,
+            commands::conversations::lock_conversation,
+            commands::conversations::list_unlocked_conversations,
             commands::messages::list_messages,
             commands::messages::send_text,
             commands::messages::increment_play_count,
@@ -45,6 +58,12 @@ pub fn run() {
             commands::settings::get_all_settings,
             commands::settings::get_setting,
             commands::settings::set_setting,
+            commands::vault::vault_status,
+            commands::vault::vault_set_master_password,
+            commands::vault::vault_unlock,
+            commands::vault::vault_lock,
+            commands::vault::vault_change_password,
+            commands::vault::vault_remove_master_password,
             commands::volumes::list_volumes,
             commands::volumes::rescan_volumes,
             commands::volumes::forget_volume,

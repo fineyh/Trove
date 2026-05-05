@@ -1,3 +1,5 @@
+use crate::services::crypto::KdfParams;
+use crate::services::vault;
 use crate::{db, services, AppError, AppResult};
 use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -11,6 +13,7 @@ pub struct Conversation {
     pub avatar_path: Option<String>,
     pub kind: String,
     pub encrypted: bool,
+    pub unlocked: bool,
     pub pinned: bool,
     pub archived: bool,
     pub created_at: i64,
@@ -77,12 +80,15 @@ pub fn list_conversations() -> AppResult<Vec<Conversation>> {
         let hide_param: i64 = if hide_broken { 1 } else { 0 };
         let rows = stmt
             .query_map(params![hide_param], |row| {
+                let id: i64 = row.get(0)?;
+                let encrypted = row.get::<_, i64>(4)? != 0;
                 Ok(Conversation {
-                    id: row.get(0)?,
+                    id,
                     name: row.get(1)?,
                     avatar_path: row.get(2)?,
                     kind: row.get(3)?,
-                    encrypted: row.get::<_, i64>(4)? != 0,
+                    encrypted,
+                    unlocked: !encrypted || vault::get_conv_key(id).is_some(),
                     pinned: row.get::<_, i64>(5)? != 0,
                     archived: row.get::<_, i64>(6)? != 0,
                     created_at: row.get(7)?,
@@ -119,6 +125,10 @@ pub struct CreateConversationArgs {
     pub kind: String,
     #[serde(default)]
     pub source_path: Option<String>,
+    #[serde(default)]
+    pub encrypt: bool,
+    #[serde(default)]
+    pub password: Option<String>,
 }
 
 fn default_kind() -> String {
@@ -136,6 +146,30 @@ pub fn create_conversation(args: CreateConversationArgs) -> AppResult<i64> {
     }
 
     let now = now_ms();
+
+    // Pre-derive encryption material so we don't write a half-baked row
+    // if the user enables encryption but provides an empty password.
+    let enc_material = if args.encrypt {
+        let pwd = args
+            .password
+            .as_ref()
+            .ok_or_else(|| AppError::InvalidArg("password required for encrypted conversation".into()))?;
+        if pwd.chars().count() < 4 {
+            return Err(AppError::InvalidArg(
+                "conversation password must be at least 4 characters".into(),
+            ));
+        }
+        let (kek, salt, params) = vault::fresh_conv_kek_material(pwd)
+            .map_err(AppError::from)?;
+        let conv_key = vault::fresh_conv_key();
+        let aad = b"trove:conv-key:v1";
+        let wrapped = crate::services::crypto::wrap_key(&kek, &conv_key, aad)
+            .map_err(AppError::from)?;
+        Some((wrapped, salt.to_vec(), params, conv_key))
+    } else {
+        None
+    };
+
     let watch_root: Option<PathBuf>;
     let (source_volume_id, source_relpath) = if args.kind == "folder_watch" {
         let path = args
@@ -162,23 +196,41 @@ pub fn create_conversation(args: CreateConversationArgs) -> AppResult<i64> {
         (None, None)
     };
 
+    let encrypted_flag: i64 = if enc_material.is_some() { 1 } else { 0 };
+    let wrapped_blob = enc_material.as_ref().map(|(w, _, _, _)| w.clone());
+    let salt_blob = enc_material.as_ref().map(|(_, s, _, _)| s.clone());
+    let kdf_mem = enc_material.as_ref().map(|(_, _, p, _)| p.mem_kib as i64);
+    let kdf_iters = enc_material.as_ref().map(|(_, _, p, _)| p.iters as i64);
+    let kdf_par = enc_material.as_ref().map(|(_, _, p, _)| p.parallelism as i64);
+
     let conv_id = db::with_conn(|conn| {
         conn.execute(
             "INSERT INTO conversations
                 (name, avatar_path, kind, source_volume_id, source_relpath,
-                 encrypted, enc_key_wrapped, pinned, archived, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, 0, NULL, 0, 0, ?6, ?6)",
+                 encrypted, enc_key_wrapped, enc_kdf_salt, enc_kdf_mem, enc_kdf_iters, enc_kdf_par,
+                 pinned, archived, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 0, 0, ?12, ?12)",
             params![
                 name,
                 args.avatar_path,
                 args.kind,
                 source_volume_id,
                 source_relpath,
+                encrypted_flag,
+                wrapped_blob,
+                salt_blob,
+                kdf_mem,
+                kdf_iters,
+                kdf_par,
                 now
             ],
         )?;
         Ok::<i64, AppError>(conn.last_insert_rowid())
     })?;
+
+    if let Some((_, _, _, conv_key)) = enc_material {
+        vault::cache_conv_key(conv_id, conv_key);
+    }
 
     if let Some(root) = watch_root {
         let paths = services::folder_scanner::enumerate_media(&root);
@@ -279,6 +331,60 @@ pub fn delete_conversation(id: i64) -> AppResult<()> {
         conn.execute("DELETE FROM conversations WHERE id = ?1", params![id])?;
         Ok(())
     })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnlockConvArgs {
+    pub conv_id: i64,
+    pub password: String,
+}
+
+#[tauri::command]
+pub fn unlock_conversation(args: UnlockConvArgs) -> AppResult<()> {
+    let row: Option<(Vec<u8>, Vec<u8>, i64, i64, i64)> = db::with_conn(|conn| {
+        conn.query_row(
+            "SELECT enc_key_wrapped, enc_kdf_salt, enc_kdf_mem, enc_kdf_iters, enc_kdf_par
+             FROM conversations WHERE id = ?1 AND encrypted = 1",
+            params![args.conv_id],
+            |r| {
+                Ok((
+                    r.get::<_, Vec<u8>>(0)?,
+                    r.get::<_, Vec<u8>>(1)?,
+                    r.get(2)?,
+                    r.get(3)?,
+                    r.get(4)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(AppError::from)
+    })?;
+    let Some((wrapped, salt, mem, iters, par)) = row else {
+        return Err(AppError::NotFound("encrypted conversation".into()));
+    };
+    let params = KdfParams {
+        mem_kib: mem as u32,
+        iters: iters as u32,
+        parallelism: par as u32,
+    };
+    let kek = vault::derive_conv_kek(&args.password, &salt, params)
+        .map_err(AppError::from)?;
+    let conv_key = crate::services::crypto::unwrap_key(&kek, &wrapped, b"trove:conv-key:v1")
+        .map_err(|_| AppError::InvalidArg("incorrect conversation password".into()))?;
+    vault::cache_conv_key(args.conv_id, conv_key);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn lock_conversation(conv_id: i64) -> AppResult<()> {
+    vault::forget_conv_key(conv_id);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn list_unlocked_conversations() -> AppResult<Vec<i64>> {
+    Ok(vault::unlocked_conv_ids())
 }
 
 /// Iterate every existing folder_watch conversation and start a watcher for

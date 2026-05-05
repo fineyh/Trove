@@ -1,8 +1,9 @@
-import { HardDrive, RefreshCw, Trash2, X } from "lucide-react";
+import { HardDrive, KeyRound, Lock, RefreshCw, ShieldOff, Trash2, X } from "lucide-react";
 import { useEffect } from "react";
 import { useSessionStore } from "../../stores/session";
 import { useSettingsStore } from "../../stores/settings";
 import { useConversationsStore } from "../../stores/conversations";
+import { useVaultStore } from "../../stores/vault";
 import type { MissingFileStrategy, VolumePayload } from "../../types";
 import { cn } from "../../lib/cn";
 
@@ -18,6 +19,8 @@ export function SettingsDialog() {
   const rescan = useSettingsStore((s) => s.rescan);
   const forget = useSettingsStore((s) => s.forget);
   const refreshConvs = useConversationsStore((s) => s.refresh);
+  const vaultStatus = useVaultStore((s) => s.status);
+  const openVaultDialog = useVaultStore((s) => s.openDialog);
 
   useEffect(() => {
     if (open) void load();
@@ -62,6 +65,47 @@ export function SettingsDialog() {
             <X size={16} />
           </button>
         </div>
+
+        <section className="flex flex-col gap-2">
+          <div className="text-sm font-medium">数据库加密</div>
+          <div className="text-xs text-app-muted">
+            主密码会用 Argon2id 派生密钥并以 SQLCipher 加密整个数据库。
+            {vaultStatus.hasMasterPassword
+              ? " 当前已启用。"
+              : " 当前未启用，数据库为明文。"}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {!vaultStatus.hasMasterPassword ? (
+              <button
+                type="button"
+                onClick={() => openVaultDialog("set")}
+                className="flex items-center gap-1.5 rounded-md bg-app-accent px-2.5 py-1.5 text-xs text-white hover:opacity-90"
+              >
+                <Lock size={12} />
+                设置主密码
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => openVaultDialog("change")}
+                  className="flex items-center gap-1.5 rounded-md border border-app-border px-2.5 py-1.5 text-xs hover:bg-app-subtle"
+                >
+                  <KeyRound size={12} />
+                  修改密码
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openVaultDialog("remove")}
+                  className="flex items-center gap-1.5 rounded-md border border-app-border px-2.5 py-1.5 text-xs text-red-500 hover:bg-red-500/10"
+                >
+                  <ShieldOff size={12} />
+                  移除加密
+                </button>
+              </>
+            )}
+          </div>
+        </section>
 
         <section className="flex flex-col gap-2">
           <div className="text-sm font-medium">失效文件显示</div>

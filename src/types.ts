@@ -6,6 +6,7 @@ export interface Conversation {
   avatarPath: string | null;
   kind: ConversationKind;
   encrypted: boolean;
+  unlocked: boolean;
   pinned: boolean;
   archived: boolean;
   createdAt: number;
@@ -13,6 +14,11 @@ export interface Conversation {
   messageCount: number;
   preview: string | null;
   previewKind: "text" | "image" | "video" | "other" | null;
+}
+
+export interface VaultStatus {
+  hasMasterPassword: boolean;
+  unlocked: boolean;
 }
 
 export interface MediaPayload {

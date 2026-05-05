@@ -1,7 +1,8 @@
-import { Plus, Search, Image, Video, FileText, Pin, Folder, MessageSquare } from "lucide-react";
+import { Plus, Search, Image, Video, FileText, Pin, Folder, MessageSquare, Lock } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useConversationsStore } from "../../stores/conversations";
 import { useSessionStore } from "../../stores/session";
+import { useVaultStore } from "../../stores/vault";
 import * as ipc from "../../ipc/client";
 import type { Conversation, SearchHit } from "../../types";
 import { cn } from "../../lib/cn";
@@ -34,11 +35,20 @@ function PreviewIcon({ kind }: { kind: Conversation["previewKind"] }) {
 function ConversationRow({ c }: { c: Conversation }) {
   const active = useSessionStore((s) => s.activeConversationId === c.id);
   const setActive = useSessionStore((s) => s.setActiveConversation);
+  const openVaultDialog = useVaultStore((s) => s.openDialog);
+
+  const locked = c.encrypted && !c.unlocked;
+  const handleClick = () => {
+    setActive(c.id);
+    if (locked) {
+      openVaultDialog("unlock-conv", c.id);
+    }
+  };
 
   return (
     <button
       type="button"
-      onClick={() => setActive(c.id)}
+      onClick={handleClick}
       className={cn(
         "flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors",
         "hover:bg-app-subtle",
@@ -50,7 +60,12 @@ function ConversationRow({ c }: { c: Conversation }) {
       </div>
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex items-center justify-between gap-2">
-          <span className="truncate font-medium">{c.name}</span>
+          <span className="flex min-w-0 items-center gap-1 truncate font-medium">
+            {c.name}
+            {c.encrypted && (
+              <Lock size={10} className="shrink-0 text-app-accent" />
+            )}
+          </span>
           <span className="shrink-0 text-xs text-app-muted">
             {formatTimeAgo(c.updatedAt)}
           </span>
@@ -58,7 +73,7 @@ function ConversationRow({ c }: { c: Conversation }) {
         <div className="flex items-center gap-1.5">
           <PreviewIcon kind={c.previewKind} />
           <span className="truncate text-xs text-app-muted">
-            {c.preview ?? "暂无消息"}
+            {locked ? "🔒 已锁定，点击解锁" : (c.preview ?? "暂无消息")}
           </span>
           {c.pinned && <Pin size={12} className="ml-auto text-app-muted" />}
         </div>

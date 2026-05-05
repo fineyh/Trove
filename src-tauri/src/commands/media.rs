@@ -1,4 +1,6 @@
+use crate::services::{crypto, vault};
 use crate::{db, services, AppError, AppResult};
+use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -119,6 +121,26 @@ pub(crate) fn ingest_one(
         .unwrap_or_default();
     let created_at = if use_mtime_for_created_at { mtime } else { now_ms() };
 
+    let conv_encrypted: bool = db::with_conn(|conn| {
+        conn.query_row(
+            "SELECT encrypted FROM conversations WHERE id = ?1",
+            params![conv_id],
+            |r| r.get::<_, i64>(0),
+        )
+        .map(|v| v != 0)
+        .map_err(AppError::from)
+    })?;
+    let (caption_db, iv_db): (String, Option<Vec<u8>>) = if conv_encrypted {
+        let key = vault::get_conv_key(conv_id)
+            .ok_or_else(|| AppError::InvalidArg("conversation is locked".into()))?;
+        let (nonce, ct) =
+            crypto::encrypt_caption(&key, &filename_caption).map_err(AppError::from)?;
+        let b64 = B64.encode(&ct);
+        (b64, Some(nonce))
+    } else {
+        (filename_caption, None)
+    };
+
     let result = db::with_conn(|conn| -> AppResult<Option<(i64, i64)>> {
         let existing: Option<i64> = conn
             .query_row(
@@ -169,9 +191,9 @@ pub(crate) fn ingest_one(
         }
 
         conn.execute(
-            "INSERT INTO messages (conv_id, media_id, caption, play_count, created_at)
-             VALUES (?1, ?2, ?3, 0, ?4)",
-            params![conv_id, media_id, filename_caption, created_at],
+            "INSERT INTO messages (conv_id, media_id, caption, caption_iv, play_count, created_at)
+             VALUES (?1, ?2, ?3, ?4, 0, ?5)",
+            params![conv_id, media_id, caption_db, iv_db, created_at],
         )?;
         let msg_id = conn.last_insert_rowid();
         Ok(Some((media_id, msg_id)))

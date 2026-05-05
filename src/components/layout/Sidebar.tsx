@@ -1,5 +1,6 @@
-import { Lock, Settings, User } from "lucide-react";
+import { Lock, LockOpen, Settings, User } from "lucide-react";
 import { useSessionStore } from "../../stores/session";
+import { useVaultStore } from "../../stores/vault";
 import { cn } from "../../lib/cn";
 
 interface SidebarButtonProps {
@@ -28,6 +29,27 @@ function SidebarButton({ icon, label, onClick, active }: SidebarButtonProps) {
 
 export function Sidebar() {
   const setSettingsOpen = useSessionStore((s) => s.setSettingsOpen);
+  const status = useVaultStore((s) => s.status);
+  const lock = useVaultStore((s) => s.lock);
+  const openDialog = useVaultStore((s) => s.openDialog);
+
+  const handleLockClick = () => {
+    if (status.hasMasterPassword) {
+      void lock();
+    } else {
+      openDialog("set");
+    }
+  };
+
+  const lockTitle = status.hasMasterPassword
+    ? "立即上锁"
+    : "设置主密码并加密数据库";
+  const lockIcon = status.hasMasterPassword ? (
+    <LockOpen size={18} />
+  ) : (
+    <Lock size={18} />
+  );
+
   return (
     <aside className="flex h-full w-16 shrink-0 flex-col items-center border-r border-app-border bg-app-panel py-3">
       <button
@@ -41,7 +63,7 @@ export function Sidebar() {
       <div className="flex-1" />
 
       <div className="flex flex-col gap-1">
-        <SidebarButton icon={<Lock size={18} />} label="锁定" />
+        <SidebarButton icon={lockIcon} label={lockTitle} onClick={handleLockClick} />
         <SidebarButton
           icon={<Settings size={18} />}
           label="设置"

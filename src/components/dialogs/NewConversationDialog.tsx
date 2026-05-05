@@ -1,10 +1,11 @@
-import { Folder, FolderInput, MessageSquare, X } from "lucide-react";
+import { Folder, FolderInput, Lock, MessageSquare, X } from "lucide-react";
 import { useState } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useConversationsStore } from "../../stores/conversations";
 import { useSessionStore } from "../../stores/session";
 import { isTauri } from "../../hooks/useIsTauri";
 import { cn } from "../../lib/cn";
+import * as ipc from "../../ipc/client";
 
 type Mode = "manual" | "folder_bulk" | "folder_watch";
 
@@ -22,6 +23,10 @@ export function NewConversationDialog() {
   const [name, setName] = useState("");
   const [sourcePath, setSourcePath] = useState("");
   const [busy, setBusy] = useState(false);
+  const [encrypt, setEncrypt] = useState(false);
+  const [convPassword, setConvPassword] = useState("");
+  const [convPasswordConfirm, setConvPasswordConfirm] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
   if (!open) return null;
 
@@ -29,6 +34,10 @@ export function NewConversationDialog() {
     setMode("manual");
     setName("");
     setSourcePath("");
+    setEncrypt(false);
+    setConvPassword("");
+    setConvPasswordConfirm("");
+    setError(null);
     setBusy(false);
   };
 
@@ -50,27 +59,48 @@ export function NewConversationDialog() {
   };
 
   const needsFolder = mode === "folder_bulk" || mode === "folder_watch";
+  const canEncrypt = mode !== "folder_watch"; // watcher needs to write while locked
+  const passwordOk =
+    !encrypt ||
+    (convPassword.length >= 4 && convPassword === convPasswordConfirm);
   const canSubmit =
-    !busy && name.trim().length > 0 && (!needsFolder || sourcePath.length > 0);
+    !busy &&
+    name.trim().length > 0 &&
+    (!needsFolder || sourcePath.length > 0) &&
+    passwordOk;
 
   const submit = async () => {
     if (!canSubmit) return;
     const trimmedName = name.trim();
+    setError(null);
     setBusy(true);
     try {
       let id: number;
       if (mode === "folder_watch") {
         id = await createFolderWatch(trimmedName, sourcePath);
       } else if (mode === "folder_bulk") {
+        if (encrypt) {
+          throw new Error("文件夹批量导入暂不支持加密会话");
+        }
         const result = await createManualFromFolder(sourcePath, trimmedName);
         id = result.convId;
+      } else if (encrypt) {
+        id = await ipc.createConversation({
+          name: trimmedName,
+          kind: "manual",
+          encrypt: true,
+          password: convPassword,
+        });
+        await useConversationsStore.getState().refresh();
       } else {
         id = await createManual(trimmedName);
       }
       setActive(id);
       close();
-    } catch (e) {
+    } catch (e: unknown) {
+      const m = e instanceof Error ? e.message : String(e);
       console.error("create_conversation failed", e);
+      setError(m);
       setBusy(false);
     }
   };
@@ -157,6 +187,58 @@ export function NewConversationDialog() {
             </div>
           </div>
         )}
+
+        {canEncrypt && (
+          <label className="flex items-start gap-2 rounded-md border border-app-border p-2.5 text-xs">
+            <input
+              type="checkbox"
+              checked={encrypt}
+              onChange={(e) => setEncrypt(e.target.checked)}
+              className="mt-0.5"
+            />
+            <div className="flex flex-col gap-0.5">
+              <span className="flex items-center gap-1 font-medium text-app-fg">
+                <Lock size={11} />
+                加密会话
+              </span>
+              <span className="text-app-muted">
+                每次进入需输入会话密码；caption 与文件名都会以 AES-GCM 加密。
+              </span>
+            </div>
+          </label>
+        )}
+
+        {encrypt && canEncrypt && (
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-app-muted">会话密码</label>
+              <input
+                type="password"
+                value={convPassword}
+                onChange={(e) => setConvPassword(e.target.value)}
+                className="rounded-md border border-app-border bg-app-subtle px-3 py-2 text-sm outline-none focus:border-app-accent/60 focus:bg-app-panel"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-app-muted">再次输入</label>
+              <input
+                type="password"
+                value={convPasswordConfirm}
+                onChange={(e) => setConvPasswordConfirm(e.target.value)}
+                className="rounded-md border border-app-border bg-app-subtle px-3 py-2 text-sm outline-none focus:border-app-accent/60 focus:bg-app-panel"
+              />
+            </div>
+            {convPassword.length > 0 && convPassword.length < 4 && (
+              <div className="text-xs text-red-500">密码至少 4 位</div>
+            )}
+            {convPasswordConfirm.length > 0 &&
+              convPassword !== convPasswordConfirm && (
+                <div className="text-xs text-red-500">两次输入不一致</div>
+              )}
+          </div>
+        )}
+
+        {error && <div className="text-xs text-red-500">{error}</div>}
 
         <div className="flex justify-end gap-2 pt-1">
           <button

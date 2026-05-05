@@ -5,4 +5,5 @@ pub mod media;
 pub mod messages;
 pub mod search;
 pub mod settings;
+pub mod vault;
 pub mod volumes;

@@ -41,12 +41,15 @@ pub fn search(query: String) -> AppResult<Vec<SearchHit>> {
             hits.push(row?);
         }
 
-        // Messages by caption.
+        // Messages by caption. Encrypted conversations are excluded — their
+        // captions are ciphertext blobs, so a LIKE match would be both
+        // useless and a privacy footgun (revealing key/IV substrings).
         let mut msg_stmt = conn.prepare(
             "SELECT m.id, m.conv_id, m.caption, m.created_at, c.name
              FROM messages m
              JOIN conversations c ON c.id = m.conv_id
-             WHERE c.archived = 0 AND m.caption IS NOT NULL AND lower(m.caption) LIKE ?1
+             WHERE c.archived = 0 AND c.encrypted = 0
+               AND m.caption IS NOT NULL AND lower(m.caption) LIKE ?1
              ORDER BY m.created_at DESC LIMIT 50",
         )?;
         for row in msg_stmt.query_map(params![pattern], |r| {

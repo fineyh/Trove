@@ -71,6 +71,10 @@ pub fn stop(conv_id: i64) {
     WATCHERS.lock().remove(&conv_id);
 }
 
+pub fn stop_all() {
+    WATCHERS.lock().clear();
+}
+
 #[derive(Default)]
 struct Pending {
     creates: HashSet<PathBuf>,
