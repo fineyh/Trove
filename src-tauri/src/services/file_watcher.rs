@@ -6,10 +6,10 @@
 //! causes the worker thread to exit on its own.
 
 use crate::commands::media;
-use crate::db;
 use crate::events::{self, ConvChanged};
 use crate::services::folder_scanner;
 use crate::services::volume_resolver;
+use crate::{db, AppResult};
 use notify::{
     event::ModifyKind, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher,
 };
@@ -181,11 +181,12 @@ fn flush(conv_id: i64, _root: &Path, pending: &mut Pending) {
     }
     if added > 0 || broken > 0 {
         let now = chrono::Utc::now().timestamp_millis();
-        let _ = db::with_conn(|conn| {
+        let _ = db::with_conn(|conn| -> AppResult<()> {
             conn.execute(
                 "UPDATE conversations SET updated_at = ?1 WHERE id = ?2",
                 params![now, conv_id],
-            )
+            )?;
+            Ok(())
         });
         events::emit_conv_changed(ConvChanged {
             conv_id,
@@ -212,7 +213,7 @@ fn mark_broken(path: &Path) -> Result<bool, String> {
         format!("{}/{}", parent_resolved.relpath, file_name)
     };
 
-    db::with_conn(|conn| -> Result<bool, String> {
+    db::with_conn(|conn| -> AppResult<bool> {
         let id: Option<i64> = conn
             .query_row(
                 "SELECT m.id FROM media m JOIN volumes v ON v.id = m.volume_id
@@ -220,22 +221,20 @@ fn mark_broken(path: &Path) -> Result<bool, String> {
                 params![parent_resolved.platform_id, relpath],
                 |r| r.get(0),
             )
-            .optional()
-            .map_err(|e| e.to_string())?;
+            .optional()?;
         let Some(id) = id else { return Ok(false) };
         conn.execute(
             "UPDATE media SET state = 'broken' WHERE id = ?1",
             params![id],
-        )
-        .map_err(|e| e.to_string())?;
+        )?;
         let now = chrono::Utc::now().timestamp_millis();
         conn.execute(
             "INSERT OR REPLACE INTO broken_pointers
                 (media_id, detected_at, last_known_volume, last_known_relpath)
              SELECT id, ?1, volume_id, relpath FROM media WHERE id = ?2",
             params![now, id],
-        )
-        .map_err(|e| e.to_string())?;
+        )?;
         Ok(true)
     })
+    .map_err(|e| e.to_string())
 }

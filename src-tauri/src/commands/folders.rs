@@ -82,11 +82,12 @@ pub fn create_manual_from_folder(
 
     if let Some(avatar) = first_image_abs {
         let touch = now_ms();
-        let _ = db::with_conn(|conn| {
+        let _ = db::with_conn(|conn| -> AppResult<()> {
             conn.execute(
                 "UPDATE conversations SET avatar_path = ?1, updated_at = ?2 WHERE id = ?3",
                 params![avatar, touch, conv_id],
-            )
+            )?;
+            Ok(())
         });
     }
 
@@ -135,11 +136,12 @@ pub fn rescan_folder(conv_id: i64) -> AppResult<RescanResult> {
     }
     if added > 0 {
         let now = now_ms();
-        let _ = db::with_conn(|conn| {
+        let _ = db::with_conn(|conn| -> AppResult<()> {
             conn.execute(
                 "UPDATE conversations SET updated_at = ?1 WHERE id = ?2",
                 params![now, conv_id],
-            )
+            )?;
+            Ok(())
         });
     }
     Ok(RescanResult { added })

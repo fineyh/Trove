@@ -218,21 +218,23 @@ pub fn is_open() -> bool {
         .unwrap_or(false)
 }
 
-/// Run a closure with the current connection. Panics if the DB is locked
-/// — callers must check `vault::is_unlocked()` first.
-pub fn with_conn<F, R>(f: F) -> R
+/// Run a closure with the current connection. Returns `AppError::InvalidArg`
+/// when the vault is locked — callers can `?`-propagate it so the UI gets a
+/// clean error instead of the process aborting (Tauri sync commands run in
+/// the WebView2 `extern "system"` callback, which can't unwind across FFI).
+pub fn with_conn<F, R>(f: F) -> AppResult<R>
 where
-    F: FnOnce(&Connection) -> R,
+    F: FnOnce(&Connection) -> AppResult<R>,
 {
     let g = STATE.get().expect("db slot not initialized").lock();
     let conn = g
         .conn
         .as_ref()
-        .expect("db is locked — call vault.unlock first");
+        .ok_or_else(|| crate::AppError::InvalidArg("vault is locked".into()))?;
     f(conn)
 }
 
-/// Like `with_conn` but returns `None` when locked instead of panicking.
+/// Like `with_conn` but returns `None` when locked instead of an error.
 #[allow(dead_code)]
 pub fn try_with_conn<F, R>(f: F) -> Option<R>
 where

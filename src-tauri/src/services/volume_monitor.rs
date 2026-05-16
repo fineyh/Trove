@@ -16,10 +16,10 @@
 //! events (WM_DEVICECHANGE / DiskArbitration callbacks) — far simpler, and
 //! the human-visible latency of 5-10s when (un)plugging a USB drive is fine.
 
-use crate::db;
 use crate::events;
 use crate::services::file_watcher;
 use crate::services::volume_resolver::{self, VolumeInfo};
+use crate::{db, AppResult};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use rusqlite::params;
@@ -130,7 +130,7 @@ pub fn boot_scan() -> Result<(), String> {
     *LAST_MOUNTED.lock() = by_pid.keys().cloned().collect();
 
     type Row = (i64, i64, String, String, String);
-    let rows: Vec<Row> = db::with_conn(|conn| -> rusqlite::Result<Vec<Row>> {
+    let rows: Vec<Row> = db::with_conn(|conn| -> AppResult<Vec<Row>> {
         let mut stmt = conn.prepare(
             "SELECT m.id, v.id, v.platform_id, v.last_mount, m.relpath
              FROM media m JOIN volumes v ON v.id = m.volume_id",
@@ -151,7 +151,7 @@ pub fn boot_scan() -> Result<(), String> {
     .map_err(|e| e.to_string())?;
 
     let now = chrono::Utc::now().timestamp_millis();
-    db::with_conn(|conn| -> Result<(), String> {
+    db::with_conn(|conn| -> AppResult<()> {
         for (media_id, volume_id, pid, last_mount, relpath) in rows {
             let mount = by_pid
                 .get(&pid)
@@ -162,7 +162,8 @@ pub fn boot_scan() -> Result<(), String> {
             apply_state(conn, media_id, volume_id, &relpath, live, now)?;
         }
         Ok(())
-    })?;
+    })
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -173,31 +174,27 @@ fn apply_state(
     relpath: &str,
     live: bool,
     now: i64,
-) -> Result<(), String> {
+) -> AppResult<()> {
     if live {
         conn.execute(
             "UPDATE media SET state = 'live' WHERE id = ?1 AND state != 'live'",
             params![media_id],
-        )
-        .map_err(|e| e.to_string())?;
+        )?;
         conn.execute(
             "DELETE FROM broken_pointers WHERE media_id = ?1",
             params![media_id],
-        )
-        .map_err(|e| e.to_string())?;
+        )?;
     } else {
         conn.execute(
             "UPDATE media SET state = 'broken' WHERE id = ?1 AND state != 'broken'",
             params![media_id],
-        )
-        .map_err(|e| e.to_string())?;
+        )?;
         conn.execute(
             "INSERT OR REPLACE INTO broken_pointers
                 (media_id, detected_at, last_known_volume, last_known_relpath)
              VALUES (?1, ?2, ?3, ?4)",
             params![media_id, now, volume_id, relpath],
-        )
-        .map_err(|e| e.to_string())?;
+        )?;
     }
     Ok(())
 }
@@ -208,7 +205,7 @@ fn volume_came_online(v: &VolumeInfo) -> Result<HashSet<i64>, String> {
     let now = chrono::Utc::now().timestamp_millis();
 
     let media_rows: Vec<(i64, String)> =
-        db::with_conn(|conn| -> rusqlite::Result<Vec<(i64, String)>> {
+        db::with_conn(|conn| -> AppResult<Vec<(i64, String)>> {
             let mut stmt = conn.prepare(
                 "SELECT m.id, m.relpath FROM media m
                  JOIN volumes v ON v.id = m.volume_id
@@ -221,25 +218,29 @@ fn volume_came_online(v: &VolumeInfo) -> Result<HashSet<i64>, String> {
         })
         .map_err(|e| e.to_string())?;
 
-    let volume_id_opt: Option<i64> = db::with_conn(|conn| {
-        conn.query_row(
-            "SELECT id FROM volumes WHERE platform_id = ?1",
-            params![pid],
-            |r| r.get(0),
-        )
-        .ok()
-    });
+    let volume_id_opt: Option<i64> = db::with_conn(|conn| -> AppResult<Option<i64>> {
+        Ok(conn
+            .query_row(
+                "SELECT id FROM volumes WHERE platform_id = ?1",
+                params![pid],
+                |r| r.get(0),
+            )
+            .ok())
+    })
+    .ok()
+    .flatten();
     let Some(volume_id) = volume_id_opt else {
         return Ok(HashSet::new());
     };
 
-    db::with_conn(|conn| -> Result<(), String> {
+    db::with_conn(|conn| -> AppResult<()> {
         for (mid, rel) in &media_rows {
             let abs = volume_resolver::absolute_for(&mount, rel);
             apply_state(conn, *mid, volume_id, rel, abs.is_file(), now)?;
         }
         Ok(())
-    })?;
+    })
+    .map_err(|e| e.to_string())?;
 
     let convs = conversations_using_volume(volume_id)?;
 
@@ -253,20 +254,23 @@ fn volume_came_online(v: &VolumeInfo) -> Result<HashSet<i64>, String> {
 
 fn volume_went_offline(platform_id: &str) -> Result<HashSet<i64>, String> {
     let now = chrono::Utc::now().timestamp_millis();
-    let volume_id_opt: Option<i64> = db::with_conn(|conn| {
-        conn.query_row(
-            "SELECT id FROM volumes WHERE platform_id = ?1",
-            params![platform_id],
-            |r| r.get(0),
-        )
-        .ok()
-    });
+    let volume_id_opt: Option<i64> = db::with_conn(|conn| -> AppResult<Option<i64>> {
+        Ok(conn
+            .query_row(
+                "SELECT id FROM volumes WHERE platform_id = ?1",
+                params![platform_id],
+                |r| r.get(0),
+            )
+            .ok())
+    })
+    .ok()
+    .flatten();
     let Some(volume_id) = volume_id_opt else {
         return Ok(HashSet::new());
     };
 
     let media_rows: Vec<(i64, String)> =
-        db::with_conn(|conn| -> rusqlite::Result<Vec<(i64, String)>> {
+        db::with_conn(|conn| -> AppResult<Vec<(i64, String)>> {
             let mut stmt = conn.prepare(
                 "SELECT id, relpath FROM media WHERE volume_id = ?1",
             )?;
@@ -277,12 +281,13 @@ fn volume_went_offline(platform_id: &str) -> Result<HashSet<i64>, String> {
         })
         .map_err(|e| e.to_string())?;
 
-    db::with_conn(|conn| -> Result<(), String> {
+    db::with_conn(|conn| -> AppResult<()> {
         for (mid, rel) in &media_rows {
             apply_state(conn, *mid, volume_id, rel, false, now)?;
         }
         Ok(())
-    })?;
+    })
+    .map_err(|e| e.to_string())?;
 
     let convs = conversations_using_volume(volume_id)?;
     for conv_id in &convs {
@@ -292,47 +297,45 @@ fn volume_went_offline(platform_id: &str) -> Result<HashSet<i64>, String> {
 }
 
 fn conversations_using_volume(volume_id: i64) -> Result<HashSet<i64>, String> {
-    db::with_conn(|conn| -> Result<HashSet<i64>, String> {
-        let mut stmt = conn
-            .prepare(
-                "SELECT DISTINCT conv_id FROM messages m
-                 JOIN media md ON md.id = m.media_id
-                 WHERE md.volume_id = ?1
-                 UNION
-                 SELECT id FROM conversations WHERE source_volume_id = ?1",
-            )
-            .map_err(|e| e.to_string())?;
+    db::with_conn(|conn| -> AppResult<HashSet<i64>> {
+        let mut stmt = conn.prepare(
+            "SELECT DISTINCT conv_id FROM messages m
+             JOIN media md ON md.id = m.media_id
+             WHERE md.volume_id = ?1
+             UNION
+             SELECT id FROM conversations WHERE source_volume_id = ?1",
+        )?;
         let r = stmt
-            .query_map(params![volume_id], |row| row.get::<_, i64>(0))
-            .map_err(|e| e.to_string())?
+            .query_map(params![volume_id], |row| row.get::<_, i64>(0))?
             .filter_map(Result::ok)
             .collect();
         Ok(r)
     })
+    .map_err(|e| e.to_string())
 }
 
 fn update_volume_last_mount(platform_id: &str, mount: &Path) -> Result<(), String> {
     let mount_str = mount.to_string_lossy().to_string();
-    db::with_conn(|conn| {
+    db::with_conn(|conn| -> AppResult<()> {
         conn.execute(
             "UPDATE volumes SET last_mount = ?1 WHERE platform_id = ?2",
             params![mount_str, platform_id],
-        )
-        .map_err(|e| e.to_string())?;
+        )?;
         Ok(())
     })
+    .map_err(|e| e.to_string())
 }
 
 fn bump_conversation(conv_id: i64) -> Result<(), String> {
     let now = chrono::Utc::now().timestamp_millis();
-    db::with_conn(|conn| {
+    db::with_conn(|conn| -> AppResult<()> {
         conn.execute(
             "UPDATE conversations SET updated_at = ?1 WHERE id = ?2",
             params![now, conv_id],
-        )
-        .map_err(|e| e.to_string())?;
+        )?;
         Ok(())
     })
+    .map_err(|e| e.to_string())
 }
 
 /// Phase 2 stored placeholder platform IDs like `win-letter-C`. After the
@@ -342,7 +345,7 @@ fn bump_conversation(conv_id: i64) -> Result<(), String> {
 /// (or merge into an already-correct row).
 fn upgrade_legacy_platform_ids() -> Result<(), String> {
     type Row = (i64, String, Option<String>);
-    let rows: Vec<Row> = db::with_conn(|conn| -> rusqlite::Result<Vec<Row>> {
+    let rows: Vec<Row> = db::with_conn(|conn| -> AppResult<Vec<Row>> {
         let mut stmt =
             conn.prepare("SELECT id, platform_id, last_mount FROM volumes")?;
         let r = stmt
@@ -365,7 +368,7 @@ fn upgrade_legacy_platform_ids() -> Result<(), String> {
         if real.platform_id == stored_pid {
             continue;
         }
-        db::with_conn(|conn| -> Result<(), String> {
+        db::with_conn(|conn| -> AppResult<()> {
             let conflict: Option<i64> = conn
                 .query_row(
                     "SELECT id FROM volumes WHERE platform_id = ?1 AND id != ?2",
@@ -377,44 +380,45 @@ fn upgrade_legacy_platform_ids() -> Result<(), String> {
                 conn.execute(
                     "UPDATE media SET volume_id = ?1 WHERE volume_id = ?2",
                     params![other_id, id],
-                )
-                .map_err(|e| e.to_string())?;
+                )?;
                 conn.execute(
                     "UPDATE conversations SET source_volume_id = ?1
                      WHERE source_volume_id = ?2",
                     params![other_id, id],
-                )
-                .map_err(|e| e.to_string())?;
+                )?;
                 conn.execute(
                     "DELETE FROM volumes WHERE id = ?1",
                     params![id],
-                )
-                .map_err(|e| e.to_string())?;
+                )?;
             } else {
                 conn.execute(
                     "UPDATE volumes SET platform_id = ?1, label = ?2 WHERE id = ?3",
                     params![real.platform_id, real.label, id],
-                )
-                .map_err(|e| e.to_string())?;
+                )?;
             }
             Ok(())
-        })?;
+        })
+        .map_err(|e| e.to_string())?;
     }
     Ok(())
 }
 
 fn try_start_watcher(conv_id: i64) -> Result<(), String> {
-    let row: Option<(String, String, String)> = db::with_conn(|conn| {
-        conn.query_row(
-            "SELECT c.kind, COALESCE(v.last_mount, ''), COALESCE(c.source_relpath, '')
-             FROM conversations c
-             LEFT JOIN volumes v ON v.id = c.source_volume_id
-             WHERE c.id = ?1",
-            params![conv_id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-        )
+    let row: Option<(String, String, String)> =
+        db::with_conn(|conn| -> AppResult<Option<(String, String, String)>> {
+            Ok(conn
+                .query_row(
+                    "SELECT c.kind, COALESCE(v.last_mount, ''), COALESCE(c.source_relpath, '')
+                     FROM conversations c
+                     LEFT JOIN volumes v ON v.id = c.source_volume_id
+                     WHERE c.id = ?1",
+                    params![conv_id],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                )
+                .ok())
+        })
         .ok()
-    });
+        .flatten();
     let Some((kind, mount, relpath)) = row else { return Ok(()) };
     if kind != "folder_watch" || mount.is_empty() {
         return Ok(());

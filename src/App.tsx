@@ -25,14 +25,18 @@ export default function App() {
   }, [refreshVault]);
 
   const locked = vaultStatus.hasMasterPassword && !vaultStatus.unlocked;
+  // Gate data-loading on `vaultReady`: until the vault status has actually
+  // been fetched, `INITIAL` lies and says hasMasterPassword=false, which
+  // would make us fire DB-touching IPCs while the DB is still locked.
+  const ready = vaultReady && !locked;
 
   useEffect(() => {
-    if (locked) return;
+    if (!ready) return;
     void useSettingsStore.getState().load();
-  }, [locked]);
+  }, [ready]);
 
   useEffect(() => {
-    if (locked) return;
+    if (!ready) return;
     let unlistenConv: (() => void) | null = null;
     let unlistenVol: (() => void) | null = null;
     let cancelled = false;
@@ -68,7 +72,7 @@ export default function App() {
       unlistenConv?.();
       unlistenVol?.();
     };
-  }, [locked]);
+  }, [ready]);
 
   if (!vaultReady) {
     return <div className="flex h-screen w-screen bg-app-bg" />;
