@@ -29,3 +29,6 @@ pnpm-debug.log*
 
 # trove app data (only relevant if dev'd in tree)
 *.trove-cache
+
+CLAUDE.md
+docs/
