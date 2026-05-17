@@ -3,6 +3,7 @@ pub mod folders;
 pub mod health;
 pub mod media;
 pub mod messages;
+pub mod repair;
 pub mod search;
 pub mod settings;
 pub mod vault;

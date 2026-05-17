@@ -7,8 +7,7 @@
 
 use crate::commands::media;
 use crate::events::{self, ConvChanged};
-use crate::services::folder_scanner;
-use crate::services::volume_resolver;
+use crate::services::{folder_scanner, hasher, relocate, volume_resolver};
 use crate::{db, AppResult};
 use notify::{
     event::ModifyKind, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher,
@@ -23,6 +22,10 @@ use std::time::{Duration, Instant};
 
 const DEBOUNCE_MS: u64 = 500;
 const IDLE_TICK: Duration = Duration::from_secs(60);
+/// Hard cap on hash comparisons during a single flush. Prevents pathological
+/// bulk renames from blocking the watcher thread for too long; any unmatched
+/// removes fall through to `mark_broken` and can be recovered via `repair_media`.
+const MAX_RELOCATE_HASHES: usize = 64;
 
 #[allow(dead_code)]
 struct WatcherEntry {
@@ -153,6 +156,34 @@ fn handle_event(ev: Event, pending: &mut Pending) {
 
 fn flush(conv_id: i64, _root: &Path, pending: &mut Pending) {
     let mut added = 0usize;
+    let mut broken = 0usize;
+    let mut renamed = 0usize;
+
+    // Phase 1: detect rename pairs (remove ∩ create with matching size + blake3).
+    // Each successful pair drains both sides out of the pending sets.
+    let pairs = pair_renames(pending);
+    for (old_path, new_path) in pairs {
+        match handle_rename(&old_path, &new_path) {
+            Ok(true) => renamed += 1,
+            Ok(false) => {
+                // Pair couldn't be relocated (e.g. old row not in DB or
+                // refused merge); treat as raw create + remove instead.
+                pending.creates.insert(new_path);
+                pending.removes.insert(old_path);
+            }
+            Err(e) => {
+                eprintln!(
+                    "watcher rename {} → {} failed: {e}",
+                    old_path.display(),
+                    new_path.display()
+                );
+                pending.creates.insert(new_path);
+                pending.removes.insert(old_path);
+            }
+        }
+    }
+
+    // Phase 2: process creates as regular ingests.
     for p in pending.creates.drain() {
         if !p.is_file() {
             continue;
@@ -163,6 +194,8 @@ fn flush(conv_id: i64, _root: &Path, pending: &mut Pending) {
             Err(e) => eprintln!("watcher ingest failed for {}: {e}", p.display()),
         }
     }
+
+    // Phase 3: modifies re-ingest in place (idempotent for unchanged files).
     for p in pending.modifies.drain() {
         if !p.is_file() {
             continue;
@@ -171,15 +204,28 @@ fn flush(conv_id: i64, _root: &Path, pending: &mut Pending) {
             eprintln!("watcher modify ingest failed for {}: {e}", p.display());
         }
     }
-    let mut broken = 0usize;
+
+    // Phase 4: for each remaining removed path, first try to relocate it by
+    // hash within the conv root; only mark broken if relocation fails.
+    let mut hashes_used = 0usize;
     for p in pending.removes.drain() {
-        match mark_broken(&p) {
-            Ok(true) => broken += 1,
-            Ok(false) => {}
-            Err(e) => eprintln!("watcher mark_broken failed for {}: {e}", p.display()),
+        match try_relocate_removed(conv_id, &p, &mut hashes_used) {
+            Ok(true) => renamed += 1,
+            Ok(false) => match mark_broken(&p) {
+                Ok(true) => broken += 1,
+                Ok(false) => {}
+                Err(e) => eprintln!("watcher mark_broken failed for {}: {e}", p.display()),
+            },
+            Err(e) => {
+                eprintln!("watcher try_relocate_removed failed for {}: {e}", p.display());
+                if let Err(e2) = mark_broken(&p) {
+                    eprintln!("watcher mark_broken fallback failed: {e2}");
+                }
+            }
         }
     }
-    if added > 0 || broken > 0 {
+
+    if added > 0 || broken > 0 || renamed > 0 {
         let now = chrono::Utc::now().timestamp_millis();
         let _ = db::with_conn(|conn| -> AppResult<()> {
             conn.execute(
@@ -192,8 +238,190 @@ fn flush(conv_id: i64, _root: &Path, pending: &mut Pending) {
             conv_id,
             added,
             broken,
+            renamed,
         });
     }
+}
+
+/// Look up a media row by absolute path. Returns (media_id, size_bytes,
+/// blake3) if found. Resolves the parent via `volume_resolver` and uses
+/// (platform_id, relpath) for the lookup — identical to `mark_broken`.
+fn lookup_media_by_path(path: &Path) -> AppResult<Option<(i64, i64, String)>> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| crate::AppError::InvalidArg("no parent".into()))?;
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| crate::AppError::InvalidArg("no file name".into()))?
+        .to_string_lossy()
+        .to_string();
+    let parent_resolved = volume_resolver::resolve(parent)
+        .map_err(crate::AppError::InvalidArg)?;
+    let relpath = if parent_resolved.relpath.is_empty() {
+        file_name
+    } else {
+        format!("{}/{}", parent_resolved.relpath, file_name)
+    };
+    db::with_conn(|conn| -> AppResult<Option<(i64, i64, String)>> {
+        Ok(conn
+            .query_row(
+                "SELECT m.id, m.size_bytes, m.blake3 FROM media m
+                 JOIN volumes v ON v.id = m.volume_id
+                 WHERE v.platform_id = ?1 AND m.relpath = ?2",
+                params![parent_resolved.platform_id, relpath],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()?)
+    })
+}
+
+/// Pair pending removes with pending creates by (size, blake3). On match,
+/// drain both sides out and return the pair. Capped by MAX_RELOCATE_HASHES.
+fn pair_renames(pending: &mut Pending) -> Vec<(PathBuf, PathBuf)> {
+    if pending.removes.is_empty() || pending.creates.is_empty() {
+        return Vec::new();
+    }
+
+    // Snapshot DB-side metadata for every remove candidate up front.
+    // (size, blake3) -> remove path
+    let mut by_sig: HashMap<(i64, String), PathBuf> = HashMap::new();
+    for p in pending.removes.iter() {
+        match lookup_media_by_path(p) {
+            Ok(Some((_id, size, blake3))) => {
+                by_sig.insert((size, blake3), p.clone());
+            }
+            Ok(None) => {}
+            Err(e) => eprintln!("pair_renames lookup {} failed: {e}", p.display()),
+        }
+    }
+    if by_sig.is_empty() {
+        return Vec::new();
+    }
+
+    let removed_sizes: HashSet<i64> = by_sig.keys().map(|(s, _)| *s).collect();
+
+    let mut pairs = Vec::new();
+    let mut hashed = 0usize;
+    let creates_snapshot: Vec<PathBuf> = pending.creates.iter().cloned().collect();
+    for new_path in creates_snapshot {
+        if hashed >= MAX_RELOCATE_HASHES {
+            break;
+        }
+        if !new_path.is_file() {
+            continue;
+        }
+        let Ok(meta) = std::fs::metadata(&new_path) else {
+            continue;
+        };
+        let size = meta.len() as i64;
+        if !removed_sizes.contains(&size) {
+            continue;
+        }
+        let new_hash = match hasher::blake3_file(&new_path) {
+            Ok(h) => h,
+            Err(e) => {
+                eprintln!("pair_renames hash {} failed: {e}", new_path.display());
+                continue;
+            }
+        };
+        hashed += 1;
+        if let Some(old_path) = by_sig.remove(&(size, new_hash)) {
+            pending.creates.remove(&new_path);
+            pending.removes.remove(&old_path);
+            pairs.push((old_path, new_path));
+        }
+    }
+    pairs
+}
+
+/// Relocate `media_id` (looked up from `old_path`) to `new_path`.
+/// Returns `Ok(true)` if a row was moved/merged/found-already-at-target.
+fn handle_rename(old_path: &Path, new_path: &Path) -> AppResult<bool> {
+    let Some((media_id, _, _)) = lookup_media_by_path(old_path)? else {
+        return Ok(false);
+    };
+    relocate::relocate_media(media_id, new_path)?;
+    Ok(true)
+}
+
+/// Look in the conv's source root for a file matching (size, blake3) of the
+/// removed media. If found, relocate. Hash budget is shared across the flush
+/// via `hashes_used`.
+fn try_relocate_removed(
+    conv_id: i64,
+    removed_path: &Path,
+    hashes_used: &mut usize,
+) -> AppResult<bool> {
+    if *hashes_used >= MAX_RELOCATE_HASHES {
+        return Ok(false);
+    }
+    let Some((media_id, size, blake3)) = lookup_media_by_path(removed_path)? else {
+        return Ok(false);
+    };
+    let Some(root) = conv_root(conv_id)? else {
+        return Ok(false);
+    };
+    let candidates = folder_scanner::enumerate_media(&root);
+    for candidate in candidates {
+        if *hashes_used >= MAX_RELOCATE_HASHES {
+            break;
+        }
+        // Skip the now-gone old path if it happens to surface (it shouldn't).
+        if candidate == removed_path {
+            continue;
+        }
+        let Ok(meta) = std::fs::metadata(&candidate) else {
+            continue;
+        };
+        if (meta.len() as i64) != size {
+            continue;
+        }
+        let candidate_hash = match hasher::blake3_file(&candidate) {
+            Ok(h) => h,
+            Err(e) => {
+                eprintln!(
+                    "try_relocate_removed hash {} failed: {e}",
+                    candidate.display()
+                );
+                continue;
+            }
+        };
+        *hashes_used += 1;
+        if candidate_hash == blake3 {
+            relocate::relocate_media(media_id, &candidate)?;
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// Resolve a folder_watch conversation's current source root to an absolute
+/// path. Returns `None` for manual conversations or when the source volume is
+/// not currently mounted.
+fn conv_root(conv_id: i64) -> AppResult<Option<PathBuf>> {
+    let row: Option<(String, String, String)> = db::with_conn(|conn| {
+        Ok(conn
+            .query_row(
+                "SELECT c.kind, COALESCE(v.last_mount, ''), COALESCE(c.source_relpath, '')
+                 FROM conversations c
+                 LEFT JOIN volumes v ON v.id = c.source_volume_id
+                 WHERE c.id = ?1",
+                params![conv_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()?)
+    })?;
+    let Some((kind, mount, relpath)) = row else {
+        return Ok(None);
+    };
+    if kind != "folder_watch" || mount.is_empty() {
+        return Ok(None);
+    }
+    let root = volume_resolver::absolute_for(Path::new(&mount), &relpath);
+    if !root.is_dir() {
+        return Ok(None);
+    }
+    Ok(Some(root))
 }
 
 /// Mark the media row corresponding to `path` as broken. Returns `Ok(true)`

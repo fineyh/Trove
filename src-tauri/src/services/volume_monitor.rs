@@ -110,6 +110,7 @@ fn poll_once() -> Result<(), String> {
             conv_id,
             added: 0,
             broken: 0,
+            renamed: 0,
         });
     }
     events::emit_volumes_changed();

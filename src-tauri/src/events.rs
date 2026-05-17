@@ -20,6 +20,8 @@ pub struct ConvChanged {
     pub conv_id: i64,
     pub added: usize,
     pub broken: usize,
+    #[serde(default)]
+    pub renamed: usize,
 }
 
 pub fn emit_conv_changed(payload: ConvChanged) {

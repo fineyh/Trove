@@ -54,6 +54,7 @@ pub fn run() {
             commands::media::import_files,
             commands::folders::create_manual_from_folder,
             commands::folders::rescan_folder,
+            commands::repair::repair_media,
             commands::search::search,
             commands::settings::get_all_settings,
             commands::settings::get_setting,
