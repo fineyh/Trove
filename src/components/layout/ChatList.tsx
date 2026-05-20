@@ -1,4 +1,4 @@
-import { Plus, Search, Image, Video, FileText, Pin, Folder, MessageSquare, Lock } from "lucide-react";
+import { Plus, Search, Image, Video, FileText, Pin, Folder, MessageSquare, Lock, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useConversationsStore } from "../../stores/conversations";
 import { useSessionStore } from "../../stores/session";
@@ -7,6 +7,8 @@ import * as ipc from "../../ipc/client";
 import type { Conversation, SearchHit } from "../../types";
 import { cn } from "../../lib/cn";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
+import { ContextMenu } from "../ui/ContextMenu";
+import { ConfirmDialog } from "../ui/ConfirmDialog";
 
 function formatTimeAgo(ts: number): string {
   const diff = Date.now() - ts;
@@ -32,7 +34,12 @@ function PreviewIcon({ kind }: { kind: Conversation["previewKind"] }) {
   }
 }
 
-function ConversationRow({ c }: { c: Conversation }) {
+interface ConversationRowProps {
+  c: Conversation;
+  onContextMenu: (e: React.MouseEvent, conv: Conversation) => void;
+}
+
+function ConversationRow({ c, onContextMenu }: ConversationRowProps) {
   const active = useSessionStore((s) => s.activeConversationId === c.id);
   const setActive = useSessionStore((s) => s.setActiveConversation);
   const openVaultDialog = useVaultStore((s) => s.openDialog);
@@ -49,6 +56,7 @@ function ConversationRow({ c }: { c: Conversation }) {
     <button
       type="button"
       onClick={handleClick}
+      onContextMenu={(e) => onContextMenu(e, c)}
       className={cn(
         "flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors",
         "hover:bg-app-subtle",
@@ -104,11 +112,16 @@ function MessageHitRow({ hit }: { hit: SearchHit }) {
 export function ChatList() {
   const list = useConversationsStore((s) => s.list);
   const refresh = useConversationsStore((s) => s.refresh);
+  const remove = useConversationsStore((s) => s.remove);
   const search = useConversationsStore((s) => s.search);
   const setSearch = useConversationsStore((s) => s.setSearch);
   const setNewConvOpen = useSessionStore((s) => s.setNewConversationOpen);
+  const setActive = useSessionStore((s) => s.setActiveConversation);
 
   const [hits, setHits] = useState<SearchHit[]>([]);
+  const [menu, setMenu] = useState<{ convId: number; x: number; y: number } | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const debounced = useDebouncedValue(search, 200);
 
   useEffect(() => {
@@ -152,6 +165,32 @@ export function ChatList() {
 
   const showingSearch = search.trim().length > 0;
 
+  const handleContextMenu = (e: React.MouseEvent, conv: Conversation) => {
+    e.preventDefault();
+    setMenu({ convId: conv.id, x: e.clientX, y: e.clientY });
+  };
+
+  const confirmTarget = useMemo(
+    () => (confirmDeleteId == null ? null : list.find((c) => c.id === confirmDeleteId) ?? null),
+    [list, confirmDeleteId],
+  );
+
+  const handleConfirmDelete = async () => {
+    if (confirmDeleteId == null) return;
+    const id = confirmDeleteId;
+    setDeleteBusy(true);
+    try {
+      const wasActive = useSessionStore.getState().activeConversationId === id;
+      await remove(id);
+      if (wasActive) setActive(null);
+      setConfirmDeleteId(null);
+    } catch (e) {
+      console.error("delete conversation failed", e);
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
+
   return (
     <div className="flex h-full w-80 shrink-0 flex-col border-r border-app-border bg-app-panel">
       <div className="flex items-center gap-2 border-b border-app-border px-3 py-2.5">
@@ -192,7 +231,7 @@ export function ChatList() {
           </div>
         )}
         {filteredConvs.map((c) => (
-          <ConversationRow key={c.id} c={c} />
+          <ConversationRow key={c.id} c={c} onContextMenu={handleContextMenu} />
         ))}
         {showingSearch && filteredConvs.length === 0 && (
           <div className="px-4 py-2 text-xs text-app-muted">
@@ -217,6 +256,47 @@ export function ChatList() {
           </>
         )}
       </div>
+
+      <ContextMenu
+        open={menu !== null}
+        x={menu?.x ?? 0}
+        y={menu?.y ?? 0}
+        items={[
+          {
+            label: "删除会话",
+            icon: <Trash2 size={14} />,
+            variant: "danger",
+            onClick: () => {
+              if (menu) {
+                setConfirmDeleteId(menu.convId);
+                setMenu(null);
+              }
+            },
+          },
+        ]}
+        onClose={() => setMenu(null)}
+      />
+
+      <ConfirmDialog
+        open={confirmDeleteId !== null}
+        title="删除会话"
+        message={
+          confirmTarget ? (
+            <>
+              删除「<span className="font-medium">{confirmTarget.name}</span>」后，会话中的所有消息也会一并删除，此操作无法撤销。
+            </>
+          ) : (
+            "此操作无法撤销。"
+          )
+        }
+        confirmText="删除"
+        variant="danger"
+        busy={deleteBusy}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => {
+          if (!deleteBusy) setConfirmDeleteId(null);
+        }}
+      />
     </div>
   );
 }
