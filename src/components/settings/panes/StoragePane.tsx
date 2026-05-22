@@ -1,10 +1,10 @@
-import { Copy, FolderOpen, HardDrive, RefreshCw, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { Check, Copy, FolderOpen, HardDrive, RefreshCw, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { useConversationsStore } from "../../../stores/conversations";
 import { useSettingsStore } from "../../../stores/settings";
 import type { VolumePayload, VolumeStat } from "../../../types";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
-import { isTauri } from "../../../hooks/useIsTauri";
+import * as ipc from "../../../ipc/client";
 import { cn } from "../../../lib/cn";
 
 function formatBytes(n: number): string {
@@ -30,6 +30,15 @@ export function StoragePane() {
   const [pendingForget, setPendingForget] = useState<VolumePayload | null>(null);
   const [forgetBusy, setForgetBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  const copyTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current !== null) {
+        window.clearTimeout(copyTimerRef.current);
+      }
+    };
+  }, []);
 
   const sizeByVolume = new Map<number, number>(
     (stats?.byVolume ?? []).map((v: VolumeStat) => [v.volumeId, v.sizeBytes]),
@@ -57,17 +66,22 @@ export function StoragePane() {
     try {
       await navigator.clipboard.writeText(stats.dataDir);
       setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      if (copyTimerRef.current !== null) {
+        window.clearTimeout(copyTimerRef.current);
+      }
+      copyTimerRef.current = window.setTimeout(() => {
+        setCopied(false);
+        copyTimerRef.current = null;
+      }, 1500);
     } catch (e) {
       console.error("clipboard.writeText failed", e);
     }
   };
 
   const handleOpenDir = async () => {
-    if (!stats?.dataDir || !isTauri()) return;
+    if (!stats?.dataDir) return;
     try {
-      const { open } = await import("@tauri-apps/plugin-shell");
-      await open(stats.dataDir);
+      await ipc.openPath(stats.dataDir);
     } catch (e) {
       console.error("open dataDir failed", e);
     }
@@ -91,9 +105,21 @@ export function StoragePane() {
             onClick={handleCopyPath}
             disabled={!stats?.dataDir}
             title={copied ? "已复制" : "复制路径"}
-            className="flex h-7 w-7 items-center justify-center rounded text-app-muted hover:bg-app-subtle hover:text-app-fg disabled:opacity-40"
+            className={cn(
+              "flex h-7 items-center gap-1 rounded px-1.5 text-xs transition-colors disabled:opacity-40",
+              copied
+                ? "bg-emerald-500/15 text-emerald-600"
+                : "text-app-muted hover:bg-app-subtle hover:text-app-fg",
+            )}
           >
-            <Copy size={13} />
+            {copied ? (
+              <>
+                <Check size={13} />
+                <span>已复制</span>
+              </>
+            ) : (
+              <Copy size={13} />
+            )}
           </button>
           <button
             type="button"

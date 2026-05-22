@@ -177,6 +177,10 @@ export async function getStorageStats(): Promise<StorageStats | null> {
   return invoke<StorageStats>("get_storage_stats");
 }
 
+export async function openPath(path: string): Promise<void> {
+  await invoke("open_path", { path });
+}
+
 const DEFAULT_VAULT: VaultStatus = { hasMasterPassword: false, unlocked: true };
 
 export async function vaultStatus(): Promise<VaultStatus> {

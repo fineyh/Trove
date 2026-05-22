@@ -6,5 +6,6 @@ pub mod messages;
 pub mod repair;
 pub mod search;
 pub mod settings;
+pub mod system;
 pub mod vault;
 pub mod volumes;
