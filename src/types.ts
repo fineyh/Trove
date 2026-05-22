@@ -71,3 +71,17 @@ export interface VolumePayload {
   mediaCount: number;
   brokenCount: number;
 }
+
+export interface VolumeStat {
+  volumeId: number;
+  label: string;
+  mediaCount: number;
+  sizeBytes: number;
+}
+
+export interface StorageStats {
+  dataDir: string;
+  totalMedia: number;
+  totalBytes: number;
+  byVolume: VolumeStat[];
+}

@@ -9,6 +9,7 @@ import type {
   MissingFileStrategy,
   Message,
   SearchHit,
+  StorageStats,
   VaultStatus,
   VolumePayload,
 } from "../types";
@@ -169,6 +170,11 @@ export async function rescanVolumes(): Promise<void> {
 
 export async function forgetVolume(id: number): Promise<void> {
   await invoke("forget_volume", { id });
+}
+
+export async function getStorageStats(): Promise<StorageStats | null> {
+  if (!isTauri()) return null;
+  return invoke<StorageStats>("get_storage_stats");
 }
 
 const DEFAULT_VAULT: VaultStatus = { hasMasterPassword: false, unlocked: true };

@@ -100,6 +100,11 @@ pub fn has_master_password() -> bool {
     read_state(|s| s.has_master)
 }
 
+/// The application data directory (where `trove.db` and `vault.json` live).
+pub fn data_dir() -> PathBuf {
+    read_state(|s| s.data_dir.clone())
+}
+
 /// True if the DB is currently usable (no master pwd, or vault unlocked).
 pub fn is_unlocked() -> bool {
     read_state(|s| !s.has_master || s.master_kek.is_some())

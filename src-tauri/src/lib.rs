@@ -68,6 +68,7 @@ pub fn run() {
             commands::volumes::list_volumes,
             commands::volumes::rescan_volumes,
             commands::volumes::forget_volume,
+            commands::volumes::get_storage_stats,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Trove");

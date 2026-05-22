@@ -66,3 +66,61 @@ pub fn forget_volume(id: i64) -> AppResult<()> {
         Ok(())
     })
 }
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VolumeStat {
+    pub volume_id: i64,
+    pub label: String,
+    pub media_count: i64,
+    pub size_bytes: i64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StorageStats {
+    pub data_dir: String,
+    pub total_media: i64,
+    pub total_bytes: i64,
+    pub by_volume: Vec<VolumeStat>,
+}
+
+#[tauri::command]
+pub fn get_storage_stats() -> AppResult<StorageStats> {
+    let data_dir = services::vault::data_dir()
+        .to_string_lossy()
+        .into_owned();
+
+    db::with_conn(|conn| {
+        let (total_media, total_bytes) = conn.query_row(
+            "SELECT COUNT(*), COALESCE(SUM(size_bytes), 0) FROM media",
+            [],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+        )?;
+
+        let mut stmt = conn.prepare(
+            "SELECT v.id, v.label,
+                    (SELECT COUNT(*) FROM media WHERE volume_id = v.id) AS cnt,
+                    (SELECT COALESCE(SUM(size_bytes), 0) FROM media WHERE volume_id = v.id) AS sz
+             FROM volumes v
+             ORDER BY v.id",
+        )?;
+        let by_volume = stmt
+            .query_map([], |row| {
+                Ok(VolumeStat {
+                    volume_id: row.get(0)?,
+                    label: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                    media_count: row.get(2)?,
+                    size_bytes: row.get(3)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+
+        Ok(StorageStats {
+            data_dir,
+            total_media,
+            total_bytes,
+            by_volume,
+        })
+    })
+}
