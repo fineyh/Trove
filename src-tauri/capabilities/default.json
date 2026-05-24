@@ -22,6 +22,8 @@
       "allow": [{ "path": "**" }]
     },
     "os:default",
-    "shell:default"
+    "shell:default",
+    "process:default",
+    "process:allow-restart"
   ]
 }

@@ -1,3 +1,4 @@
+pub mod backup;
 pub mod crypto;
 pub mod file_watcher;
 pub mod folder_scanner;
