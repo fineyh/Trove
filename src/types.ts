@@ -137,3 +137,11 @@ export interface BackupImportResult {
   includesVault: boolean;
   dbEncrypted: boolean;
 }
+
+export interface UpdateInfo {
+  available: boolean;
+  currentVersion: string;
+  latestVersion: string | null;
+  date: string | null;
+  notes: string | null;
+}

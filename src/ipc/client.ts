@@ -16,6 +16,7 @@ import type {
   RepairScope,
   SearchHit,
   StorageStats,
+  UpdateInfo,
   VaultStatus,
   VolumePayload,
 } from "../types";
@@ -308,4 +309,12 @@ export async function exportBackup(destPath: string): Promise<BackupExportResult
 
 export async function importBackup(sourcePath: string): Promise<BackupImportResult> {
   return invoke<BackupImportResult>("import_backup", { args: { sourcePath } });
+}
+
+export async function checkForUpdate(): Promise<UpdateInfo> {
+  return invoke<UpdateInfo>("check_for_update");
+}
+
+export async function installUpdate(): Promise<void> {
+  await invoke("install_update");
 }

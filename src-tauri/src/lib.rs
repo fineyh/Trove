@@ -16,6 +16,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let data_dir = app
                 .path()
@@ -77,6 +78,8 @@ pub fn run() {
             commands::auth::logout,
             commands::backup::export_backup,
             commands::backup::import_backup,
+            commands::updater::check_for_update,
+            commands::updater::install_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Trove");

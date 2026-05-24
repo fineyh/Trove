@@ -9,5 +9,6 @@ pub mod repair;
 pub mod search;
 pub mod settings;
 pub mod system;
+pub mod updater;
 pub mod vault;
 pub mod volumes;
