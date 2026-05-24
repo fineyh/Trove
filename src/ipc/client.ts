@@ -3,11 +3,14 @@ import { convertFileSrc as tauriConvertFileSrc } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   AppSettings,
+  BrokenGroup,
   Conversation,
   ConversationKind,
   ConvChangedEvent,
   MissingFileStrategy,
   Message,
+  RepairOutcome,
+  RepairScope,
   SearchHit,
   StorageStats,
   VaultStatus,
@@ -141,7 +144,32 @@ export async function onVolumesChanged(
   return listen("volumes:changed", () => handler());
 }
 
-const DEFAULT_SETTINGS: AppSettings = { missingFileStrategy: "hide" };
+const DEFAULT_SETTINGS: AppSettings = {
+  missingFileStrategy: "hide",
+  repairDefaultScope: "lastFolderOnly",
+};
+
+function parseRepairScope(raw: string | undefined): RepairScope {
+  switch (raw) {
+    case "last_folder_recursive":
+      return "lastFolderRecursive";
+    case "all_volumes":
+      return "allMountedVolumes";
+    default:
+      return "lastFolderOnly";
+  }
+}
+
+function serializeRepairScope(value: RepairScope): string {
+  switch (value) {
+    case "lastFolderRecursive":
+      return "last_folder_recursive";
+    case "allMountedVolumes":
+      return "all_volumes";
+    default:
+      return "last_folder_only";
+  }
+}
 
 export async function getAllSettings(): Promise<AppSettings> {
   if (!isTauri()) return DEFAULT_SETTINGS;
@@ -150,6 +178,7 @@ export async function getAllSettings(): Promise<AppSettings> {
   return {
     missingFileStrategy:
       strategy === "placeholder" ? "placeholder" : "hide",
+    repairDefaultScope: parseRepairScope(raw["repair_default_scope"]),
   };
 }
 
@@ -157,6 +186,28 @@ export async function setMissingFileStrategy(
   value: MissingFileStrategy,
 ): Promise<void> {
   await invoke("set_setting", { key: "missing_file_strategy", value });
+}
+
+export async function setRepairDefaultScope(value: RepairScope): Promise<void> {
+  await invoke("set_setting", {
+    key: "repair_default_scope",
+    value: serializeRepairScope(value),
+  });
+}
+
+export async function listBrokenPointers(): Promise<BrokenGroup[]> {
+  if (!isTauri()) return [];
+  return invoke<BrokenGroup[]>("list_broken_pointers");
+}
+
+export interface RepairMediaArgs {
+  mediaId: number;
+  scope: RepairScope;
+  explicitPath?: string;
+}
+
+export async function repairMedia(args: RepairMediaArgs): Promise<RepairOutcome> {
+  return invoke<RepairOutcome>("repair_media", { args });
 }
 
 export async function listVolumes(): Promise<VolumePayload[]> {

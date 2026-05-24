@@ -3,6 +3,7 @@ import * as ipc from "../ipc/client";
 import type {
   AppSettings,
   MissingFileStrategy,
+  RepairScope,
   StorageStats,
   VolumePayload,
 } from "../types";
@@ -18,12 +19,13 @@ interface SettingsState {
   loadVolumes: () => Promise<void>;
   loadStats: () => Promise<void>;
   setMissingStrategy: (value: MissingFileStrategy) => Promise<void>;
+  setRepairScope: (value: RepairScope) => Promise<void>;
   rescan: () => Promise<void>;
   forget: (id: number) => Promise<void>;
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
-  settings: { missingFileStrategy: "hide" },
+  settings: { missingFileStrategy: "hide", repairDefaultScope: "lastFolderOnly" },
   volumes: EMPTY_VOLUMES,
   stats: null,
   loading: false,
@@ -60,6 +62,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setMissingStrategy: async (value) => {
     await ipc.setMissingFileStrategy(value);
     set((s) => ({ settings: { ...s.settings, missingFileStrategy: value } }));
+  },
+  setRepairScope: async (value) => {
+    await ipc.setRepairDefaultScope(value);
+    set((s) => ({ settings: { ...s.settings, repairDefaultScope: value } }));
   },
   rescan: async () => {
     await ipc.rescanVolumes();

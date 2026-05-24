@@ -57,9 +57,39 @@ export interface ConvChangedEvent {
 
 export type MissingFileStrategy = "hide" | "placeholder";
 
+export type RepairScope =
+  | "lastFolderOnly"
+  | "lastFolderRecursive"
+  | "allMountedVolumes";
+
 export interface AppSettings {
   missingFileStrategy: MissingFileStrategy;
+  repairDefaultScope: RepairScope;
 }
+
+export interface BrokenItem {
+  messageId: number;
+  mediaId: number;
+  kind: "image" | "video" | "other";
+  thumbPath: string | null;
+  lastKnownRelpath: string | null;
+  lastKnownVolumeLabel: string | null;
+  detectedAt: number;
+  sizeBytes: number;
+  messageCreatedAt: number;
+}
+
+export interface BrokenGroup {
+  convId: number;
+  convName: string;
+  items: BrokenItem[];
+}
+
+export type RepairOutcome =
+  | { status: "repaired"; absolute: string }
+  | { status: "notFound" }
+  | { status: "ambiguous"; candidates: string[] }
+  | { status: "mismatch"; reason: string };
 
 export interface VolumePayload {
   id: number;

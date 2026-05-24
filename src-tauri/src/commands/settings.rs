@@ -2,7 +2,11 @@ use crate::{db, AppError, AppResult};
 use rusqlite::{params, OptionalExtension};
 use std::collections::HashMap;
 
-const ALLOWED_KEYS: &[&str] = &["missing_file_strategy", "app_locked"];
+const ALLOWED_KEYS: &[&str] = &[
+    "missing_file_strategy",
+    "app_locked",
+    "repair_default_scope",
+];
 
 #[tauri::command]
 pub fn get_all_settings() -> AppResult<HashMap<String, String>> {
@@ -23,6 +27,15 @@ pub fn set_setting(key: String, value: String) -> AppResult<()> {
     if key == "missing_file_strategy" && value != "hide" && value != "placeholder" {
         return Err(AppError::InvalidArg(format!(
             "missing_file_strategy must be hide|placeholder, got {value}"
+        )));
+    }
+    if key == "repair_default_scope"
+        && value != "last_folder_only"
+        && value != "last_folder_recursive"
+        && value != "all_volumes"
+    {
+        return Err(AppError::InvalidArg(format!(
+            "repair_default_scope must be last_folder_only|last_folder_recursive|all_volumes, got {value}"
         )));
     }
     db::with_conn(|conn| {

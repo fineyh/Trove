@@ -253,7 +253,25 @@ pub fn increment_play_count(message_id: i64) -> AppResult<i64> {
 #[tauri::command]
 pub fn delete_message(message_id: i64) -> AppResult<()> {
     db::with_conn(|conn| {
+        let media_id: Option<i64> = conn
+            .query_row(
+                "SELECT media_id FROM messages WHERE id = ?1",
+                params![message_id],
+                |r| r.get(0),
+            )
+            .optional()?;
         conn.execute("DELETE FROM messages WHERE id = ?1", params![message_id])?;
+        if let Some(mid) = media_id {
+            let still_referenced: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM messages WHERE media_id = ?1",
+                params![mid],
+                |r| r.get(0),
+            )?;
+            if still_referenced == 0 {
+                // CASCADE clears the matching broken_pointers row automatically.
+                conn.execute("DELETE FROM media WHERE id = ?1", params![mid])?;
+            }
+        }
         Ok(())
     })
 }
