@@ -149,3 +149,24 @@ pub fn decrypt_caption(key: &SecretKey, nonce: &[u8], ciphertext: &[u8]) -> Resu
     let pt = aead_decrypt(key, nonce, ciphertext, b"trove:caption:v1")?;
     String::from_utf8(pt).context("decrypted caption is not valid UTF-8")
 }
+
+/// AAD for the encrypted `identity.refresh_token_enc` blob.
+pub const IDENTITY_REFRESH_AAD: &[u8] = b"trove:identity:refresh:v1";
+
+/// Seal a variable-length blob under a key with `nonce(12) || ciphertext+tag` layout.
+pub fn seal_blob(key: &SecretKey, plaintext: &[u8], aad: &[u8]) -> Result<Vec<u8>> {
+    let (nonce, ct) = aead_encrypt(key, plaintext, aad)?;
+    let mut out = Vec::with_capacity(nonce.len() + ct.len());
+    out.extend_from_slice(&nonce);
+    out.extend_from_slice(&ct);
+    Ok(out)
+}
+
+/// Inverse of [seal_blob].
+pub fn open_blob(key: &SecretKey, sealed: &[u8], aad: &[u8]) -> Result<Vec<u8>> {
+    if sealed.len() < NONCE_LEN + 16 {
+        return Err(anyhow!("sealed blob too short"));
+    }
+    let (nonce, ct) = sealed.split_at(NONCE_LEN);
+    aead_decrypt(key, nonce, ct, aad)
+}

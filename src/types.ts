@@ -115,3 +115,11 @@ export interface StorageStats {
   totalBytes: number;
   byVolume: VolumeStat[];
 }
+
+export interface AuthStatus {
+  hasIdentity: boolean;
+  email: string | null;
+  displayName: string | null;
+  pictureUrl: string | null;
+  vaultUnlocked: boolean;
+}

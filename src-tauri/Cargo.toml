@@ -39,6 +39,12 @@ zeroize = { version = "1.8", features = ["zeroize_derive"] }
 base64 = "0.22"
 hex = "0.4"
 
+# Phase 6 — Google PKCE login
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "time", "sync"] }
+oauth2 = { version = "5", default-features = false, features = ["reqwest", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+url = "2"
+
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [
     "Win32_Foundation",

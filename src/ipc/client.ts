@@ -3,6 +3,7 @@ import { convertFileSrc as tauriConvertFileSrc } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   AppSettings,
+  AuthStatus,
   BrokenGroup,
   Conversation,
   ConversationKind,
@@ -276,4 +277,25 @@ export async function lockConversation(convId: number): Promise<void> {
 export async function listUnlockedConversations(): Promise<number[]> {
   if (!isTauri()) return [];
   return invoke<number[]>("list_unlocked_conversations");
+}
+
+const DEFAULT_AUTH: AuthStatus = {
+  hasIdentity: false,
+  email: null,
+  displayName: null,
+  pictureUrl: null,
+  vaultUnlocked: true,
+};
+
+export async function authStatus(): Promise<AuthStatus> {
+  if (!isTauri()) return DEFAULT_AUTH;
+  return invoke<AuthStatus>("auth_status");
+}
+
+export async function googleLogin(): Promise<AuthStatus> {
+  return invoke<AuthStatus>("google_login");
+}
+
+export async function logout(): Promise<void> {
+  await invoke("logout");
 }
