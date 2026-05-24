@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod backup;
 pub mod conversations;
 pub mod folders;
 pub mod health;

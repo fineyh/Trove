@@ -123,3 +123,17 @@ export interface AuthStatus {
   pictureUrl: string | null;
   vaultUnlocked: boolean;
 }
+
+export interface BackupExportResult {
+  destPath: string;
+  bytes: number;
+  includesVault: boolean;
+  dbEncrypted: boolean;
+}
+
+export interface BackupImportResult {
+  backupDir: string;
+  restoredDbBytes: number;
+  includesVault: boolean;
+  dbEncrypted: boolean;
+}

@@ -4,6 +4,8 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   AppSettings,
   AuthStatus,
+  BackupExportResult,
+  BackupImportResult,
   BrokenGroup,
   Conversation,
   ConversationKind,
@@ -298,4 +300,12 @@ export async function googleLogin(): Promise<AuthStatus> {
 
 export async function logout(): Promise<void> {
   await invoke("logout");
+}
+
+export async function exportBackup(destPath: string): Promise<BackupExportResult> {
+  return invoke<BackupExportResult>("export_backup", { args: { destPath } });
+}
+
+export async function importBackup(sourcePath: string): Promise<BackupImportResult> {
+  return invoke<BackupImportResult>("import_backup", { args: { sourcePath } });
 }
