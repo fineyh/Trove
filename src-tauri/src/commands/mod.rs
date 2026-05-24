@@ -1,3 +1,4 @@
+pub mod auth;
 pub mod conversations;
 pub mod folders;
 pub mod health;

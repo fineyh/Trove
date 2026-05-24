@@ -94,7 +94,8 @@ CREATE TABLE identity (
   email             TEXT,
   google_sub        TEXT,
   refresh_token_enc BLOB,
-  display_name      TEXT
+  display_name      TEXT,
+  picture_url       TEXT
 );
 
 CREATE TABLE settings (

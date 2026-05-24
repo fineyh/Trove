@@ -110,7 +110,6 @@ pub fn is_unlocked() -> bool {
     read_state(|s| !s.has_master || s.master_kek.is_some())
 }
 
-#[allow(dead_code)]
 pub fn master_kek() -> Option<SecretKey> {
     read_state(|s| s.master_kek.clone())
 }

@@ -71,6 +71,9 @@ pub fn run() {
             commands::volumes::forget_volume,
             commands::volumes::get_storage_stats,
             commands::system::open_path,
+            commands::auth::auth_status,
+            commands::auth::google_login,
+            commands::auth::logout,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Trove");
