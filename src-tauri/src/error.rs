@@ -15,6 +15,9 @@ pub enum AppError {
     #[error("invalid argument: {0}")]
     InvalidArg(String),
 
+    #[error("updater error: {0}")]
+    Updater(#[from] tauri_plugin_updater::Error),
+
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
