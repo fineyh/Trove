@@ -36,6 +36,7 @@ function ImageMessage({ message }: MessageBubbleProps) {
 function VideoMessage({ message }: MessageBubbleProps) {
   const ref = useRef<HTMLVideoElement | null>(null);
   const open = useSessionStore((s) => s.openLightbox);
+  const lightboxOpen = useSessionStore((s) => s.lightboxMessageId !== null);
   const url = mediaUrl(message.media!.absolutePath);
 
   useEffect(() => {
@@ -44,7 +45,7 @@ function VideoMessage({ message }: MessageBubbleProps) {
     const io = new IntersectionObserver(
       (entries) => {
         for (const e of entries) {
-          if (e.isIntersecting) {
+          if (e.isIntersecting && !lightboxOpen) {
             void el.play().catch(() => {});
           } else {
             el.pause();
@@ -55,7 +56,7 @@ function VideoMessage({ message }: MessageBubbleProps) {
     );
     io.observe(el);
     return () => io.disconnect();
-  }, []);
+  }, [lightboxOpen]);
 
   return (
     <button
