@@ -1,0 +1,89 @@
+import {
+  WebviewWindow,
+  getAllWebviewWindows,
+} from "@tauri-apps/api/webviewWindow";
+import type { Message } from "../types";
+import { mediaUrl } from "../ipc/client";
+import { useMessagesStore } from "../stores/messages";
+
+/** Label prefix for every video player popup window. */
+export const PLAYER_LABEL_PREFIX = "player-";
+
+/** Custom title-bar height (logical px) — must match `player.html` CSS. */
+export const PLAYER_TITLEBAR_HEIGHT = 32;
+
+// Fallback popup size used only until the player reads the video's real
+// dimensions on `loadedmetadata` and resizes itself to the actual size.
+const DEFAULT_WIDTH = 640;
+const DEFAULT_HEIGHT = 360;
+/** Cap the *initial* width so a known-huge video doesn't spawn off-screen
+ *  (the player clamps to the monitor afterwards anyway). */
+const INITIAL_MAX_WIDTH = 1280;
+/** Pixel step for cascading successive popups so they don't fully overlap. */
+const CASCADE_STEP = 32;
+
+/**
+ * Open a video in its own standalone player window. Each video gets a
+ * dedicated `WebviewWindow` loading the lightweight `player.html`; re-invoking
+ * for an already-open video just refocuses it. The media URL is passed
+ * pre-built (asset protocol) via query string, so the popup needs no IPC.
+ */
+export async function openPlayerWindow(message: Message): Promise<void> {
+  if (!message.media || message.media.kind !== "video") return;
+
+  const label = `${PLAYER_LABEL_PREFIX}${message.id}`;
+
+  const existing = await WebviewWindow.getByLabel(label);
+  if (existing) {
+    await existing.unminimize().catch(() => {});
+    await existing.setFocus().catch(() => {});
+    return;
+  }
+
+  const src = mediaUrl(message.media.absolutePath);
+  const title = message.caption?.trim() || "Trove 视频";
+  const query = new URLSearchParams({ src, title }).toString();
+
+  // Initial size hint from known media dimensions (often null until ffmpeg
+  // probing lands); the player resizes to the true size once metadata loads.
+  let initW = DEFAULT_WIDTH;
+  let initH = DEFAULT_HEIGHT;
+  if (message.media.width && message.media.height) {
+    const scale = Math.min(1, INITIAL_MAX_WIDTH / message.media.width);
+    initW = Math.round(message.media.width * scale);
+    initH = Math.round(message.media.height * scale);
+  }
+
+  // Cascade new popups off the count of windows already open.
+  const offset =
+    ((await getAllWebviewWindows()).filter((w) =>
+      w.label.startsWith(PLAYER_LABEL_PREFIX),
+    ).length %
+      8) *
+    CASCADE_STEP;
+
+  new WebviewWindow(label, {
+    url: `player.html?${query}`,
+    title,
+    width: initW,
+    height: initH + PLAYER_TITLEBAR_HEIGHT,
+    decorations: false,
+    resizable: true,
+    // Not always-on-top by default — the player exposes a pin toggle instead.
+    x: 120 + offset,
+    y: 120 + offset,
+  });
+
+  // Mirror Lightbox: opening a video counts as a play.
+  void useMessagesStore.getState().registerPlay(message.id);
+}
+
+/** Close every video player popup (e.g. when the main window is closing). */
+export async function closeAllPlayerWindows(): Promise<void> {
+  const wins = await getAllWebviewWindows();
+  await Promise.all(
+    wins
+      .filter((w) => w.label.startsWith(PLAYER_LABEL_PREFIX))
+      .map((w) => w.close().catch(() => {})),
+  );
+}

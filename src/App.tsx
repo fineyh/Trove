@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Sidebar } from "./components/layout/Sidebar";
 import { ChatList } from "./components/layout/ChatList";
 import { ChatView } from "./components/layout/ChatView";
@@ -14,6 +15,8 @@ import { useMessagesStore } from "./stores/messages";
 import { useSessionStore } from "./stores/session";
 import { useSettingsStore } from "./stores/settings";
 import { useVaultStore } from "./stores/vault";
+import { isTauri } from "./hooks/useIsTauri";
+import { closeAllPlayerWindows } from "./lib/playerWindow";
 
 export default function App() {
   const vaultReady = useVaultStore((s) => s.ready);
@@ -23,6 +26,27 @@ export default function App() {
   useEffect(() => {
     void refreshVault();
   }, [refreshVault]);
+
+  // Video player popups are separate OS windows; Tauri only exits once every
+  // window is gone. Close them all when the main window is closing so the app
+  // process actually terminates.
+  useEffect(() => {
+    if (!isTauri()) return;
+    let unlisten: (() => void) | null = null;
+    let cancelled = false;
+    void getCurrentWindow()
+      .onCloseRequested(async () => {
+        await closeAllPlayerWindows();
+      })
+      .then((fn) => {
+        if (cancelled) fn();
+        else unlisten = fn;
+      });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
 
   const locked = vaultStatus.hasMasterPassword && !vaultStatus.unlocked;
   // Gate data-loading on `vaultReady`: until the vault status has actually

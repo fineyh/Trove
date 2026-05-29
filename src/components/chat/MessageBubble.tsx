@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { ImageOff, Play, Trash2 } from "lucide-react";
+import { ImageOff, PictureInPicture2, Play, Trash2 } from "lucide-react";
 import type { Message } from "../../types";
 import { mediaUrl } from "../../ipc/client";
 import { useSessionStore } from "../../stores/session";
 import { useMessagesStore } from "../../stores/messages";
 import { useConversationsStore } from "../../stores/conversations";
-import { ContextMenu } from "../ui/ContextMenu";
+import { ContextMenu, type ContextMenuItem } from "../ui/ContextMenu";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
+import { openPlayerWindow } from "../../lib/playerWindow";
 import { formatFullDateTime, formatMessageTime } from "../../lib/datetime";
 
 interface MessageBubbleProps {
@@ -147,6 +148,11 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   const canDeleteFile =
     message.media != null && message.media.state === "live";
 
+  // A live video can be opened in its own standalone player window —
+  // allowed even in folder_watch conversations (playing isn't mutating).
+  const canOpenInWindow =
+    message.media?.kind === "video" && message.media.state === "live";
+
   const time = formatMessageTime(message.createdAt);
   const fullTime = formatFullDateTime(message.createdAt);
 
@@ -157,12 +163,6 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   else if (message.media?.kind === "video") body = <VideoMessage message={message} />;
   else if (message.media) body = <FileMessage message={message} />;
   else body = <TextMessage message={message} />;
-
-  const handleContextMenu = (e: React.MouseEvent) => {
-    e.preventDefault();
-    if (isFolderWatch) return; // 路径会话不提供删除
-    setMenu({ x: e.clientX, y: e.clientY });
-  };
 
   const openConfirm = () => {
     setMenu(null);
@@ -182,6 +182,33 @@ export function MessageBubble({ message }: MessageBubbleProps) {
     }
   };
 
+  const menuItems: ContextMenuItem[] = [];
+  if (canOpenInWindow) {
+    menuItems.push({
+      label: "在新窗口播放",
+      icon: <PictureInPicture2 size={14} />,
+      onClick: () => {
+        setMenu(null);
+        void openPlayerWindow(message);
+      },
+    });
+  }
+  // folder_watch ("路径") conversations don't offer message deletion.
+  if (!isFolderWatch) {
+    menuItems.push({
+      label: "删除消息",
+      variant: "danger",
+      icon: <Trash2 size={14} />,
+      onClick: openConfirm,
+    });
+  }
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (menuItems.length === 0) return;
+    setMenu({ x: e.clientX, y: e.clientY });
+  };
+
   return (
     <>
       <div className="flex flex-col gap-1" onContextMenu={handleContextMenu}>
@@ -199,14 +226,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
         x={menu?.x ?? 0}
         y={menu?.y ?? 0}
         onClose={() => setMenu(null)}
-        items={[
-          {
-            label: "删除消息",
-            variant: "danger",
-            icon: <Trash2 size={14} />,
-            onClick: openConfirm,
-          },
-        ]}
+        items={menuItems}
       />
 
       <ConfirmDialog

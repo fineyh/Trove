@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Trove Player</title>
+    <style>
+      :root {
+        --titlebar-h: 32px;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #000;
+        overflow: hidden;
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        user-select: none;
+      }
+      #titlebar {
+        display: flex;
+        align-items: center;
+        height: var(--titlebar-h);
+        background: #1b1b1b;
+        color: #ddd;
+        padding-left: 10px;
+      }
+      #title {
+        flex: 1;
+        min-width: 0;
+        font-size: 12px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        line-height: var(--titlebar-h);
+      }
+      #controls {
+        display: flex;
+        height: 100%;
+      }
+      #controls button {
+        width: 40px;
+        height: 100%;
+        border: 0;
+        background: transparent;
+        color: #bbb;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      #controls button:hover {
+        background: rgba(255, 255, 255, 0.1);
+        color: #fff;
+      }
+      #close:hover {
+        background: #c0392b;
+        color: #fff;
+      }
+      /* Pinned state: highlight the toggle. */
+      #pin.active {
+        color: #4c8bf5;
+      }
+      #pin.active:hover {
+        color: #4c8bf5;
+      }
+      #player {
+        display: block;
+        width: 100vw;
+        height: calc(100vh - var(--titlebar-h));
+        object-fit: contain;
+        background: #000;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="titlebar" data-tauri-drag-region>
+      <span id="title" data-tauri-drag-region></span>
+      <div id="controls">
+        <button id="pin" type="button" title="置顶">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="17" x2="12" y2="22" />
+            <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z" />
+          </svg>
+        </button>
+        <button id="close" type="button" title="关闭">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </div>
+    </div>
+    <video id="player" controls autoplay playsinline></video>
+    <script type="module" src="/src/player/main.ts"></script>
+  </body>
+</html>
