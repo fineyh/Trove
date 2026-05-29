@@ -60,3 +60,12 @@ textarea {
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* 悬浮日期头：吸顶（data-stuck）且滚动已停止（容器 data-scrolling="false"）时淡出，
+   静止阅读不遮挡内容。未吸顶的分隔条永远是普通流内分隔条，不受影响。 */
+.day-divider {
+  pointer-events: none;
+}
+[data-scrolling="false"] .day-divider[data-stuck="true"] {
+  opacity: 0;
+}

@@ -1,5 +1,5 @@
 import { Lock, LockOpen, Pin } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useConversationsStore } from "../../stores/conversations";
 import { EMPTY_MESSAGES, useMessagesStore } from "../../stores/messages";
 import { useSessionStore } from "../../stores/session";
@@ -26,6 +26,7 @@ export function ChatView() {
   );
   const loadMessages = useMessagesStore((s) => s.load);
   const openVaultDialog = useVaultStore((s) => s.openDialog);
+  const mainRef = useRef<HTMLElement | null>(null);
 
   const locked = conv?.encrypted === true && conv.unlocked === false;
 
@@ -95,7 +96,7 @@ export function ChatView() {
         </div>
       </header>
 
-      <main className="flex-1 overflow-y-auto bg-app">
+      <main ref={mainRef} className="flex-1 overflow-y-auto bg-app">
         {locked ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-app-muted">
             <div className="flex h-14 w-14 items-center justify-center rounded-full bg-app-accent/10 text-app-accent">
@@ -111,7 +112,11 @@ export function ChatView() {
             </button>
           </div>
         ) : (
-          <MessageList messages={messages} loading={loading} />
+          <MessageList
+            messages={messages}
+            loading={loading}
+            scrollContainerRef={mainRef}
+          />
         )}
       </main>
 
