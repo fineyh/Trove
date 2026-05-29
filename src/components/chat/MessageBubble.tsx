@@ -7,6 +7,7 @@ import { useMessagesStore } from "../../stores/messages";
 import { useConversationsStore } from "../../stores/conversations";
 import { ContextMenu } from "../ui/ContextMenu";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
+import { formatFullDateTime, formatMessageTime } from "../../lib/datetime";
 
 interface MessageBubbleProps {
   message: Message;
@@ -146,10 +147,8 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   const canDeleteFile =
     message.media != null && message.media.state === "live";
 
-  const time = new Date(message.createdAt).toLocaleString("zh-CN", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  const time = formatMessageTime(message.createdAt);
+  const fullTime = formatFullDateTime(message.createdAt);
 
   let body: React.ReactNode;
   if (message.media?.state === "broken")
@@ -190,7 +189,9 @@ export function MessageBubble({ message }: MessageBubbleProps) {
         {message.media && message.caption && (
           <div className="max-w-md text-sm text-app-fg/80">{message.caption}</div>
         )}
-        <div className="text-[11px] text-app-muted">{time}</div>
+        <div className="text-[11px] text-app-muted" title={fullTime}>
+          {time}
+        </div>
       </div>
 
       <ContextMenu
