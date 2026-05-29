@@ -1,0 +1,90 @@
+# Build, sign, and publish a Trove release when a `vX.Y.Z` tag is pushed.
+#
+# Trigger it with the helper:  npm run release 0.3.0 --push
+# (which bumps the version everywhere, tags vX.Y.Z, and pushes the tag).
+#
+# Required repository secrets (Settings → Secrets and variables → Actions):
+#   TAURI_SIGNING_PRIVATE_KEY           contents of src-tauri/.tauri/trove.key
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  the key password (see docs/release.md)
+#   GOOGLE_OAUTH_CLIENT_ID              consumed by build.rs at compile time
+#   GOOGLE_OAUTH_CLIENT_SECRET          consumed by build.rs at compile time
+#
+# The release is created as a DRAFT — review the artifacts, then click
+# "Publish" in the GitHub UI. The updater endpoint
+# (releases/latest/download/latest.json) only serves a PUBLISHED, non-prerelease
+# release, so publishing is the step that actually rolls the update out.
+# See docs/decisions.md ADR-016.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      # bundled-sqlcipher links against OpenSSL's libcrypto. libsqlite3-sys
+      # locates it on Windows via the vcpkg crate, which reads VCPKG_ROOT.
+      # The runner ships vcpkg at $VCPKG_INSTALLATION_ROOT. The static-md
+      # triplet matches the default MSVC dynamic-CRT linkage (no RUSTFLAGS).
+      - name: Install OpenSSL (vcpkg)
+        shell: pwsh
+        run: vcpkg install openssl:x64-windows-static-md
+
+      - name: Install frontend deps
+        run: npm ci
+
+      # English notes → public release body; Chinese notes → in-app updater.
+      # Both are read from the CHANGELOG files for this tag's version.
+      - name: Extract release notes from changelog
+        id: notes
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+        run: node scripts/ci-notes.mjs
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+          VCPKG_ROOT: ${{ env.VCPKG_INSTALLATION_ROOT }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Trove ${{ github.ref_name }}"
+          releaseBody: ${{ steps.notes.outputs.en }}
+          releaseDraft: true
+          prerelease: false
+
+      # tauri-action set latest.json `notes` to the English body. Swap it for
+      # the Chinese notes so the in-app updater shows Chinese (BOM-free write).
+      - name: Localize updater notes to Chinese
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          NOTES: ${{ steps.notes.outputs.zh }}
+        run: |
+          gh release download "$TAG" --pattern latest.json --dir . --clobber
+          node scripts/patch-latest-notes.mjs latest.json
+          gh release upload "$TAG" latest.json --clobber
