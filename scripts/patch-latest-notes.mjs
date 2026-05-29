@@ -5,7 +5,7 @@
 // Usage:  NOTES="中文说明" node scripts/patch-latest-notes.mjs latest.json
 //
 // Node's writeFileSync emits UTF-8 without a BOM — which the updater requires
-// (serde_json does not skip a leading BOM; see docs/decisions.md ADR-015).
+// (serde_json does not skip a leading BOM; see notes/decisions.md ADR-015).
 import { readFileSync, writeFileSync } from "node:fs";
 
 const path = process.argv[2];

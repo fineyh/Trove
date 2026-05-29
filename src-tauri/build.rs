@@ -11,7 +11,7 @@ fn main() {
 /// distributed binary and is NOT a confidentiality boundary per Google's
 /// native-app guidance — PKCE is the real protection. Keeping it out of git is
 /// purely to stop secret scanners / scrapers from harvesting a live value from
-/// the public repo. See docs/decisions.md.
+/// the public repo. See notes/decisions.md.
 fn load_oauth_env() {
     const KEYS: [&str; 2] = ["GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET"];
 

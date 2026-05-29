@@ -5,7 +5,7 @@
 #
 # Required repository secrets (Settings → Secrets and variables → Actions):
 #   TAURI_SIGNING_PRIVATE_KEY           contents of src-tauri/.tauri/trove.key
-#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  the key password (see docs/release.md)
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  the key password (see notes/release.md)
 #   GOOGLE_OAUTH_CLIENT_ID              consumed by build.rs at compile time
 #   GOOGLE_OAUTH_CLIENT_SECRET          consumed by build.rs at compile time
 #
@@ -13,7 +13,7 @@
 # "Publish" in the GitHub UI. The updater endpoint
 # (releases/latest/download/latest.json) only serves a PUBLISHED, non-prerelease
 # release, so publishing is the step that actually rolls the update out.
-# See docs/decisions.md ADR-016.
+# See notes/decisions.md ADR-016.
 name: Release
 
 on:

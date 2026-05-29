@@ -35,4 +35,4 @@ pnpm-debug.log*
 *.trove-cache
 
 CLAUDE.md
-docs/
+notes/
