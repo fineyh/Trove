@@ -38,6 +38,7 @@ rand = "0.8"
 zeroize = { version = "1.8", features = ["zeroize_derive"] }
 base64 = "0.22"
 hex = "0.4"
+trash = "5"
 
 # Phase 6 — Google PKCE login
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "time", "sync"] }

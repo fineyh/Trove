@@ -1,8 +1,12 @@
-import { useEffect, useRef } from "react";
-import { ImageOff, Play } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ImageOff, Play, Trash2 } from "lucide-react";
 import type { Message } from "../../types";
 import { mediaUrl } from "../../ipc/client";
 import { useSessionStore } from "../../stores/session";
+import { useMessagesStore } from "../../stores/messages";
+import { useConversationsStore } from "../../stores/conversations";
+import { ContextMenu } from "../ui/ContextMenu";
+import { ConfirmDialog } from "../ui/ConfirmDialog";
 
 interface MessageBubbleProps {
   message: Message;
@@ -123,6 +127,25 @@ function TextMessage({ message }: MessageBubbleProps) {
 }
 
 export function MessageBubble({ message }: MessageBubbleProps) {
+  const remove = useMessagesStore((s) => s.remove);
+  // folder_watch ("路径") conversations mirror a live folder — deleting a
+  // message record alone is futile (a rescan/watcher event re-adds the file),
+  // so the chat view disables message deletion for them. Broken-pointer
+  // cleanup still happens via BrokenManagerDialog (a separate path).
+  const isFolderWatch = useConversationsStore(
+    (s) => s.list.find((c) => c.id === message.convId)?.kind === "folder_watch",
+  );
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleteFile, setDeleteFile] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  // The original file can only be sent to the recycle bin when the media is
+  // backed by a reachable (live) file. Broken media is unreachable → message
+  // record only.
+  const canDeleteFile =
+    message.media != null && message.media.state === "live";
+
   const time = new Date(message.createdAt).toLocaleString("zh-CN", {
     hour: "2-digit",
     minute: "2-digit",
@@ -136,13 +159,88 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   else if (message.media) body = <FileMessage message={message} />;
   else body = <TextMessage message={message} />;
 
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (isFolderWatch) return; // 路径会话不提供删除
+    setMenu({ x: e.clientX, y: e.clientY });
+  };
+
+  const openConfirm = () => {
+    setMenu(null);
+    setDeleteFile(false);
+    setConfirmOpen(true);
+  };
+
+  const handleConfirm = async () => {
+    setBusy(true);
+    try {
+      await remove(message.id, message.convId, canDeleteFile && deleteFile);
+      setConfirmOpen(false);
+    } catch (err) {
+      console.error("delete message failed", err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
-    <div className="flex flex-col gap-1">
-      {body}
-      {message.media && message.caption && (
-        <div className="max-w-md text-sm text-app-fg/80">{message.caption}</div>
-      )}
-      <div className="text-[11px] text-app-muted">{time}</div>
-    </div>
+    <>
+      <div className="flex flex-col gap-1" onContextMenu={handleContextMenu}>
+        {body}
+        {message.media && message.caption && (
+          <div className="max-w-md text-sm text-app-fg/80">{message.caption}</div>
+        )}
+        <div className="text-[11px] text-app-muted">{time}</div>
+      </div>
+
+      <ContextMenu
+        open={menu !== null}
+        x={menu?.x ?? 0}
+        y={menu?.y ?? 0}
+        onClose={() => setMenu(null)}
+        items={[
+          {
+            label: "删除消息",
+            variant: "danger",
+            icon: <Trash2 size={14} />,
+            onClick: openConfirm,
+          },
+        ]}
+      />
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="删除消息"
+        variant="danger"
+        confirmText="删除"
+        busy={busy}
+        onConfirm={handleConfirm}
+        onCancel={() => {
+          if (!busy) setConfirmOpen(false);
+        }}
+        message={
+          <div className="flex flex-col gap-3">
+            <p>
+              {canDeleteFile
+                ? "默认只删除这条消息，不会动磁盘上的原文件。"
+                : message.media
+                  ? "原文件当前不可用，将只删除这条消息记录。"
+                  : "确定删除这条消息吗？此操作无法撤销。"}
+            </p>
+            {canDeleteFile && (
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-app-fg/80">
+                <input
+                  type="checkbox"
+                  checked={deleteFile}
+                  onChange={(e) => setDeleteFile(e.target.checked)}
+                  className="h-4 w-4 accent-red-600"
+                />
+                同时把原文件移到回收站
+              </label>
+            )}
+          </div>
+        }
+      />
+    </>
   );
 }

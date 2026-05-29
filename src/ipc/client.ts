@@ -118,8 +118,11 @@ export async function incrementPlayCount(messageId: number): Promise<number> {
   return invoke<number>("increment_play_count", { messageId });
 }
 
-export async function deleteMessage(messageId: number): Promise<void> {
-  await invoke("delete_message", { messageId });
+export async function deleteMessage(
+  messageId: number,
+  deleteFile = false,
+): Promise<void> {
+  await invoke("delete_message", { messageId, deleteFile });
 }
 
 export async function search(query: string): Promise<SearchHit[]> {

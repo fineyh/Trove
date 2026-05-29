@@ -13,7 +13,11 @@ interface MessagesState {
   sendText: (convId: number, text: string) => Promise<void>;
   importFiles: (convId: number, paths: string[]) => Promise<void>;
   registerPlay: (messageId: number) => Promise<void>;
-  remove: (messageId: number, convId: number) => Promise<void>;
+  remove: (
+    messageId: number,
+    convId: number,
+    deleteFile?: boolean,
+  ) => Promise<void>;
 }
 
 export const useMessagesStore = create<MessagesState>((set, get) => ({
@@ -57,8 +61,8 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
       return { byConv: out };
     });
   },
-  remove: async (messageId, convId) => {
-    await ipc.deleteMessage(messageId);
+  remove: async (messageId, convId, deleteFile = false) => {
+    await ipc.deleteMessage(messageId, deleteFile);
     await get().load(convId);
   },
 }));

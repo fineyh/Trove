@@ -250,8 +250,31 @@ pub fn increment_play_count(message_id: i64) -> AppResult<i64> {
     })
 }
 
+/// Resolve the on-disk absolute path for a media row, if its volume's last
+/// known mount is recorded. Used before deleting the row so we can move the
+/// original file to the OS recycle bin when the caller opts in.
+fn media_abs_path(conn: &rusqlite::Connection, media_id: i64) -> AppResult<Option<String>> {
+    let row: Option<(Option<String>, String)> = conn
+        .query_row(
+            "SELECT v.last_mount, md.relpath
+             FROM media md JOIN volumes v ON v.id = md.volume_id
+             WHERE md.id = ?1",
+            params![media_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?;
+    Ok(match row {
+        Some((Some(mount), rel)) => Some(
+            services::volume_resolver::absolute_for(std::path::Path::new(&mount), &rel)
+                .to_string_lossy()
+                .to_string(),
+        ),
+        _ => None,
+    })
+}
+
 #[tauri::command]
-pub fn delete_message(message_id: i64) -> AppResult<()> {
+pub fn delete_message(message_id: i64, delete_file: bool) -> AppResult<()> {
     db::with_conn(|conn| {
         let media_id: Option<i64> = conn
             .query_row(
@@ -268,6 +291,20 @@ pub fn delete_message(message_id: i64) -> AppResult<()> {
                 |r| r.get(0),
             )?;
             if still_referenced == 0 {
+                // The media is now orphaned. If the caller asked to remove the
+                // original too, move it to the recycle bin before dropping the
+                // row. Best-effort: a missing/unreachable file (e.g. broken
+                // volume not mounted) just leaves the DB cleanup to proceed.
+                if delete_file {
+                    if let Some(abs) = media_abs_path(conn, mid)? {
+                        let path = std::path::Path::new(&abs);
+                        if path.exists() {
+                            if let Err(e) = trash::delete(path) {
+                                eprintln!("trash::delete failed for {abs}: {e}");
+                            }
+                        }
+                    }
+                }
                 // CASCADE clears the matching broken_pointers row automatically.
                 conn.execute("DELETE FROM media WHERE id = ?1", params![mid])?;
             }
