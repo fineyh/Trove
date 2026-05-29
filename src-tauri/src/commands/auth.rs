@@ -21,14 +21,23 @@ use rusqlite::{params, OptionalExtension};
 use serde::Serialize;
 use tauri::AppHandle;
 
-// Google Desktop OAuth client (project: trove-497317)
-const GOOGLE_CLIENT_ID: &str =
-    "535478304031-l1sf933j99g8rqp27agsc42lut40rv5s.apps.googleusercontent.com";
+// Google Desktop OAuth client (project: trove-497317).
+//
+// Injected at compile time from src-tauri/.env (gitignored) via build.rs.
 // Google's "Desktop client secret" is treated as public information per
-// https://developers.google.com/identity/protocols/oauth2/native-app —
-// it's sent in the token-exchange POST for API compatibility, not as
-// a confidentiality boundary.
-const GOOGLE_CLIENT_SECRET: &str = "***REMOVED-OAUTH-SECRET***";
+// https://developers.google.com/identity/protocols/oauth2/native-app — it is
+// sent in the token-exchange POST for API compatibility, not as a
+// confidentiality boundary (PKCE is). It necessarily ships inside the binary;
+// we keep it out of tracked source only so secret scanners / scrapers can't
+// harvest a live value from the public repo.
+const GOOGLE_CLIENT_ID: &str = env!(
+    "GOOGLE_OAUTH_CLIENT_ID",
+    "missing GOOGLE_OAUTH_CLIENT_ID — copy src-tauri/.env.example to src-tauri/.env and fill it in"
+);
+const GOOGLE_CLIENT_SECRET: &str = env!(
+    "GOOGLE_OAUTH_CLIENT_SECRET",
+    "missing GOOGLE_OAUTH_CLIENT_SECRET — copy src-tauri/.env.example to src-tauri/.env and fill it in"
+);
 const GOOGLE_AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 const GOOGLE_USERINFO_URL: &str = "https://openidconnect.googleapis.com/v1/userinfo";
