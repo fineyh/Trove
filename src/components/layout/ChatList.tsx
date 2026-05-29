@@ -46,6 +46,10 @@ function ConversationRow({ c, onContextMenu }: ConversationRowProps) {
 
   const locked = c.encrypted && !c.unlocked;
   const handleClick = () => {
+    if (active) {
+      setActive(null);
+      return;
+    }
     setActive(c.id);
     if (locked) {
       openVaultDialog("unlock-conv", c.id);
