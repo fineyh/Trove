@@ -11,6 +11,11 @@ updater notes**. Before running `npm run release x.y.z`, add a matching
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-30
+### Added
+- Messages now show timestamps, with a per-day date header that sticks to the top as you scroll and fades out while you read.
+- Open a video or image in its own standalone window (right-click → open in new window): drag it out of the main window, resize it, and view several at once.
+
 ## [0.2.0] - 2026-05-30
 ### Added
 - Right-click a message to delete it, with the option to also move the original file to the Recycle Bin.
