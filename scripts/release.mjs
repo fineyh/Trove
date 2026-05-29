@@ -47,7 +47,11 @@ const git = (...a) => execFileSync("git", a, { cwd: root, encoding: "utf8" }).tr
 // runs — we fold them into the release commit. Anything else dirty is a sign of
 // unrelated work that should not ride along, so refuse.
 const allowedDirty = new Set([CHANGELOG_EN, CHANGELOG_ZH]);
-const stray = git("status", "--porcelain")
+// NB: read the status WITHOUT the trimming `git()` helper. Worktree-only changes
+// start with a leading space (e.g. " M file"); a global trim() would eat the
+// first line's leading space, shifting slice(3) and mangling that path.
+const statusRaw = execFileSync("git", ["status", "--porcelain"], { cwd: root, encoding: "utf8" });
+const stray = statusRaw
   .split("\n")
   .filter(Boolean)
   .map((l) => l.slice(3).trim())
