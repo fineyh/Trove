@@ -64,8 +64,9 @@
       #pin.active:hover {
         color: #4c8bf5;
       }
-      #player {
-        display: block;
+      #player,
+      #image {
+        display: none;
         width: 100vw;
         height: calc(100vh - var(--titlebar-h));
         object-fit: contain;
@@ -92,6 +93,7 @@
       </div>
     </div>
     <video id="player" controls autoplay playsinline></video>
+    <img id="image" alt="" />
     <script type="module" src="/src/player/main.ts"></script>
   </body>
 </html>

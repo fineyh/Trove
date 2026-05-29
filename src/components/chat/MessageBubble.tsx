@@ -148,10 +148,11 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   const canDeleteFile =
     message.media != null && message.media.state === "live";
 
-  // A live video can be opened in its own standalone player window —
-  // allowed even in folder_watch conversations (playing isn't mutating).
+  // A live video or image can be opened in its own standalone popup window —
+  // allowed even in folder_watch conversations (viewing isn't mutating).
   const canOpenInWindow =
-    message.media?.kind === "video" && message.media.state === "live";
+    (message.media?.kind === "video" || message.media?.kind === "image") &&
+    message.media.state === "live";
 
   const time = formatMessageTime(message.createdAt);
   const fullTime = formatFullDateTime(message.createdAt);
@@ -185,7 +186,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   const menuItems: ContextMenuItem[] = [];
   if (canOpenInWindow) {
     menuItems.push({
-      label: "在新窗口播放",
+      label: message.media?.kind === "image" ? "在新窗口打开" : "在新窗口播放",
       icon: <PictureInPicture2 size={14} />,
       onClick: () => {
         setMenu(null);

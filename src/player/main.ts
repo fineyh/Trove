@@ -1,10 +1,12 @@
-// Video player window entry, loaded by `player.html` in its own frameless
-// Tauri WebviewWindow. Kept lean: no stores / vault / app IPC — it
-// only talks to the window API for the custom title-bar controls (pin toggle,
-// close) and to resize itself to the video's real dimensions.
+// Media viewer window entry, loaded by `player.html` in its own frameless
+// Tauri WebviewWindow. Handles both video and image popups. Kept lean: no
+// stores / vault / app IPC — it only talks to the window API for the custom
+// title-bar controls (pin toggle, close) and to resize itself to the media's
+// real dimensions.
 //
-// The video source arrives pre-built (already a `convertFileSrc` asset URL)
-// via the `src` query param; `title` labels the window.
+// The media source arrives pre-built (already a `convertFileSrc` asset URL)
+// via the `src` query param; `title` labels the window; `kind` is
+// "video" | "image".
 
 import {
   LogicalSize,
@@ -20,6 +22,7 @@ const MAX_SCREEN_FRACTION = 0.9;
 const params = new URLSearchParams(location.search);
 const src = params.get("src");
 const title = params.get("title");
+const kind = params.get("kind") ?? "video";
 
 const win = getCurrentWindow();
 
@@ -41,13 +44,11 @@ document.getElementById("close")?.addEventListener("click", () => {
   void win.close();
 });
 
-// --- Video + resize-to-actual-size ------------------------------------------
+// --- Media + resize-to-actual-size ------------------------------------------
 
-const video = document.getElementById("player") as HTMLVideoElement | null;
-
-/** Resize the window so the video shows at its native pixel size, clamped to
+/** Resize the window so the media shows at its native pixel size, clamped to
  *  the current monitor's work area while preserving aspect ratio. */
-async function fitToVideo(w: number, h: number): Promise<void> {
+async function fitToContent(w: number, h: number): Promise<void> {
   if (!w || !h) return;
   try {
     const mon = await currentMonitor();
@@ -66,14 +67,29 @@ async function fitToVideo(w: number, h: number): Promise<void> {
   }
 }
 
-if (video && src) {
-  video.addEventListener(
-    "loadedmetadata",
-    () => void fitToVideo(video.videoWidth, video.videoHeight),
-    { once: true },
-  );
-  video.src = src;
-  // Autoplay may be blocked for a freshly opened window with no user
-  // activation; `controls` is the fallback so the user can hit play.
-  void video.play().catch(() => {});
+if (kind === "image") {
+  const image = document.getElementById("image") as HTMLImageElement | null;
+  if (image && src) {
+    image.style.display = "block";
+    image.addEventListener(
+      "load",
+      () => void fitToContent(image.naturalWidth, image.naturalHeight),
+      { once: true },
+    );
+    image.src = src;
+  }
+} else {
+  const video = document.getElementById("player") as HTMLVideoElement | null;
+  if (video && src) {
+    video.style.display = "block";
+    video.addEventListener(
+      "loadedmetadata",
+      () => void fitToContent(video.videoWidth, video.videoHeight),
+      { once: true },
+    );
+    video.src = src;
+    // Autoplay may be blocked for a freshly opened window with no user
+    // activation; `controls` is the fallback so the user can hit play.
+    void video.play().catch(() => {});
+  }
 }

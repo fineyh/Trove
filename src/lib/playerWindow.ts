@@ -6,14 +6,15 @@ import type { Message } from "../types";
 import { mediaUrl } from "../ipc/client";
 import { useMessagesStore } from "../stores/messages";
 
-/** Label prefix for every video player popup window. */
+/** Label prefix for every media (video/image) popup window. */
 export const PLAYER_LABEL_PREFIX = "player-";
 
 /** Custom title-bar height (logical px) — must match `player.html` CSS. */
 export const PLAYER_TITLEBAR_HEIGHT = 32;
 
-// Fallback popup size used only until the player reads the video's real
-// dimensions on `loadedmetadata` and resizes itself to the actual size.
+// Fallback popup size used only until the player reads the media's real
+// dimensions (video `loadedmetadata` / image `load`) and resizes itself to
+// the actual size.
 const DEFAULT_WIDTH = 640;
 const DEFAULT_HEIGHT = 360;
 /** Cap the *initial* width so a known-huge video doesn't spawn off-screen
@@ -23,13 +24,15 @@ const INITIAL_MAX_WIDTH = 1280;
 const CASCADE_STEP = 32;
 
 /**
- * Open a video in its own standalone player window. Each video gets a
- * dedicated `WebviewWindow` loading the lightweight `player.html`; re-invoking
- * for an already-open video just refocuses it. The media URL is passed
- * pre-built (asset protocol) via query string, so the popup needs no IPC.
+ * Open a video or image in its own standalone popup window. Each media item
+ * gets a dedicated `WebviewWindow` loading the lightweight `player.html`;
+ * re-invoking for an already-open item just refocuses it. The media URL is
+ * passed pre-built (asset protocol) via query string, so the popup needs no
+ * IPC.
  */
 export async function openPlayerWindow(message: Message): Promise<void> {
-  if (!message.media || message.media.kind !== "video") return;
+  const kind = message.media?.kind;
+  if (!message.media || (kind !== "video" && kind !== "image")) return;
 
   const label = `${PLAYER_LABEL_PREFIX}${message.id}`;
 
@@ -41,11 +44,13 @@ export async function openPlayerWindow(message: Message): Promise<void> {
   }
 
   const src = mediaUrl(message.media.absolutePath);
-  const title = message.caption?.trim() || "Trove 视频";
-  const query = new URLSearchParams({ src, title }).toString();
+  const title =
+    message.caption?.trim() || (kind === "image" ? "Trove 图片" : "Trove 视频");
+  const query = new URLSearchParams({ src, title, kind }).toString();
 
-  // Initial size hint from known media dimensions (often null until ffmpeg
-  // probing lands); the player resizes to the true size once metadata loads.
+  // Initial size hint from known media dimensions (video size is often null
+  // until ffmpeg probing lands; images usually have it); the player resizes to
+  // the true size once the media loads.
   let initW = DEFAULT_WIDTH;
   let initH = DEFAULT_HEIGHT;
   if (message.media.width && message.media.height) {
@@ -74,11 +79,13 @@ export async function openPlayerWindow(message: Message): Promise<void> {
     y: 120 + offset,
   });
 
-  // Mirror Lightbox: opening a video counts as a play.
-  void useMessagesStore.getState().registerPlay(message.id);
+  // Mirror Lightbox: opening a video counts as a play (images aren't counted).
+  if (kind === "video") {
+    void useMessagesStore.getState().registerPlay(message.id);
+  }
 }
 
-/** Close every video player popup (e.g. when the main window is closing). */
+/** Close every media popup window (e.g. when the main window is closing). */
 export async function closeAllPlayerWindows(): Promise<void> {
   const wins = await getAllWebviewWindows();
   await Promise.all(
