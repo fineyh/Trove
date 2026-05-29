@@ -17,6 +17,9 @@ src-tauri/target
 src-tauri/gen
 src-tauri/.tauri/
 
+# release artifact
+latest.json
+
 # logs
 npm-debug.log*
 yarn-debug.log*
