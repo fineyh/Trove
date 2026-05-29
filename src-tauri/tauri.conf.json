@@ -47,7 +47,7 @@
       "endpoints": [
         "https://github.com/fineyh/Trove/releases/latest/download/latest.json"
       ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDc3OUIyRkRBNjUzQUVCQUEKUldTcTZ6cGwyaStiZHliSGMzZVA2cVJTMExFd253eXFzK2s1MFhCSjBqNytZMng2UEhBMlZBMksK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQ1NTBFQjU1NjE0QzcyMkQKUldRdGNreGhWZXRRMVN6bWYxM0pHN1NZN1NqT01vQjFEZ2dwbHFzNytJcUxXdzMzakVRc3BPaW8K",
       "windows": {
         "installMode": "passive"
       }
