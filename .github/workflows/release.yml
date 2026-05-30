@@ -41,13 +41,12 @@ jobs:
         with:
           workspaces: src-tauri -> target
 
-      # bundled-sqlcipher links against OpenSSL's libcrypto. libsqlite3-sys
-      # locates it on Windows via the vcpkg crate, which reads VCPKG_ROOT.
-      # The runner ships vcpkg at $VCPKG_INSTALLATION_ROOT. The static-md
-      # triplet matches the default MSVC dynamic-CRT linkage (no RUSTFLAGS).
-      - name: Install OpenSSL (vcpkg)
-        shell: pwsh
-        run: vcpkg install openssl:x64-windows-static-md
+      # The release is built with the `vendored-openssl` feature, which compiles
+      # OpenSSL from source and links it statically (self-contained binary, no
+      # libcrypto DLL shipped). That source build needs NASM on Windows; perl
+      # (Strawberry) is already on the runner.
+      - name: Install NASM
+        uses: ilammy/setup-nasm@v1
 
       - name: Install frontend deps
         run: npm ci
@@ -68,13 +67,13 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
-          VCPKG_ROOT: ${{ env.VCPKG_INSTALLATION_ROOT }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Trove ${{ github.ref_name }}"
           releaseBody: ${{ steps.notes.outputs.en }}
           releaseDraft: true
           prerelease: false
+          args: --features vendored-openssl
 
       # tauri-action set latest.json `notes` to the English body. Swap it for
       # the Chinese notes so the in-app updater shows Chinese (BOM-free write).

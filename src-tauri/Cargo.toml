@@ -65,3 +65,7 @@ libc = "0.2"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]
+# Statically compile OpenSSL into the binary (self-contained release, no system
+# OpenSSL / libcrypto DLL needed at runtime). CI builds with this; local dev
+# keeps plain `bundled-sqlcipher` + system OpenSSL for faster builds.
+vendored-openssl = ["rusqlite/bundled-sqlcipher-vendored-openssl"]
