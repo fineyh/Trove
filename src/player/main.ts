@@ -23,6 +23,7 @@ const params = new URLSearchParams(location.search);
 const src = params.get("src");
 const title = params.get("title");
 const kind = params.get("kind") ?? "video";
+const isHeic = params.get("heic") === "1";
 
 const win = getCurrentWindow();
 
@@ -76,7 +77,20 @@ if (kind === "image") {
       () => void fitToContent(image.naturalWidth, image.naturalHeight),
       { once: true },
     );
-    image.src = src;
+    if (isHeic) {
+      // WebView can't decode HEIC; convert to a JPEG blob URL first. heic-to
+      // (and its WASM) is dynamically imported so plain images don't pay for it.
+      void import("../lib/heic")
+        .then(({ decodeHeicToUrl }) => decodeHeicToUrl(src, src))
+        .then((url) => {
+          image.src = url;
+        })
+        .catch(() => {
+          if (titleEl) titleEl.textContent = "此格式无法预览";
+        });
+    } else {
+      image.src = src;
+    }
   }
 } else {
   const video = document.getElementById("player") as HTMLVideoElement | null;

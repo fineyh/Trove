@@ -18,6 +18,15 @@ fn now_ms() -> i64 {
 }
 
 fn classify(path: &Path) -> &'static str {
+    // HEIC/HEIF aren't reliably mapped by mime_guess; pin them to "image" so the
+    // frontend routes them through the (HEIC-aware) image renderer.
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase());
+    if matches!(ext.as_deref(), Some("heic") | Some("heif")) {
+        return "image";
+    }
     let mime = mime_guess::from_path(path).first_or_octet_stream();
     match mime.type_().as_str() {
         "image" => "image",

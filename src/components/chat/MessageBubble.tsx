@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ImageOff, PictureInPicture2, Play, Trash2 } from "lucide-react";
+import { ImageOff, Loader2, PictureInPicture2, Play, Trash2 } from "lucide-react";
 import type { Message } from "../../types";
 import { mediaUrl } from "../../ipc/client";
 import { useSessionStore } from "../../stores/session";
@@ -9,6 +9,8 @@ import { ContextMenu, type ContextMenuItem } from "../ui/ContextMenu";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { openPlayerWindow } from "../../lib/playerWindow";
 import { formatFullDateTime, formatMessageTime } from "../../lib/datetime";
+import { isHeicPath } from "../../lib/heic";
+import { useDisplayableImageUrl } from "../../lib/useDisplayableImageUrl";
 
 interface MessageBubbleProps {
   message: Message;
@@ -22,19 +24,39 @@ function formatPlayCount(n: number): string {
 
 function ImageMessage({ message }: MessageBubbleProps) {
   const open = useSessionStore((s) => s.openLightbox);
-  const url = mediaUrl(message.media!.absolutePath);
+  const absolutePath = message.media!.absolutePath;
+  const { url, status } = useDisplayableImageUrl(
+    absolutePath,
+    mediaUrl(absolutePath),
+  );
+
+  if (status === "error") {
+    return (
+      <div className="flex max-w-md items-center gap-3 rounded-lg border border-dashed border-app-border bg-app-subtle/40 px-3 py-3 text-sm text-app-muted">
+        <ImageOff size={20} />
+        <span className="font-medium text-app-fg/70">此格式无法预览</span>
+      </div>
+    );
+  }
+
   return (
     <button
       type="button"
       onClick={() => open(message.id)}
       className="block max-w-md overflow-hidden rounded-lg border border-app-border bg-black/5"
     >
-      <img
-        src={url}
-        alt={message.caption ?? ""}
-        loading="lazy"
-        className="h-auto max-h-[60vh] w-full object-contain"
-      />
+      {status === "loading" || !url ? (
+        <div className="flex h-40 w-full items-center justify-center bg-app-subtle/40">
+          <Loader2 size={20} className="animate-spin text-app-muted" />
+        </div>
+      ) : (
+        <img
+          src={url}
+          alt={message.caption ?? ""}
+          loading="lazy"
+          className="h-auto max-h-[60vh] w-full object-contain"
+        />
+      )}
     </button>
   );
 }
@@ -148,11 +170,17 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   const canDeleteFile =
     message.media != null && message.media.state === "live";
 
+  // Treat HEIC/HEIF as an image regardless of the stored `kind` — this catches
+  // older rows that `mime_guess` may have classified as "other".
+  const isImage =
+    message.media != null &&
+    (message.media.kind === "image" || isHeicPath(message.media.absolutePath));
+
   // A live video or image can be opened in its own standalone popup window —
   // allowed even in folder_watch conversations (viewing isn't mutating).
   const canOpenInWindow =
-    (message.media?.kind === "video" || message.media?.kind === "image") &&
-    message.media.state === "live";
+    (message.media?.kind === "video" || isImage) &&
+    message.media?.state === "live";
 
   const time = formatMessageTime(message.createdAt);
   const fullTime = formatFullDateTime(message.createdAt);
@@ -160,7 +188,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   let body: React.ReactNode;
   if (message.media?.state === "broken")
     body = <BrokenMediaPlaceholder message={message} />;
-  else if (message.media?.kind === "image") body = <ImageMessage message={message} />;
+  else if (isImage) body = <ImageMessage message={message} />;
   else if (message.media?.kind === "video") body = <VideoMessage message={message} />;
   else if (message.media) body = <FileMessage message={message} />;
   else body = <TextMessage message={message} />;
@@ -186,7 +214,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   const menuItems: ContextMenuItem[] = [];
   if (canOpenInWindow) {
     menuItems.push({
-      label: message.media?.kind === "image" ? "在新窗口打开" : "在新窗口播放",
+      label: isImage ? "在新窗口打开" : "在新窗口播放",
       icon: <PictureInPicture2 size={14} />,
       onClick: () => {
         setMenu(null);

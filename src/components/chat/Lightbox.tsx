@@ -1,9 +1,11 @@
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { Message } from "../../types";
 import { mediaUrl } from "../../ipc/client";
 import { EMPTY_MESSAGES, useMessagesStore } from "../../stores/messages";
 import { useSessionStore } from "../../stores/session";
+import { isHeicPath } from "../../lib/heic";
+import { useDisplayableImageUrl } from "../../lib/useDisplayableImageUrl";
 
 interface LightboxProps {
   convId: number;
@@ -54,9 +56,15 @@ export function Lightbox({ convId }: LightboxProps) {
     }
   }, [current, registerPlay]);
 
+  // Must run unconditionally (before the early return) — empty path is a no-op.
+  const absolutePath = current?.media?.absolutePath ?? "";
+  const image = useDisplayableImageUrl(absolutePath, mediaUrl(absolutePath));
+
   if (!current || !current.media) return null;
 
   const url = mediaUrl(current.media.absolutePath);
+  const isImage =
+    current.media.kind === "image" || isHeicPath(current.media.absolutePath);
 
   return (
     <div
@@ -106,12 +114,20 @@ export function Lightbox({ convId }: LightboxProps) {
         className="flex max-h-[90vh] max-w-[90vw] flex-col items-center gap-3"
         onClick={(e) => e.stopPropagation()}
       >
-        {current.media.kind === "image" ? (
-          <img
-            src={url}
-            alt={current.caption ?? ""}
-            className="max-h-[85vh] max-w-[90vw] object-contain"
-          />
+        {isImage ? (
+          image.status === "error" ? (
+            <div className="rounded-lg border border-dashed border-white/30 px-6 py-8 text-sm text-white/70">
+              此格式无法预览
+            </div>
+          ) : image.status === "loading" || !image.url ? (
+            <Loader2 size={28} className="animate-spin text-white/70" />
+          ) : (
+            <img
+              src={image.url}
+              alt={current.caption ?? ""}
+              className="max-h-[85vh] max-w-[90vw] object-contain"
+            />
+          )
         ) : (
           <video
             src={url}

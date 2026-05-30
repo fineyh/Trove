@@ -48,6 +48,7 @@ export function Composer({ convId, disabled, disabledReason }: ComposerProps) {
               "gif",
               "webp",
               "heic",
+              "heif",
               "mp4",
               "mov",
               "webm",

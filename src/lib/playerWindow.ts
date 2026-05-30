@@ -5,6 +5,7 @@ import {
 import type { Message } from "../types";
 import { mediaUrl } from "../ipc/client";
 import { useMessagesStore } from "../stores/messages";
+import { isHeicPath } from "./heic";
 
 /** Label prefix for every media (video/image) popup window. */
 export const PLAYER_LABEL_PREFIX = "player-";
@@ -46,7 +47,12 @@ export async function openPlayerWindow(message: Message): Promise<void> {
   const src = mediaUrl(message.media.absolutePath);
   const title =
     message.caption?.trim() || (kind === "image" ? "Trove 图片" : "Trove 视频");
-  const query = new URLSearchParams({ src, title, kind }).toString();
+  const params = new URLSearchParams({ src, title, kind });
+  // Flag HEIC so the player decodes it (WebView can't show HEIC natively).
+  if (kind === "image" && isHeicPath(message.media.absolutePath)) {
+    params.set("heic", "1");
+  }
+  const query = params.toString();
 
   // Initial size hint from known media dimensions (video size is often null
   // until ffmpeg probing lands; images usually have it); the player resizes to
