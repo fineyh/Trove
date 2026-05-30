@@ -69,7 +69,7 @@ jobs:
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: "Trove ${{ github.ref_name }}"
+          releaseName: ${{ github.ref_name }}
           releaseBody: ${{ steps.notes.outputs.en }}
           releaseDraft: true
           prerelease: false
