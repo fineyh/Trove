@@ -41,10 +41,10 @@ jobs:
         with:
           workspaces: src-tauri -> target
 
-      # The release is built with the `vendored-openssl` feature, which compiles
-      # OpenSSL from source and links it statically (self-contained binary, no
-      # libcrypto DLL shipped). That source build needs NASM on Windows; perl
-      # (Strawberry) is already on the runner.
+      # SQLCipher links OpenSSL statically (rusqlite's
+      # `bundled-sqlcipher-vendored-openssl`), so the binary is self-contained —
+      # no libcrypto DLL shipped. Compiling OpenSSL from source needs NASM on
+      # Windows; perl (Strawberry) is already on the runner.
       - name: Install NASM
         uses: ilammy/setup-nasm@v1
 
@@ -73,7 +73,6 @@ jobs:
           releaseBody: ${{ steps.notes.outputs.en }}
           releaseDraft: true
           prerelease: false
-          args: --features vendored-openssl
 
       # tauri-action set latest.json `notes` to the English body. Swap it for
       # the Chinese notes so the in-app updater shows Chinese (BOM-free write).

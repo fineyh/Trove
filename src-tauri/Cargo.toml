@@ -23,7 +23,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 anyhow = "1"
-rusqlite = { version = "0.32", features = ["bundled-sqlcipher"] }
+rusqlite = { version = "0.32", features = ["bundled-sqlcipher-vendored-openssl"] }
 parking_lot = "0.12"
 once_cell = "1"
 chrono = { version = "0.4", features = ["serde"] }
@@ -65,7 +65,3 @@ libc = "0.2"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]
-# Statically compile OpenSSL into the binary (self-contained release, no system
-# OpenSSL / libcrypto DLL needed at runtime). CI builds with this; local dev
-# keeps plain `bundled-sqlcipher` + system OpenSSL for faster builds.
-vendored-openssl = ["rusqlite/bundled-sqlcipher-vendored-openssl"]

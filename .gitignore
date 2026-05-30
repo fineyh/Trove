@@ -16,8 +16,6 @@ dist-ssr
 src-tauri/target
 src-tauri/gen
 src-tauri/.tauri/
-# machine-specific OpenSSL paths; copy from config.toml.example
-src-tauri/.cargo/config.toml
 
 # release artifact
 latest.json
