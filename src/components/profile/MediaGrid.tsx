@@ -1,9 +1,11 @@
 import { useMemo, useState } from "react";
-import { ImageOff, Play } from "lucide-react";
+import { ImageOff, Loader2, Play } from "lucide-react";
 import type { Message } from "../../types";
 import { mediaUrl } from "../../ipc/client";
 import { useSessionStore } from "../../stores/session";
 import { cn } from "../../lib/cn";
+import { isHeicPath } from "../../lib/heic";
+import { useDisplayableImageUrl } from "../../lib/useDisplayableImageUrl";
 
 type Tab = "all" | "image" | "video" | "other";
 
@@ -68,6 +70,15 @@ function GridItem({
   message: Message;
   onOpen: () => void;
 }) {
+  const absolutePath = message.media!.absolutePath;
+  // Treat HEIC/HEIF as image regardless of stored `kind` (mime_guess may have
+  // tagged older rows "other"); decode it to a displayable blob URL.
+  const isImage =
+    message.media!.kind === "image" || isHeicPath(absolutePath);
+  // Hook must run unconditionally (before the broken early-return). For videos
+  // the path isn't HEIC so it resolves to the asset URL immediately and unused.
+  const image = useDisplayableImageUrl(absolutePath, mediaUrl(absolutePath));
+
   if (message.media!.state === "broken") {
     return (
       <div
@@ -78,15 +89,25 @@ function GridItem({
       </div>
     );
   }
-  const url = mediaUrl(message.media!.absolutePath);
+  const url = mediaUrl(absolutePath);
   return (
     <button
       type="button"
       onClick={onOpen}
       className="relative aspect-square overflow-hidden rounded-md bg-black/5"
     >
-      {message.media!.kind === "image" ? (
-        <img src={url} className="h-full w-full object-cover" alt="" />
+      {isImage ? (
+        image.status === "error" ? (
+          <span className="flex h-full w-full items-center justify-center text-app-muted">
+            <ImageOff size={20} />
+          </span>
+        ) : image.status === "loading" || !image.url ? (
+          <span className="flex h-full w-full items-center justify-center bg-app-subtle/40 text-app-muted">
+            <Loader2 size={18} className="animate-spin" />
+          </span>
+        ) : (
+          <img src={image.url} className="h-full w-full object-cover" alt="" />
+        )
       ) : (
         <>
           <video
