@@ -11,6 +11,10 @@ updater notes**. Before running `npm run release x.y.z`, add a matching
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-05-31
+### Fixed
+- HEIC/HEIF photos (the format iPhones use) now display correctly in the message stream and the profile media grid, instead of showing as broken images.
+
 ## [0.3.0] - 2026-05-30
 ### Added
 - Messages now show timestamps, with a per-day date header that sticks to the top as you scroll and fades out while you read.
