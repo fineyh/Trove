@@ -1,4 +1,4 @@
-import { Plus, Search, Image, Video, FileText, Pin, Folder, MessageSquare, Lock, Trash2 } from "lucide-react";
+import { Plus, Search, Image, Video, FileText, Pin, PinOff, Folder, MessageSquare, Lock, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useConversationsStore } from "../../stores/conversations";
 import { useSessionStore } from "../../stores/session";
@@ -64,7 +64,7 @@ function ConversationRow({ c, onContextMenu }: ConversationRowProps) {
       className={cn(
         "flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors",
         "hover:bg-app-subtle",
-        active && "bg-app-subtle",
+        active ? "bg-app-subtle" : c.pinned && "bg-app-subtle/50",
       )}
     >
       <div className="relative flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-app-accent/10 font-semibold text-app-accent">
@@ -117,6 +117,7 @@ export function ChatList() {
   const list = useConversationsStore((s) => s.list);
   const refresh = useConversationsStore((s) => s.refresh);
   const remove = useConversationsStore((s) => s.remove);
+  const togglePinned = useConversationsStore((s) => s.togglePinned);
   const search = useConversationsStore((s) => s.search);
   const setSearch = useConversationsStore((s) => s.setSearch);
   const setNewConvOpen = useSessionStore((s) => s.setNewConversationOpen);
@@ -173,6 +174,11 @@ export function ChatList() {
     e.preventDefault();
     setMenu({ convId: conv.id, x: e.clientX, y: e.clientY });
   };
+
+  const menuTarget = useMemo(
+    () => (menu == null ? null : list.find((c) => c.id === menu.convId) ?? null),
+    [list, menu],
+  );
 
   const confirmTarget = useMemo(
     () => (confirmDeleteId == null ? null : list.find((c) => c.id === confirmDeleteId) ?? null),
@@ -266,6 +272,16 @@ export function ChatList() {
         x={menu?.x ?? 0}
         y={menu?.y ?? 0}
         items={[
+          {
+            label: menuTarget?.pinned ? "取消置顶" : "置顶会话",
+            icon: menuTarget?.pinned ? <PinOff size={14} /> : <Pin size={14} />,
+            onClick: () => {
+              if (menuTarget) {
+                void togglePinned(menuTarget.id, !menuTarget.pinned);
+              }
+              setMenu(null);
+            },
+          },
           {
             label: "删除会话",
             icon: <Trash2 size={14} />,

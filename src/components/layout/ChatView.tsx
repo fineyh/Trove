@@ -1,4 +1,4 @@
-import { Lock, LockOpen, Pin } from "lucide-react";
+import { Lock, LockOpen } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { useConversationsStore } from "../../stores/conversations";
 import { EMPTY_MESSAGES, useMessagesStore } from "../../stores/messages";
@@ -92,7 +92,6 @@ export function ChatView() {
               <LockOpen size={14} />
             </button>
           )}
-          {conv.pinned && <Pin size={16} className="text-app-muted" />}
         </div>
       </header>
 
