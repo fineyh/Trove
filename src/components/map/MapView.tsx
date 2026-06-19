@@ -194,7 +194,10 @@ function MapOverlay() {
         </button>
       </div>
 
-      <div className="relative flex-1">
+      {/* `isolate` traps Leaflet's internal z-indexes (panes z200–700, controls
+          z1000) inside this stacking context, so the fullscreen photo viewer
+          (a sibling below) reliably paints above the whole map. */}
+      <div className="relative isolate flex-1">
         <div ref={containerRef} className="absolute inset-0" />
 
         {loading && (
