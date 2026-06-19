@@ -41,6 +41,19 @@ export interface Message {
   media: MediaPayload | null;
 }
 
+export interface GeotaggedMedia {
+  mediaId: number;
+  lat: number;
+  lon: number;
+  kind: "image" | "video" | "other";
+  absolutePath: string;
+  /** False when the source volume's mount is unknown (can't preview now). */
+  available: boolean;
+  convId: number;
+  messageId: number;
+  createdAt: number;
+}
+
 export interface SearchHit {
   convId: number;
   convName: string;

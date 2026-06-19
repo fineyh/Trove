@@ -10,6 +10,7 @@ import type {
   Conversation,
   ConversationKind,
   ConvChangedEvent,
+  GeotaggedMedia,
   MissingFileStrategy,
   Message,
   RepairOutcome,
@@ -130,6 +131,26 @@ export async function search(query: string): Promise<SearchHit[]> {
   return invoke<SearchHit[]>("search", { query });
 }
 
+export async function listGeotaggedMedia(): Promise<GeotaggedMedia[]> {
+  if (!isTauri()) return [];
+  return invoke<GeotaggedMedia[]>("list_geotagged_media");
+}
+
+export async function backfillGeotags(): Promise<void> {
+  if (!isTauri()) return;
+  await invoke("backfill_geotags");
+}
+
+/** Subscribe to backend `geo:backfill-done` events (GPS backfill finished). */
+export async function onGeoBackfillDone(
+  handler: (updated: number) => void,
+): Promise<UnlistenFn> {
+  if (!isTauri()) return () => {};
+  return listen<{ updated: number }>("geo:backfill-done", (e) =>
+    handler(e.payload.updated),
+  );
+}
+
 export function mediaUrl(absolutePath: string): string {
   if (!isTauri()) return absolutePath;
   return tauriConvertFileSrc(absolutePath);
@@ -237,6 +258,11 @@ export async function getStorageStats(): Promise<StorageStats | null> {
 
 export async function openPath(path: string): Promise<void> {
   await invoke("open_path", { path });
+}
+
+/** Open a web/mail URL in the OS default browser (not the app WebView). */
+export async function openUrl(url: string): Promise<void> {
+  await invoke("open_url", { url });
 }
 
 const DEFAULT_VAULT: VaultStatus = { hasMasterPassword: false, unlocked: true };

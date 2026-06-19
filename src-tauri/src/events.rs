@@ -35,3 +35,15 @@ pub fn emit_volumes_changed() {
         let _ = h.emit("volumes:changed", ());
     }
 }
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GeoBackfillDone {
+    pub updated: usize,
+}
+
+pub fn emit_geo_backfill_done(updated: usize) {
+    if let Some(h) = APP_HANDLE.get() {
+        let _ = h.emit("geo:backfill-done", GeoBackfillDone { updated });
+    }
+}

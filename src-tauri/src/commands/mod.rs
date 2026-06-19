@@ -2,6 +2,7 @@ pub mod auth;
 pub mod backup;
 pub mod conversations;
 pub mod folders;
+pub mod geo;
 pub mod health;
 pub mod media;
 pub mod messages;

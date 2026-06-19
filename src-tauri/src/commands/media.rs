@@ -124,6 +124,13 @@ pub(crate) fn ingest_one(
         .unwrap_or_else(now_ms);
     let blake3 = services::hasher::blake3_file(path)?;
     let kind = classify(path);
+    // Best-effort geotag extraction (image EXIF / video ©xyz atom). Done before
+    // the DB transaction since it's pure file I/O and must not hold the DB lock.
+    let geo = services::exif::read_geotag(path, kind);
+    let (lat, lon): (Option<f64>, Option<f64>) = match geo {
+        Some((la, lo)) => (Some(la), Some(lo)),
+        None => (None, None),
+    };
     let filename_caption = path
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())
@@ -159,10 +166,14 @@ pub(crate) fn ingest_one(
             )
             .optional()?;
         let media_id = if let Some(id) = existing {
+            // Re-extracting geotag on re-import keeps lat/lon current if the file
+            // was edited (e.g. GPS stripped). geo_scanned is set so the backfill
+            // pass skips this row.
             conn.execute(
-                "UPDATE media SET size_bytes = ?1, mtime = ?2, blake3 = ?3, state = 'live'
-                 WHERE id = ?4",
-                params![size_bytes, mtime, blake3, id],
+                "UPDATE media SET size_bytes = ?1, mtime = ?2, blake3 = ?3, state = 'live',
+                    lat = ?4, lon = ?5, geo_scanned = 1
+                 WHERE id = ?6",
+                params![size_bytes, mtime, blake3, lat, lon, id],
             )?;
             conn.execute(
                 "DELETE FROM broken_pointers WHERE media_id = ?1",
@@ -172,15 +183,18 @@ pub(crate) fn ingest_one(
         } else {
             conn.execute(
                 "INSERT INTO media
-                    (volume_id, relpath, size_bytes, mtime, blake3, kind, state)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'live')",
+                    (volume_id, relpath, size_bytes, mtime, blake3, kind, state,
+                     lat, lon, geo_scanned)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'live', ?7, ?8, 1)",
                 params![
                     volume_id,
                     resolved.relpath,
                     size_bytes,
                     mtime,
                     blake3,
-                    kind
+                    kind,
+                    lat,
+                    lon
                 ],
             )?;
             conn.last_insert_rowid()

@@ -1,4 +1,4 @@
-import { Lock, LockOpen, Settings, User } from "lucide-react";
+import { Lock, LockOpen, Map, MessageCircle, Settings, User } from "lucide-react";
 import { useSessionStore } from "../../stores/session";
 import { useVaultStore } from "../../stores/vault";
 import { cn } from "../../lib/cn";
@@ -29,6 +29,8 @@ function SidebarButton({ icon, label, onClick, active }: SidebarButtonProps) {
 
 export function Sidebar() {
   const setSettingsOpen = useSessionStore((s) => s.setSettingsOpen);
+  const setMapOpen = useSessionStore((s) => s.setMapOpen);
+  const mapOpen = useSessionStore((s) => s.mapOpen);
   const status = useVaultStore((s) => s.status);
   const lock = useVaultStore((s) => s.lock);
   const openDialog = useVaultStore((s) => s.openDialog);
@@ -51,14 +53,29 @@ export function Sidebar() {
   );
 
   return (
-    <aside className="flex h-full w-16 shrink-0 flex-col items-center border-r border-app-border bg-app-panel py-3">
+    <aside className="flex h-full w-16 shrink-0 flex-col items-center border-r border-app-border bg-app-panel py-4">
       <button
         type="button"
         title="个人资料"
-        className="flex h-10 w-10 items-center justify-center rounded-full bg-app-subtle text-app-fg/70 hover:text-app-fg"
+        className="mb-5 flex h-10 w-10 items-center justify-center rounded-full bg-app-subtle text-app-fg/70 hover:text-app-fg"
       >
         <User size={18} />
       </button>
+
+      <div className="flex flex-col items-center gap-1">
+        <SidebarButton
+          icon={<MessageCircle size={18} />}
+          label="会话"
+          onClick={() => setMapOpen(false)}
+          active={!mapOpen}
+        />
+        <SidebarButton
+          icon={<Map size={18} />}
+          label="地图"
+          onClick={() => setMapOpen(true)}
+          active={mapOpen}
+        />
+      </div>
 
       <div className="flex-1" />
 

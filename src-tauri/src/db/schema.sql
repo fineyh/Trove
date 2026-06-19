@@ -45,11 +45,15 @@ CREATE TABLE media (
   duration_ms INTEGER,
   thumb_path  TEXT,
   state       TEXT    NOT NULL DEFAULT 'live' CHECK (state IN ('live', 'broken')),
+  lat         REAL,
+  lon         REAL,
+  geo_scanned INTEGER NOT NULL DEFAULT 0,
   UNIQUE (volume_id, relpath)
 );
 
 CREATE INDEX idx_media_blake3 ON media(blake3);
 CREATE INDEX idx_media_size ON media(size_bytes);
+CREATE INDEX idx_media_geo ON media(lat, lon) WHERE lat IS NOT NULL;
 
 CREATE TABLE messages (
   id         INTEGER PRIMARY KEY,

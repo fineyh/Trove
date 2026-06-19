@@ -1,5 +1,6 @@
 pub mod backup;
 pub mod crypto;
+pub mod exif;
 pub mod file_watcher;
 pub mod folder_scanner;
 pub mod hasher;

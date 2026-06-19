@@ -9,7 +9,8 @@ import { SettingsDialog } from "./components/dialogs/SettingsDialog";
 import { VaultDialog } from "./components/dialogs/VaultDialog";
 import { ConvUnlockDialog } from "./components/dialogs/ConvUnlockDialog";
 import { ProfileDrawer } from "./components/profile/ProfileDrawer";
-import { onConvChanged, onVolumesChanged } from "./ipc/client";
+import { MapView } from "./components/map/MapView";
+import { onConvChanged, onVolumesChanged, openUrl } from "./ipc/client";
 import { useConversationsStore } from "./stores/conversations";
 import { useMessagesStore } from "./stores/messages";
 import { useSessionStore } from "./stores/session";
@@ -26,6 +27,24 @@ export default function App() {
   useEffect(() => {
     void refreshVault();
   }, [refreshVault]);
+
+  // Route external links to the OS browser. Without this, clicking an http(s)
+  // link inside the WebView (e.g. the map's OpenStreetMap attribution)
+  // navigates the whole app away with no back button. Capture phase + an
+  // anchor `closest` lookup catches links anywhere in the tree.
+  useEffect(() => {
+    if (!isTauri()) return;
+    const onClick = (e: MouseEvent) => {
+      const anchor = (e.target as HTMLElement | null)?.closest?.("a");
+      const href = anchor?.getAttribute("href");
+      if (href && /^https?:\/\//i.test(href)) {
+        e.preventDefault();
+        void openUrl(href);
+      }
+    };
+    document.addEventListener("click", onClick, true);
+    return () => document.removeEventListener("click", onClick, true);
+  }, []);
 
   // Video player popups are separate OS windows; Tauri only exits once every
   // window is gone. Close them all when the main window is closing so the app
@@ -116,6 +135,7 @@ export default function App() {
       <VaultDialog />
       <ConvUnlockDialog />
       <ProfileDrawer />
+      <MapView />
     </div>
   );
 }
