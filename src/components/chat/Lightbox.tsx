@@ -71,7 +71,9 @@ export function Lightbox({ convId }: LightboxProps) {
   // Must run unconditionally (before the early return) — empty path is a no-op.
   const absolutePath = current?.media?.absolutePath ?? "";
   const image = useDisplayableImageUrl(absolutePath, mediaUrl(absolutePath));
-  const { rotateLeft, rotateRight, mediaStyle } = useRotation(current?.id);
+  const { rotation, rotateLeft, rotateRight, mediaStyle } = useRotation(
+    current?.id,
+  );
 
   if (!current || !current.media) return null;
 
@@ -167,7 +169,12 @@ export function Lightbox({ convId }: LightboxProps) {
             />
           )
         ) : (
-          <RotatableVideo src={url} autoPlay style={mediaStyle} />
+          <RotatableVideo
+            src={url}
+            autoPlay
+            style={mediaStyle}
+            rotation={rotation}
+          />
         )}
         {current.caption && (
           <div className="max-w-2xl text-center text-sm text-white/80">

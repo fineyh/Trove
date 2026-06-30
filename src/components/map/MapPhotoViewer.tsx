@@ -60,7 +60,7 @@ export function MapPhotoViewer({
   // Must run unconditionally (before the early return) — empty path is a no-op.
   const absolutePath = current?.absolutePath ?? "";
   const image = useDisplayableImageUrl(absolutePath, mediaUrl(absolutePath));
-  const { rotateLeft, rotateRight, mediaStyle } = useRotation(index);
+  const { rotation, rotateLeft, rotateRight, mediaStyle } = useRotation(index);
 
   if (!current) return null;
 
@@ -174,7 +174,12 @@ export function MapPhotoViewer({
             />
           )
         ) : (
-          <RotatableVideo src={url} autoPlay style={mediaStyle} />
+          <RotatableVideo
+            src={url}
+            autoPlay
+            style={mediaStyle}
+            rotation={rotation}
+          />
         )}
       </div>
     </div>

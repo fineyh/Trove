@@ -17,6 +17,9 @@ interface RotatableVideoProps {
   src: string;
   /** The rotation transform style; applied to the `<video>` frame only. */
   style?: CSSProperties;
+  /** Signed multiple of 90 from `useRotation`; lets fullscreen swap the fill
+   *  caps at a quarter turn so a rotated clip still fills the screen. */
+  rotation?: number;
   autoPlay?: boolean;
 }
 
@@ -55,9 +58,12 @@ const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
  * playback-rate menu, and a hover-to-reveal volume slider. It auto-hides (along
  * with the cursor) after the mouse goes idle during playback.
  */
-export function RotatableVideo({ src, style, autoPlay }: RotatableVideoProps) {
+export function RotatableVideo(
+  { src, style, rotation = 0, autoPlay }: RotatableVideoProps,
+) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
 
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(false);
@@ -138,14 +144,17 @@ export function RotatableVideo({ src, style, autoPlay }: RotatableVideoProps) {
     setRateOpen(false);
   }, []);
 
-  // Fullscreen the whole viewer (not just the <video>) so our control bar,
-  // rotation buttons and pager stay usable. `documentElement` works for both
-  // the in-app overlay (fixed inset-0) and any host that mounts this component.
+  // True "video fullscreen": fullscreen only the stage (frame + control bar),
+  // not the whole document. The picture then fills the screen and the viewer's
+  // surrounding chrome (close / rotate / pager, which live outside the stage)
+  // naturally drops away — the standard player behavior. Fullscreening
+  // `documentElement` instead just maximized the app window while the frame
+  // stayed capped at 90vw/85vh, which felt like "software fullscreen".
   const toggleFullscreen = useCallback(() => {
     if (document.fullscreenElement) {
       void document.exitFullscreen().catch(() => {});
     } else {
-      void document.documentElement.requestFullscreen().catch(() => {});
+      void stageRef.current?.requestFullscreen().catch(() => {});
     }
   }, []);
 
@@ -272,14 +281,46 @@ export function RotatableVideo({ src, style, autoPlay }: RotatableVideoProps) {
   const bufferedPct = duration > 0 ? clamp01(bufferedEnd / duration) * 100 : 0;
   const VolumeIcon = muted || volume === 0 ? VolumeX : volume < 0.5 ? Volume1 : Volume2;
 
+  // In fullscreen the frame must FILL the screen. `max-width/height` only cap the
+  // element, so a clip smaller than the monitor stayed at its native resolution.
+  // Set an explicit width/height instead (swapped at a quarter turn) and let the
+  // `object-contain` class scale the picture up with letterboxing. Keep only the
+  // rotation transform/transition from the viewer's style; drop its 90vw/85vh
+  // caps so nothing fights the fill size.
+  const normalized = ((rotation % 360) + 360) % 360;
+  const quarterTurned = normalized === 90 || normalized === 270;
+  const videoStyle: CSSProperties | undefined = fullscreen
+    ? {
+        transform: style?.transform,
+        transition: style?.transition,
+        width: quarterTurned ? "100vh" : "100vw",
+        height: quarterTurned ? "100vw" : "100vh",
+        maxWidth: "none",
+        maxHeight: "none",
+      }
+    : style;
+
   return (
-    <>
+    <div
+      ref={stageRef}
+      className="flex items-center justify-center"
+      style={
+        fullscreen
+          ? {
+              width: "100vw",
+              height: "100vh",
+              background: "#000",
+              overflow: "hidden",
+            }
+          : undefined
+      }
+    >
       <video
         ref={videoRef}
         src={src}
         autoPlay={autoPlay}
         className="object-contain"
-        style={style}
+        style={videoStyle}
         onClick={togglePlay}
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
@@ -456,6 +497,6 @@ export function RotatableVideo({ src, style, autoPlay }: RotatableVideoProps) {
           </button>
         </div>
       </div>
-    </>
+    </div>
   );
 }

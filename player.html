@@ -85,6 +85,15 @@
       #player {
         cursor: pointer;
       }
+      /* True video fullscreen: hide the titlebar and let the picture fill the
+         whole screen, rather than just maximizing the window. The frame's own
+         max-size caps are switched to 100vh by applyMediaCaps() in main.ts. */
+      :fullscreen #titlebar {
+        display: none;
+      }
+      :fullscreen #stage {
+        height: 100vh;
+      }
       /* Custom video controls, anchored to the bottom of the window so they
          stay upright regardless of how the video frame is rotated. */
       #video-controls {

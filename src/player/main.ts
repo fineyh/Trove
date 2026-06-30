@@ -75,22 +75,48 @@ let naturalW = 0;
 let naturalH = 0;
 let rotation = 0;
 
-/** Re-fit the popup and the media element to the current rotation. The window
- *  is resized to the rotated aspect; the element's max-size constraints swap at
- *  a quarter turn so the rotated media still fills the window without overflow. */
-function applyLayout(): void {
-  if (!activeEl || !naturalW || !naturalH) return;
+/** Apply the rotation transform + max-size caps to the frame. The caps swap at a
+ *  quarter turn so a rotated frame still fits without overflow. In fullscreen the
+ *  picture fills the whole screen (no titlebar to subtract); otherwise it's
+ *  capped to the window's content area below the titlebar. */
+function applyMediaCaps(): void {
+  if (!activeEl) return;
   activeEl.style.transform = `rotate(${rotation}deg)`;
   const quarter = ((((rotation % 360) + 360) % 360) % 180) !== 0;
-  if (quarter) {
-    activeEl.style.maxWidth = `calc(100vh - ${TITLEBAR_HEIGHT}px)`;
-    activeEl.style.maxHeight = "100vw";
-    void fitToContent(naturalH, naturalW);
+  if (document.fullscreenElement) {
+    // Fill the screen. `max-*` only caps, so a clip smaller than the monitor
+    // stayed at native resolution; set an explicit width/height instead and let
+    // CSS `object-fit: contain` scale the picture up with letterboxing.
+    activeEl.style.maxWidth = "none";
+    activeEl.style.maxHeight = "none";
+    activeEl.style.width = quarter ? "100vh" : "100vw";
+    activeEl.style.height = quarter ? "100vw" : "100vh";
   } else {
-    activeEl.style.maxWidth = "100vw";
-    activeEl.style.maxHeight = `calc(100vh - ${TITLEBAR_HEIGHT}px)`;
-    void fitToContent(naturalW, naturalH);
+    // Back to natural size capped to the window's content area (the window is
+    // itself resized to the media by fitToContent).
+    activeEl.style.width = "";
+    activeEl.style.height = "";
+    if (quarter) {
+      activeEl.style.maxWidth = `calc(100vh - ${TITLEBAR_HEIGHT}px)`;
+      activeEl.style.maxHeight = "100vw";
+    } else {
+      activeEl.style.maxWidth = "100vw";
+      activeEl.style.maxHeight = `calc(100vh - ${TITLEBAR_HEIGHT}px)`;
+    }
   }
+}
+
+/** Re-fit the popup and the media element to the current rotation. The element's
+ *  caps follow `applyMediaCaps`; the window is then resized to the rotated
+ *  aspect. In fullscreen we never resize the window — the picture just fills the
+ *  screen. */
+function applyLayout(): void {
+  if (!activeEl || !naturalW || !naturalH) return;
+  applyMediaCaps();
+  if (document.fullscreenElement) return;
+  const quarter = ((((rotation % 360) + 360) % 360) % 180) !== 0;
+  if (quarter) void fitToContent(naturalH, naturalW);
+  else void fitToContent(naturalW, naturalH);
 }
 
 document.getElementById("rotate-left")?.addEventListener("click", () => {
@@ -290,6 +316,8 @@ function setupVideoControls(video: HTMLVideoElement): void {
     const fs = !!document.fullscreenElement;
     if (iconFsEnter) iconFsEnter.style.display = fs ? "none" : "block";
     if (iconFsExit) iconFsExit.style.display = fs ? "block" : "none";
+    // Switch the frame's caps between window-bound and screen-bound.
+    applyMediaCaps();
   });
 
   // --- Buffering spinner ---
