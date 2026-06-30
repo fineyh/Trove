@@ -46,8 +46,11 @@ export function MapPhotoViewer({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-      else if (e.key === "ArrowLeft") goPrev();
+      // While fullscreen, let Esc exit fullscreen instead of closing the viewer.
+      if (e.key === "Escape") {
+        if (document.fullscreenElement) return;
+        onClose();
+      } else if (e.key === "ArrowLeft") goPrev();
       else if (e.key === "ArrowRight") goNext();
     };
     window.addEventListener("keydown", onKey);

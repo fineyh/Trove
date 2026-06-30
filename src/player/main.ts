@@ -117,20 +117,38 @@ function formatTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+const SKIP_SECONDS = 10;
+const IDLE_MS = 2500;
+const clamp01 = (n: number): number => Math.min(1, Math.max(0, n));
+
+function formatRate(rate: number): string {
+  return (Number.isInteger(rate) ? `${rate}.0` : `${rate}`) + "×";
+}
+
 function setupVideoControls(video: HTMLVideoElement): void {
-  const bar = document.getElementById("video-controls");
-  const playBtn = document.getElementById("vc-play");
-  const iconPlay = document.getElementById("vc-icon-play");
-  const iconPause = document.getElementById("vc-icon-pause");
-  const seek = document.getElementById("vc-seek") as HTMLInputElement | null;
-  const cur = document.getElementById("vc-current");
-  const dur = document.getElementById("vc-duration");
-  const muteBtn = document.getElementById("vc-mute");
-  const iconVol = document.getElementById("vc-icon-vol");
-  const iconMuted = document.getElementById("vc-icon-muted");
+  const $ = (id: string): HTMLElement | null => document.getElementById(id);
+  const bar = $("video-controls");
   if (!bar) return;
   bar.style.display = "flex";
 
+  const iconPlay = $("vc-icon-play");
+  const iconPause = $("vc-icon-pause");
+  const cur = $("vc-current");
+  const dur = $("vc-duration");
+  const progress = $("vc-progress");
+  const played = $("vc-played");
+  const buffered = $("vc-buffered");
+  const thumb = $("vc-thumb");
+  const bubble = $("vc-bubble");
+  const iconVol = $("vc-icon-vol");
+  const iconVolLow = $("vc-icon-vol-low");
+  const iconMuted = $("vc-icon-muted");
+  const volume = $("vc-volume") as HTMLInputElement | null;
+  const rateBtn = $("vc-rate");
+  const rateMenu = $("vc-rate-menu");
+  const spinner = $("vc-spinner");
+
+  // --- Play / pause ---
   const syncPlay = (): void => {
     const playing = !video.paused;
     if (iconPlay) iconPlay.style.display = playing ? "none" : "block";
@@ -140,30 +158,184 @@ function setupVideoControls(video: HTMLVideoElement): void {
     if (video.paused) void video.play().catch(() => {});
     else video.pause();
   };
-
-  playBtn?.addEventListener("click", togglePlay);
+  $("vc-play")?.addEventListener("click", togglePlay);
   video.addEventListener("click", togglePlay);
   video.addEventListener("play", syncPlay);
   video.addEventListener("pause", syncPlay);
   video.addEventListener("ended", syncPlay);
 
-  video.addEventListener("loadedmetadata", () => {
-    if (seek) seek.max = String(video.duration || 0);
-    if (dur) dur.textContent = formatTime(video.duration);
+  // --- ±10s skip ---
+  const skip = (delta: number): void => {
+    const dr = video.duration || 0;
+    video.currentTime = Math.min(dr, Math.max(0, video.currentTime + delta));
+  };
+  $("vc-back")?.addEventListener("click", () => skip(-SKIP_SECONDS));
+  $("vc-fwd")?.addEventListener("click", () => skip(SKIP_SECONDS));
+
+  // --- Progress bar (played fill + buffered range + scrub + hover bubble) ---
+  const renderProgress = (): void => {
+    const dr = video.duration;
+    if (!Number.isFinite(dr) || dr <= 0) return;
+    const p = clamp01(video.currentTime / dr) * 100;
+    if (played) played.style.width = `${p}%`;
+    if (thumb) thumb.style.left = `${p}%`;
+  };
+  const renderBuffered = (): void => {
+    const dr = video.duration;
+    if (Number.isFinite(dr) && dr > 0 && video.buffered.length && buffered) {
+      const end = video.buffered.end(video.buffered.length - 1);
+      buffered.style.width = `${clamp01(end / dr) * 100}%`;
+    }
+  };
+  const ratioAt = (clientX: number): number => {
+    if (!progress) return 0;
+    const rect = progress.getBoundingClientRect();
+    return clamp01((clientX - rect.left) / rect.width);
+  };
+  const seekTo = (clientX: number): void => {
+    const dr = video.duration;
+    if (!Number.isFinite(dr) || dr <= 0) return;
+    video.currentTime = ratioAt(clientX) * dr;
+    renderProgress();
+  };
+  let scrubbing = false;
+  progress?.addEventListener("pointerdown", (e) => {
+    scrubbing = true;
+    progress.setPointerCapture(e.pointerId);
+    seekTo(e.clientX);
   });
-  video.addEventListener("timeupdate", () => {
-    if (seek) seek.value = String(video.currentTime);
-    if (cur) cur.textContent = formatTime(video.currentTime);
+  progress?.addEventListener("pointermove", (e) => {
+    const dr = video.duration;
+    if (bubble && Number.isFinite(dr) && dr > 0) {
+      const r = ratioAt(e.clientX);
+      bubble.style.left = `${r * 100}%`;
+      bubble.textContent = formatTime(r * dr);
+      bubble.style.display = "block";
+    }
+    if (scrubbing) seekTo(e.clientX);
   });
-  seek?.addEventListener("input", () => {
-    video.currentTime = Number(seek.value);
+  progress?.addEventListener("pointerup", (e) => {
+    scrubbing = false;
+    progress.releasePointerCapture(e.pointerId);
+  });
+  progress?.addEventListener("pointerleave", () => {
+    if (bubble) bubble.style.display = "none";
   });
 
-  muteBtn?.addEventListener("click", () => {
-    video.muted = !video.muted;
-    if (iconVol) iconVol.style.display = video.muted ? "none" : "block";
-    if (iconMuted) iconMuted.style.display = video.muted ? "block" : "none";
+  video.addEventListener("loadedmetadata", () => {
+    if (dur) dur.textContent = formatTime(video.duration);
+    renderProgress();
   });
+  video.addEventListener("timeupdate", () => {
+    if (cur) cur.textContent = formatTime(video.currentTime);
+    renderProgress();
+  });
+  video.addEventListener("progress", renderBuffered);
+
+  // --- Volume ---
+  const renderVolume = (): void => {
+    const v = video.muted ? 0 : video.volume;
+    if (volume) volume.value = String(v);
+    if (iconVol) iconVol.style.display = v >= 0.5 ? "block" : "none";
+    if (iconVolLow) iconVolLow.style.display = v > 0 && v < 0.5 ? "block" : "none";
+    if (iconMuted) iconMuted.style.display = v === 0 ? "block" : "none";
+  };
+  volume?.addEventListener("input", () => {
+    const val = Number(volume.value);
+    video.volume = val;
+    video.muted = val === 0;
+    renderVolume();
+  });
+  const toggleMute = (): void => {
+    if (!video.muted && video.volume === 0) video.volume = 1;
+    video.muted = !video.muted;
+    renderVolume();
+  };
+  $("vc-mute")?.addEventListener("click", toggleMute);
+  video.addEventListener("volumechange", renderVolume);
+
+  // --- Playback rate ---
+  const setRate = (r: number): void => {
+    video.playbackRate = r;
+    if (rateBtn) rateBtn.textContent = formatRate(r);
+    rateMenu?.querySelectorAll("button").forEach((b) => {
+      b.classList.toggle("active", Number(b.dataset.rate) === r);
+    });
+  };
+  rateBtn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    rateMenu?.classList.toggle("open");
+  });
+  rateMenu?.querySelectorAll("button").forEach((b) => {
+    b.addEventListener("click", () => {
+      setRate(Number(b.dataset.rate));
+      rateMenu.classList.remove("open");
+    });
+  });
+  document.addEventListener("click", (e) => {
+    if (rateMenu && !rateMenu.contains(e.target as Node) && e.target !== rateBtn) {
+      rateMenu.classList.remove("open");
+    }
+  });
+
+  // --- Fullscreen ---
+  const iconFsEnter = $("vc-icon-fs-enter");
+  const iconFsExit = $("vc-icon-fs-exit");
+  const toggleFullscreen = (): void => {
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+    else void document.documentElement.requestFullscreen().catch(() => {});
+  };
+  $("vc-fullscreen")?.addEventListener("click", toggleFullscreen);
+  document.addEventListener("fullscreenchange", () => {
+    const fs = !!document.fullscreenElement;
+    if (iconFsEnter) iconFsEnter.style.display = fs ? "none" : "block";
+    if (iconFsExit) iconFsExit.style.display = fs ? "block" : "none";
+  });
+
+  // --- Buffering spinner ---
+  video.addEventListener("waiting", () => {
+    if (spinner) spinner.style.display = "block";
+  });
+  const hideSpinner = (): void => {
+    if (spinner) spinner.style.display = "none";
+  };
+  video.addEventListener("playing", hideSpinner);
+  video.addEventListener("canplay", hideSpinner);
+
+  // --- Auto-hide bar + cursor while idle during playback ---
+  let idleTimer: number | undefined;
+  const armIdle = (): void => {
+    window.clearTimeout(idleTimer);
+    idleTimer = window.setTimeout(() => {
+      if (!video.paused) document.body.classList.add("idle");
+    }, IDLE_MS);
+  };
+  window.addEventListener("mousemove", () => {
+    document.body.classList.remove("idle");
+    armIdle();
+  });
+  video.addEventListener("play", armIdle);
+  video.addEventListener("pause", () => {
+    window.clearTimeout(idleTimer);
+    document.body.classList.remove("idle");
+  });
+
+  // --- Keyboard: Space = play/pause, M = mute ---
+  window.addEventListener("keydown", (e) => {
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === "INPUT" || t.isContentEditable)) return;
+    if (e.code === "Space") {
+      e.preventDefault();
+      togglePlay();
+    } else if (e.key === "m" || e.key === "M") {
+      toggleMute();
+    } else if (e.key === "f" || e.key === "F") {
+      toggleFullscreen();
+    }
+  });
+
+  syncPlay();
+  renderVolume();
 }
 
 // --- Load the media ---------------------------------------------------------

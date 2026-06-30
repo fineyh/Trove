@@ -48,8 +48,11 @@ export function Lightbox({ convId }: LightboxProps) {
   useEffect(() => {
     if (!current) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
-      else if (e.key === "ArrowLeft") goPrev();
+      // While fullscreen, let Esc exit fullscreen instead of closing the viewer.
+      if (e.key === "Escape") {
+        if (document.fullscreenElement) return;
+        close();
+      } else if (e.key === "ArrowLeft") goPrev();
       else if (e.key === "ArrowRight") goNext();
     };
     window.addEventListener("keydown", onKey);

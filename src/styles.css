@@ -69,3 +69,33 @@ textarea {
 [data-scrolling="false"] .day-divider[data-stuck="true"] {
   opacity: 0;
 }
+
+/* 视频控制条的竖向音量滑块（RotatableVideo）。原生 range 在 WebView2 上太丑，
+   这里自绘 track + thumb；writing-mode 让滑块竖直、向上为增大。 */
+input[type="range"].trove-volume {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 84px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  writing-mode: vertical-lr;
+  direction: rtl;
+}
+input[type="range"].trove-volume::-webkit-slider-runnable-track {
+  width: 4px;
+  height: 100%;
+  margin: 0 auto;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.25);
+}
+input[type="range"].trove-volume::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-left: -4px;
+  border-radius: 50%;
+  background: #fff;
+}
