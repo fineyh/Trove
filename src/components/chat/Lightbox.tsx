@@ -1,4 +1,11 @@
-import { ChevronLeft, ChevronRight, Loader2, X } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  RotateCcw,
+  RotateCw,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { Message } from "../../types";
 import { mediaUrl } from "../../ipc/client";
@@ -6,6 +13,7 @@ import { EMPTY_MESSAGES, useMessagesStore } from "../../stores/messages";
 import { useSessionStore } from "../../stores/session";
 import { isHeicPath } from "../../lib/heic";
 import { useDisplayableImageUrl } from "../../lib/useDisplayableImageUrl";
+import { useRotation } from "../../lib/useRotation";
 
 interface LightboxProps {
   convId: number;
@@ -59,6 +67,7 @@ export function Lightbox({ convId }: LightboxProps) {
   // Must run unconditionally (before the early return) — empty path is a no-op.
   const absolutePath = current?.media?.absolutePath ?? "";
   const image = useDisplayableImageUrl(absolutePath, mediaUrl(absolutePath));
+  const { rotateLeft, rotateRight, mediaStyle } = useRotation(current?.id);
 
   if (!current || !current.media) return null;
 
@@ -71,17 +80,41 @@ export function Lightbox({ convId }: LightboxProps) {
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/90"
       onClick={close}
     >
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          close();
-        }}
-        className="absolute right-4 top-4 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
-        title="关闭 (Esc)"
-      >
-        <X size={20} />
-      </button>
+      <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            rotateLeft();
+          }}
+          className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
+          title="向左旋转"
+        >
+          <RotateCcw size={18} />
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            rotateRight();
+          }}
+          className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
+          title="向右旋转"
+        >
+          <RotateCw size={18} />
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            close();
+          }}
+          className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
+          title="关闭 (Esc)"
+        >
+          <X size={20} />
+        </button>
+      </div>
 
       {idx > 0 && (
         <button
@@ -125,7 +158,8 @@ export function Lightbox({ convId }: LightboxProps) {
             <img
               src={image.url}
               alt={current.caption ?? ""}
-              className="max-h-[85vh] max-w-[90vw] object-contain"
+              className="object-contain"
+              style={mediaStyle}
             />
           )
         ) : (
@@ -133,7 +167,8 @@ export function Lightbox({ convId }: LightboxProps) {
             src={url}
             controls
             autoPlay
-            className="max-h-[85vh] max-w-[90vw]"
+            className="object-contain"
+            style={mediaStyle}
           />
         )}
         {current.caption && (

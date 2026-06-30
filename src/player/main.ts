@@ -68,13 +68,54 @@ async function fitToContent(w: number, h: number): Promise<void> {
   }
 }
 
+// --- Rotation (temporary, view-only — never touches the file) ---------------
+
+let activeEl: HTMLElement | null = null;
+let naturalW = 0;
+let naturalH = 0;
+let rotation = 0;
+
+/** Re-fit the popup and the media element to the current rotation. The window
+ *  is resized to the rotated aspect; the element's max-size constraints swap at
+ *  a quarter turn so the rotated media still fills the window without overflow. */
+function applyLayout(): void {
+  if (!activeEl || !naturalW || !naturalH) return;
+  activeEl.style.transform = `rotate(${rotation}deg)`;
+  const quarter = ((((rotation % 360) + 360) % 360) % 180) !== 0;
+  if (quarter) {
+    activeEl.style.maxWidth = `calc(100vh - ${TITLEBAR_HEIGHT}px)`;
+    activeEl.style.maxHeight = "100vw";
+    void fitToContent(naturalH, naturalW);
+  } else {
+    activeEl.style.maxWidth = "100vw";
+    activeEl.style.maxHeight = `calc(100vh - ${TITLEBAR_HEIGHT}px)`;
+    void fitToContent(naturalW, naturalH);
+  }
+}
+
+document.getElementById("rotate-left")?.addEventListener("click", () => {
+  rotation -= 90;
+  applyLayout();
+});
+document.getElementById("rotate-right")?.addEventListener("click", () => {
+  rotation += 90;
+  applyLayout();
+});
+
+// --- Load the media ---------------------------------------------------------
+
 if (kind === "image") {
   const image = document.getElementById("image") as HTMLImageElement | null;
   if (image && src) {
     image.style.display = "block";
+    activeEl = image;
     image.addEventListener(
       "load",
-      () => void fitToContent(image.naturalWidth, image.naturalHeight),
+      () => {
+        naturalW = image.naturalWidth;
+        naturalH = image.naturalHeight;
+        applyLayout();
+      },
       { once: true },
     );
     if (isHeic) {
@@ -96,9 +137,14 @@ if (kind === "image") {
   const video = document.getElementById("player") as HTMLVideoElement | null;
   if (video && src) {
     video.style.display = "block";
+    activeEl = video;
     video.addEventListener(
       "loadedmetadata",
-      () => void fitToContent(video.videoWidth, video.videoHeight),
+      () => {
+        naturalW = video.videoWidth;
+        naturalH = video.videoHeight;
+        applyLayout();
+      },
       { once: true },
     );
     video.src = src;

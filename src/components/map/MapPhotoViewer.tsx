@@ -3,6 +3,8 @@ import {
   ChevronRight,
   Loader2,
   MessageSquare,
+  RotateCcw,
+  RotateCw,
   X,
 } from "lucide-react";
 import { useCallback, useEffect } from "react";
@@ -10,6 +12,7 @@ import type { GeotaggedMedia } from "../../types";
 import { mediaUrl } from "../../ipc/client";
 import { isHeicPath } from "../../lib/heic";
 import { useDisplayableImageUrl } from "../../lib/useDisplayableImageUrl";
+import { useRotation } from "../../lib/useRotation";
 
 interface MapPhotoViewerProps {
   items: GeotaggedMedia[];
@@ -53,6 +56,7 @@ export function MapPhotoViewer({
   // Must run unconditionally (before the early return) — empty path is a no-op.
   const absolutePath = current?.absolutePath ?? "";
   const image = useDisplayableImageUrl(absolutePath, mediaUrl(absolutePath));
+  const { rotateLeft, rotateRight, mediaStyle } = useRotation(index);
 
   if (!current) return null;
 
@@ -79,17 +83,41 @@ export function MapPhotoViewer({
         在会话中打开
       </button>
 
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          onClose();
-        }}
-        className="absolute right-4 top-4 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
-        title="关闭 (Esc)"
-      >
-        <X size={20} />
-      </button>
+      <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            rotateLeft();
+          }}
+          className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
+          title="向左旋转"
+        >
+          <RotateCcw size={18} />
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            rotateRight();
+          }}
+          className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
+          title="向右旋转"
+        >
+          <RotateCw size={18} />
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose();
+          }}
+          className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
+          title="关闭 (Esc)"
+        >
+          <X size={20} />
+        </button>
+      </div>
 
       {index > 0 && (
         <button
@@ -137,7 +165,8 @@ export function MapPhotoViewer({
             <img
               src={image.url}
               alt=""
-              className="max-h-[85vh] max-w-[90vw] object-contain"
+              className="object-contain"
+              style={mediaStyle}
             />
           )
         ) : (
@@ -145,7 +174,8 @@ export function MapPhotoViewer({
             src={url}
             controls
             autoPlay
-            className="max-h-[85vh] max-w-[90vw]"
+            className="object-contain"
+            style={mediaStyle}
           />
         )}
       </div>
