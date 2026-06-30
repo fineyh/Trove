@@ -14,6 +14,7 @@ import { useSessionStore } from "../../stores/session";
 import { isHeicPath } from "../../lib/heic";
 import { useDisplayableImageUrl } from "../../lib/useDisplayableImageUrl";
 import { useRotation } from "../../lib/useRotation";
+import { RotatableVideo } from "../ui/RotatableVideo";
 
 interface LightboxProps {
   convId: number;
@@ -163,13 +164,7 @@ export function Lightbox({ convId }: LightboxProps) {
             />
           )
         ) : (
-          <video
-            src={url}
-            controls
-            autoPlay
-            className="object-contain"
-            style={mediaStyle}
-          />
+          <RotatableVideo src={url} autoPlay style={mediaStyle} />
         )}
         {current.caption && (
           <div className="max-w-2xl text-center text-sm text-white/80">

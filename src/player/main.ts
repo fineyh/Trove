@@ -102,6 +102,70 @@ document.getElementById("rotate-right")?.addEventListener("click", () => {
   applyLayout();
 });
 
+// --- Custom video controls --------------------------------------------------
+
+// Native `<video controls>` renders its progress bar inside the element box, so
+// rotating the frame rotates the controls too. Instead we drive our own control
+// bar that's anchored to the window bottom (see #video-controls in player.html)
+// and stays upright no matter how the frame is rotated.
+
+function formatTime(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
+  const total = Math.floor(seconds);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+function setupVideoControls(video: HTMLVideoElement): void {
+  const bar = document.getElementById("video-controls");
+  const playBtn = document.getElementById("vc-play");
+  const iconPlay = document.getElementById("vc-icon-play");
+  const iconPause = document.getElementById("vc-icon-pause");
+  const seek = document.getElementById("vc-seek") as HTMLInputElement | null;
+  const cur = document.getElementById("vc-current");
+  const dur = document.getElementById("vc-duration");
+  const muteBtn = document.getElementById("vc-mute");
+  const iconVol = document.getElementById("vc-icon-vol");
+  const iconMuted = document.getElementById("vc-icon-muted");
+  if (!bar) return;
+  bar.style.display = "flex";
+
+  const syncPlay = (): void => {
+    const playing = !video.paused;
+    if (iconPlay) iconPlay.style.display = playing ? "none" : "block";
+    if (iconPause) iconPause.style.display = playing ? "block" : "none";
+  };
+  const togglePlay = (): void => {
+    if (video.paused) void video.play().catch(() => {});
+    else video.pause();
+  };
+
+  playBtn?.addEventListener("click", togglePlay);
+  video.addEventListener("click", togglePlay);
+  video.addEventListener("play", syncPlay);
+  video.addEventListener("pause", syncPlay);
+  video.addEventListener("ended", syncPlay);
+
+  video.addEventListener("loadedmetadata", () => {
+    if (seek) seek.max = String(video.duration || 0);
+    if (dur) dur.textContent = formatTime(video.duration);
+  });
+  video.addEventListener("timeupdate", () => {
+    if (seek) seek.value = String(video.currentTime);
+    if (cur) cur.textContent = formatTime(video.currentTime);
+  });
+  seek?.addEventListener("input", () => {
+    video.currentTime = Number(seek.value);
+  });
+
+  muteBtn?.addEventListener("click", () => {
+    video.muted = !video.muted;
+    if (iconVol) iconVol.style.display = video.muted ? "none" : "block";
+    if (iconMuted) iconMuted.style.display = video.muted ? "block" : "none";
+  });
+}
+
 // --- Load the media ---------------------------------------------------------
 
 if (kind === "image") {
@@ -147,9 +211,10 @@ if (kind === "image") {
       },
       { once: true },
     );
+    setupVideoControls(video);
     video.src = src;
     // Autoplay may be blocked for a freshly opened window with no user
-    // activation; `controls` is the fallback so the user can hit play.
+    // activation; the custom control bar is the fallback so the user can hit play.
     void video.play().catch(() => {});
   }
 }

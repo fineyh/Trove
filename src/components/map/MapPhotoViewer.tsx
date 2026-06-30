@@ -13,6 +13,7 @@ import { mediaUrl } from "../../ipc/client";
 import { isHeicPath } from "../../lib/heic";
 import { useDisplayableImageUrl } from "../../lib/useDisplayableImageUrl";
 import { useRotation } from "../../lib/useRotation";
+import { RotatableVideo } from "../ui/RotatableVideo";
 
 interface MapPhotoViewerProps {
   items: GeotaggedMedia[];
@@ -170,13 +171,7 @@ export function MapPhotoViewer({
             />
           )
         ) : (
-          <video
-            src={url}
-            controls
-            autoPlay
-            className="object-contain"
-            style={mediaStyle}
-          />
+          <RotatableVideo src={url} autoPlay style={mediaStyle} />
         )}
       </div>
     </div>
