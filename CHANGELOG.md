@@ -11,6 +11,13 @@ updater notes**. Before running `npm run release x.y.z`, add a matching
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-30
+### Added
+- Photo map: revisit your photos and videos by where they were taken. A new Map view clusters geotagged media on an interactive map (like Apple Photos) — tap a location to see everything shot there, then jump back to its conversation.
+- Rotate a photo or video while viewing it, without changing the original file — in the chat viewer, the map viewer, and the standalone window.
+- A redesigned video control bar: a scrubbable progress bar with buffering and hover preview, skip ±10s, playback speed (0.5×–2×), a volume slider, a loading spinner, auto-hiding controls, fullscreen, and keyboard shortcuts (space / M / F).
+- Rename a conversation and pin it to the top of the list.
+
 ## [0.3.1] - 2026-05-31
 ### Fixed
 - HEIC/HEIF photos (the format iPhones use) now display correctly in the message stream and the profile media grid, instead of showing as broken images.
