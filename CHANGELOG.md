@@ -11,6 +11,10 @@ updater notes**. Before running `npm run release x.y.z`, add a matching
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-07-10
+### Fixed
+- In the standalone photo/video window, the picture now scales with the window as you resize it, instead of staying stuck at its original size while only the window grew.
+
 ## [0.4.0] - 2026-06-30
 ### Added
 - Photo map: revisit your photos and videos by where they were taken. A new Map view clusters geotagged media on an interactive map (like Apple Photos) — tap a location to see everything shot there, then jump back to its conversation.

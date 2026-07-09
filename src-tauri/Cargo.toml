@@ -1,6 +1,6 @@
 [package]
 name = "trove"
-version = "0.4.0"
+version = "0.4.1"
 description = "Trove — local-first media collection manager"
 authors = ["Trove"]
 edition = "2021"
