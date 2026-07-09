@@ -75,35 +75,25 @@ let naturalW = 0;
 let naturalH = 0;
 let rotation = 0;
 
-/** Apply the rotation transform + max-size caps to the frame. The caps swap at a
- *  quarter turn so a rotated frame still fits without overflow. In fullscreen the
- *  picture fills the whole screen (no titlebar to subtract); otherwise it's
- *  capped to the window's content area below the titlebar. */
+/** Apply the rotation transform + explicit frame size to the frame. The picture
+ *  always fills its stage (100vw × the content area, or the whole screen in
+ *  fullscreen) via an explicit width/height, and CSS `object-fit: contain` scales
+ *  it up or down with letterboxing while preserving aspect ratio — so the frame
+ *  tracks the window as the user resizes it. `max-*` alone would only cap, never
+ *  stretch, leaving a small clip stuck at native resolution in a larger window.
+ *  The dimensions swap at a quarter turn so a rotated frame still fits. */
 function applyMediaCaps(): void {
   if (!activeEl) return;
   activeEl.style.transform = `rotate(${rotation}deg)`;
   const quarter = ((((rotation % 360) + 360) % 360) % 180) !== 0;
-  if (document.fullscreenElement) {
-    // Fill the screen. `max-*` only caps, so a clip smaller than the monitor
-    // stayed at native resolution; set an explicit width/height instead and let
-    // CSS `object-fit: contain` scale the picture up with letterboxing.
-    activeEl.style.maxWidth = "none";
-    activeEl.style.maxHeight = "none";
-    activeEl.style.width = quarter ? "100vh" : "100vw";
-    activeEl.style.height = quarter ? "100vw" : "100vh";
-  } else {
-    // Back to natural size capped to the window's content area (the window is
-    // itself resized to the media by fitToContent).
-    activeEl.style.width = "";
-    activeEl.style.height = "";
-    if (quarter) {
-      activeEl.style.maxWidth = `calc(100vh - ${TITLEBAR_HEIGHT}px)`;
-      activeEl.style.maxHeight = "100vw";
-    } else {
-      activeEl.style.maxWidth = "100vw";
-      activeEl.style.maxHeight = `calc(100vh - ${TITLEBAR_HEIGHT}px)`;
-    }
-  }
+  // In fullscreen there's no titlebar to subtract; the stage is the full screen.
+  const stageH = document.fullscreenElement
+    ? "100vh"
+    : `calc(100vh - ${TITLEBAR_HEIGHT}px)`;
+  activeEl.style.maxWidth = "none";
+  activeEl.style.maxHeight = "none";
+  activeEl.style.width = quarter ? stageH : "100vw";
+  activeEl.style.height = quarter ? "100vw" : stageH;
 }
 
 /** Re-fit the popup and the media element to the current rotation. The element's
