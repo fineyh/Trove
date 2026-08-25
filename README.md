@@ -11,7 +11,6 @@
 <p align="center">
   <img src="https://img.shields.io/github/v/release/fineyh/Trove?style=flat-square" alt="Latest Release">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS-blue?style=flat-square" alt="Platform">
-  <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License">
 </p>
 
 ---
@@ -138,7 +137,3 @@ Trove/
 ├── vite.config.ts
 └── tailwind.config.js
 ```
-
-## License
-
-[MIT](LICENSE)
