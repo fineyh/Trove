@@ -11,6 +11,10 @@ updater notes**. Before running `npm run release x.y.z`, add a matching
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-08-29
+### Changed
+- Redesigned the Trove app icon with a new double-eye mark across Windows, macOS, iOS, and Android assets.
+
 ## [0.4.1] - 2026-07-10
 ### Fixed
 - In the standalone photo/video window, the picture now scales with the window as you resize it, instead of staying stuck at its original size while only the window grew.
