@@ -132,20 +132,62 @@ fn load_message_row(conn: &rusqlite::Connection, msg_id: i64) -> AppResult<Messa
     })
 }
 
+/// Cursor for paging *backwards* (toward older messages).
+///
+/// Composite on purpose: `created_at` is not monotonic with `id`, because
+/// folder scans and the watcher store the file's mtime (see `ingest_one`), so
+/// an older photo imported later gets a higher id. An id-only cursor would
+/// skip or repeat rows around every such boundary.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageCursor {
+    pub created_at: i64,
+    pub id: i64,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListMessagesArgs {
     pub conv_id: i64,
+    /// Omit for the first page, which is the *newest* `limit` messages. To
+    /// load more, pass the oldest message the UI currently holds.
     #[serde(default)]
-    pub before_id: Option<i64>,
+    pub before: Option<MessageCursor>,
     #[serde(default = "default_limit")]
     pub limit: i64,
 }
 
 fn default_limit() -> i64 {
-    100
+    60
 }
 
+/// The paging query, newest-first. Split out so it can be exercised against
+/// an in-memory DB (see tests) without standing up the real vault.
+///
+/// Params: `?1` conv_id, `?2`/`?3` the cursor (created_at, id), `?4` limit.
+/// The cursor comparison is a row-value `<` written out longhand — `?2`/`?3`
+/// are `i64::MAX` on the first page, which no real row can match, so one
+/// statement serves both the first page and every page after it.
+fn page_sql(hide_broken: bool) -> String {
+    let mut sql = String::from(
+        "SELECT m.id FROM messages m
+         LEFT JOIN media md ON md.id = m.media_id
+         WHERE m.conv_id = ?1
+           AND (m.created_at < ?2 OR (m.created_at = ?2 AND m.id < ?3))",
+    );
+    if hide_broken {
+        sql.push_str(" AND (m.media_id IS NULL OR md.state = 'live')");
+    }
+    sql.push_str(" ORDER BY m.created_at DESC, m.id DESC LIMIT ?4");
+    sql
+}
+
+/// One page of a conversation, oldest → newest.
+///
+/// The page is cut from the *newest* end: a chat opens pinned to the bottom,
+/// so the first screen must be the latest messages (this used to take the
+/// oldest 100 instead, which hid everything imported afterwards). Caller
+/// detects "more above" by getting a full `limit` rows back.
 #[tauri::command]
 pub fn list_messages(args: ListMessagesArgs) -> AppResult<Vec<MessagePayload>> {
     let strategy: String = db::with_conn(|conn| {
@@ -158,30 +200,25 @@ pub fn list_messages(args: ListMessagesArgs) -> AppResult<Vec<MessagePayload>> {
     })?;
     let hide_broken = strategy == "hide";
 
-    db::with_conn(|conn| {
-        let mut sql = String::from(
-            "SELECT m.id FROM messages m
-             LEFT JOIN media md ON md.id = m.media_id
-             WHERE m.conv_id = ?1",
-        );
-        if hide_broken {
-            sql.push_str(" AND (m.media_id IS NULL OR md.state = 'live')");
-        }
-        if args.before_id.is_some() {
-            sql.push_str(" AND m.id < ?2");
-        }
-        sql.push_str(" ORDER BY m.created_at ASC, m.id ASC LIMIT ?");
-        sql.push_str(if args.before_id.is_some() { "3" } else { "2" });
+    // No cursor = first page. The sentinel sorts after every real row, so the
+    // same comparison covers both cases without a second SQL branch.
+    let (cursor_ts, cursor_id) = args
+        .before
+        .as_ref()
+        .map(|c| (c.created_at, c.id))
+        .unwrap_or((i64::MAX, i64::MAX));
 
-        let mut stmt = conn.prepare(&sql)?;
-        let ids: Vec<i64> = match args.before_id {
-            Some(b) => stmt
-                .query_map(params![args.conv_id, b, args.limit], |r| r.get(0))?
-                .collect::<rusqlite::Result<_>>()?,
-            None => stmt
-                .query_map(params![args.conv_id, args.limit], |r| r.get(0))?
-                .collect::<rusqlite::Result<_>>()?,
-        };
+    db::with_conn(|conn| {
+        let mut stmt = conn.prepare(&page_sql(hide_broken))?;
+        let mut ids: Vec<i64> = stmt
+            .query_map(
+                params![args.conv_id, cursor_ts, cursor_id, args.limit],
+                |r| r.get(0),
+            )?
+            .collect::<rusqlite::Result<_>>()?;
+        // Query ran newest-first to cut the page; hand it back chronologically.
+        ids.reverse();
+
         let mut out = Vec::with_capacity(ids.len());
         for id in ids {
             out.push(load_message_row(conn, id)?);
@@ -311,4 +348,134 @@ pub fn delete_message(message_id: i64, delete_file: bool) -> AppResult<()> {
         }
         Ok(())
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::page_sql;
+    use rusqlite::{params, Connection};
+
+    /// `created_at` deliberately does NOT follow `id` here: ids 4 and 5 carry
+    /// the two oldest timestamps, the way a folder scan writes mtimes after a
+    /// conversation already has hand-added messages. Ids 2 and 3 share a
+    /// timestamp, which is what forces the cursor to be a pair.
+    fn fixture() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE media (id INTEGER PRIMARY KEY, state TEXT NOT NULL);
+             CREATE TABLE messages (
+               id INTEGER PRIMARY KEY,
+               conv_id INTEGER NOT NULL,
+               media_id INTEGER,
+               created_at INTEGER NOT NULL
+             );
+             INSERT INTO media (id, state) VALUES (1, 'broken');",
+        )
+        .unwrap();
+        // (id, created_at, media_id)
+        let rows = [
+            (1i64, 500i64, None),
+            (2, 300, None),
+            (3, 300, None),
+            (4, 100, None),
+            (5, 200, Some(1i64)), // broken media
+            (6, 700, None),
+            (7, 900, None),
+        ];
+        for (id, ts, media) in rows {
+            conn.execute(
+                "INSERT INTO messages (id, conv_id, media_id, created_at)
+                 VALUES (?1, 1, ?2, ?3)",
+                params![id, media, ts],
+            )
+            .unwrap();
+        }
+        // A second conversation that must never leak into the pages.
+        conn.execute(
+            "INSERT INTO messages (id, conv_id, media_id, created_at)
+             VALUES (99, 2, NULL, 800)",
+            [],
+        )
+        .unwrap();
+        conn
+    }
+
+    /// Mirrors `list_messages`: run the page query, then flip to chronological.
+    fn page(
+        conn: &Connection,
+        hide_broken: bool,
+        cursor: Option<(i64, i64)>,
+        limit: i64,
+    ) -> Vec<i64> {
+        let (ts, id) = cursor.unwrap_or((i64::MAX, i64::MAX));
+        let mut stmt = conn.prepare(&page_sql(hide_broken)).unwrap();
+        let mut ids: Vec<i64> = stmt
+            .query_map(params![1i64, ts, id, limit], |r| r.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        ids.reverse();
+        ids
+    }
+
+    fn cursor_of(conn: &Connection, msg_id: i64) -> (i64, i64) {
+        let ts: i64 = conn
+            .query_row(
+                "SELECT created_at FROM messages WHERE id = ?1",
+                params![msg_id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        (ts, msg_id)
+    }
+
+    #[test]
+    fn first_page_is_the_newest_messages() {
+        let conn = fixture();
+        // Chronologically: 4(100) 5(200) 2(300) 3(300) 1(500) 6(700) 7(900).
+        // The newest three are 1, 6, 7 — the old query returned 4, 5, 2 here,
+        // which is what hid everything imported after the first 100 messages.
+        assert_eq!(page(&conn, false, None, 3), vec![1, 6, 7]);
+    }
+
+    #[test]
+    fn walking_back_covers_every_row_exactly_once() {
+        let conn = fixture();
+        let mut seen: Vec<i64> = Vec::new();
+        let mut cursor = None;
+        loop {
+            let got = page(&conn, false, cursor, 2);
+            if got.is_empty() {
+                break;
+            }
+            cursor = Some(cursor_of(&conn, got[0]));
+            // Pages arrive newest-first, so each one goes in front.
+            let mut next = got;
+            next.extend(seen);
+            seen = next;
+        }
+        assert_eq!(seen, vec![4, 5, 2, 3, 1, 6, 7]);
+    }
+
+    #[test]
+    fn tied_timestamps_do_not_repeat_or_skip() {
+        let conn = fixture();
+        // Page boundary lands between 2 and 3, which share created_at = 300.
+        // An id-only cursor would re-serve or drop one of them.
+        assert_eq!(page(&conn, false, Some((500, 1)), 1), vec![3]);
+        assert_eq!(page(&conn, false, Some(cursor_of(&conn, 3)), 1), vec![2]);
+    }
+
+    #[test]
+    fn hide_broken_drops_only_broken_media_rows() {
+        let conn = fixture();
+        // id 5 points at broken media; text-only rows (media_id NULL) stay.
+        assert_eq!(page(&conn, true, None, 10), vec![4, 2, 3, 1, 6, 7]);
+    }
+
+    #[test]
+    fn other_conversations_never_leak_in() {
+        let conn = fixture();
+        assert!(!page(&conn, false, None, 10).contains(&99));
+    }
 }

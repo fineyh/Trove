@@ -70,9 +70,17 @@ export async function deleteConversation(id: number): Promise<void> {
   await invoke("delete_conversation", { id });
 }
 
+/** Cursor for paging backwards. Composite because `createdAt` is not
+ *  monotonic with `id` (folder scans store the file's mtime). */
+export interface MessageCursor {
+  createdAt: number;
+  id: number;
+}
+
 export interface ListMessagesArgs {
   convId: number;
-  beforeId?: number;
+  /** Omit for the newest page; pass the oldest held message to go further back. */
+  before?: MessageCursor;
   limit?: number;
 }
 

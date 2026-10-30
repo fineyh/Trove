@@ -24,7 +24,14 @@ export function ChatView() {
   const loading = useMessagesStore((s) =>
     activeId !== null ? s.loading[activeId] === true : false,
   );
+  const loadingOlder = useMessagesStore((s) =>
+    activeId !== null ? s.loadingOlder[activeId] === true : false,
+  );
+  const hasMore = useMessagesStore((s) =>
+    activeId !== null ? s.hasMore[activeId] === true : false,
+  );
   const loadMessages = useMessagesStore((s) => s.load);
+  const loadOlder = useMessagesStore((s) => s.loadOlder);
   const openVaultDialog = useVaultStore((s) => s.openDialog);
   const mainRef = useRef<HTMLElement | null>(null);
 
@@ -114,6 +121,9 @@ export function ChatView() {
           <MessageList
             messages={messages}
             loading={loading}
+            hasMore={hasMore}
+            loadingOlder={loadingOlder}
+            onLoadOlder={() => void loadOlder(activeId)}
             scrollContainerRef={mainRef}
           />
         )}
