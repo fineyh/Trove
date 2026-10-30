@@ -4,6 +4,7 @@ pub mod exif;
 pub mod file_watcher;
 pub mod folder_scanner;
 pub mod hasher;
+pub mod jobs;
 pub mod oauth;
 pub mod relocate;
 pub mod vault;

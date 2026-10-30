@@ -54,6 +54,7 @@ pub fn run() {
             commands::messages::increment_play_count,
             commands::messages::delete_message,
             commands::media::import_files,
+            commands::media::cancel_import,
             commands::folders::create_manual_from_folder,
             commands::folders::rescan_folder,
             commands::geo::list_geotagged_media,

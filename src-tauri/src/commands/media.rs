@@ -1,5 +1,5 @@
 use crate::services::{crypto, vault};
-use crate::{db, services, AppError, AppResult};
+use crate::{db, events, services, AppError, AppResult};
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -42,8 +42,88 @@ pub struct ImportFilesArgs {
     pub paths: Vec<String>,
 }
 
+/// Shown when a second import is attempted while one is still running.
+pub(crate) const BUSY: &str = "已有导入任务正在进行，请先等待完成或取消";
+
+/// How many files to get through between progress events. One event per file
+/// would flood the IPC channel on a 10k-file folder; 10 keeps the bar smooth.
+const PROGRESS_EVERY: usize = 10;
+
+/// Ingest `paths` into `conv_id`, reporting progress and honouring cancel.
+///
+/// Shared by all three import entry points (manual upload, bulk-from-folder,
+/// rescan) so they emit the same event stream and stop the same way. Returns
+/// `(imported, cancelled)`; per-file errors are logged and skipped, exactly as
+/// before — one unreadable file must not abort a 10k-file scan.
+pub(crate) fn ingest_batch(
+    conv_id: i64,
+    paths: &[PathBuf],
+    job: &services::jobs::ImportJob,
+    allow_message_dup: bool,
+    use_mtime_for_created_at: bool,
+    mut on_imported: impl FnMut(&Path, ImportedMessage),
+) -> (usize, bool) {
+    let total = paths.len();
+    let mut imported = 0usize;
+    let mut cancelled = false;
+
+    for (idx, path) in paths.iter().enumerate() {
+        if job.cancelled() {
+            cancelled = true;
+            break;
+        }
+        if idx % PROGRESS_EVERY == 0 {
+            events::emit_import_progress(events::ImportProgress {
+                conv_id,
+                done: idx,
+                total,
+                current: path
+                    .file_name()
+                    .map(|s| s.to_string_lossy().to_string()),
+                finished: false,
+                cancelled: false,
+            });
+        }
+        match ingest_one(conv_id, path, allow_message_dup, use_mtime_for_created_at) {
+            Ok(Some(msg)) => {
+                imported += 1;
+                on_imported(path, msg);
+            }
+            Ok(None) => {}
+            Err(e) => eprintln!("import failed for {}: {e}", path.display()),
+        }
+    }
+
+    // Always land a final event, cancelled or not, so the UI clears its bar.
+    events::emit_import_progress(events::ImportProgress {
+        conv_id,
+        done: total,
+        total,
+        current: None,
+        finished: true,
+        cancelled,
+    });
+    (imported, cancelled)
+}
+
+/// Ask the running import to stop at the next file boundary. Safe to call
+/// when nothing is running.
 #[tauri::command]
-pub fn import_files(args: ImportFilesArgs) -> AppResult<Vec<ImportedMessage>> {
+pub fn cancel_import() {
+    services::jobs::request_cancel();
+}
+
+/// Import hand-picked files into a `manual` conversation.
+///
+/// `async` + `run_blocking` is load-bearing: every file gets a full-content
+/// BLAKE3 hash and an EXIF read, which on the WebView callback thread froze
+/// the window until the whole batch was done.
+#[tauri::command]
+pub async fn import_files(args: ImportFilesArgs) -> AppResult<Vec<ImportedMessage>> {
+    super::run_blocking(move || import_files_blocking(args)).await
+}
+
+fn import_files_blocking(args: ImportFilesArgs) -> AppResult<Vec<ImportedMessage>> {
     if args.paths.is_empty() {
         return Ok(vec![]);
     }
@@ -61,16 +141,19 @@ pub fn import_files(args: ImportFilesArgs) -> AppResult<Vec<ImportedMessage>> {
         ));
     }
 
-    let mut imported = Vec::with_capacity(args.paths.len());
-    for raw in &args.paths {
-        let path = PathBuf::from(raw);
-        if !path.is_file() {
-            continue;
-        }
-        if let Some(imp) = ingest_one(args.conv_id, &path, true, false)? {
-            imported.push(imp);
-        }
-    }
+    let job = services::jobs::ImportJob::begin()
+        .ok_or_else(|| AppError::InvalidArg(BUSY.into()))?;
+    let paths: Vec<PathBuf> = args
+        .paths
+        .iter()
+        .map(PathBuf::from)
+        .filter(|p| p.is_file())
+        .collect();
+
+    let mut imported = Vec::with_capacity(paths.len());
+    ingest_batch(args.conv_id, &paths, &job, true, false, |_, msg| {
+        imported.push(msg)
+    });
 
     if !imported.is_empty() {
         let now = now_ms();

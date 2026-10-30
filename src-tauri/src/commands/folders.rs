@@ -1,4 +1,4 @@
-use crate::{db, services, AppError, AppResult};
+use crate::{db, events, services, AppError, AppResult};
 use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -31,8 +31,17 @@ pub struct BulkImportResult {
 /// Create a `manual` conversation seeded with every media file inside
 /// `folder_path` (recursive). After creation the conversation behaves
 /// identically to a hand-built manual conversation — no watcher attaches.
+///
+/// Runs off the UI thread (see `run_blocking`): a big folder means thousands
+/// of full-content hashes, which used to freeze the window for minutes.
 #[tauri::command]
-pub fn create_manual_from_folder(
+pub async fn create_manual_from_folder(
+    args: CreateManualFromFolderArgs,
+) -> AppResult<BulkImportResult> {
+    super::run_blocking(move || create_manual_from_folder_blocking(args)).await
+}
+
+fn create_manual_from_folder_blocking(
     args: CreateManualFromFolderArgs,
 ) -> AppResult<BulkImportResult> {
     let folder = PathBuf::from(&args.folder_path);
@@ -49,6 +58,9 @@ pub fn create_manual_from_folder(
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| folder_basename(&folder));
 
+    let job = services::jobs::ImportJob::begin()
+        .ok_or_else(|| AppError::InvalidArg(super::media::BUSY.into()))?;
+
     let now = now_ms();
     let conv_id: i64 = db::with_conn(|conn| {
         conn.execute(
@@ -61,24 +73,27 @@ pub fn create_manual_from_folder(
         Ok::<i64, AppError>(conn.last_insert_rowid())
     })?;
 
+    // total = 0 tells the UI "still counting files" (indeterminate bar).
+    events::emit_import_progress(events::ImportProgress {
+        conv_id,
+        done: 0,
+        total: 0,
+        current: None,
+        finished: false,
+        cancelled: false,
+    });
     let paths = services::folder_scanner::enumerate_media(&folder);
-    let mut imported = 0usize;
+
     let mut first_image_abs: Option<String> = None;
-    for p in paths {
-        match super::media::ingest_one(conv_id, &p, true, true) {
-            Ok(Some(msg)) => {
-                imported += 1;
-                if first_image_abs.is_none() {
-                    let mime = mime_guess::from_path(&p).first_or_octet_stream();
-                    if mime.type_().as_str() == "image" {
-                        first_image_abs = Some(msg.absolute_path);
-                    }
+    let (imported, _cancelled) =
+        super::media::ingest_batch(conv_id, &paths, &job, true, true, |p, msg| {
+            if first_image_abs.is_none() {
+                let mime = mime_guess::from_path(p).first_or_octet_stream();
+                if mime.type_().as_str() == "image" {
+                    first_image_abs = Some(msg.absolute_path);
                 }
             }
-            Ok(None) => {}
-            Err(e) => eprintln!("bulk import failed for {}: {e}", p.display()),
-        }
-    }
+        });
 
     if let Some(avatar) = first_image_abs {
         let touch = now_ms();
@@ -101,9 +116,14 @@ pub struct RescanResult {
 }
 
 /// Manually re-scan a folder_watch conversation. Useful when the watcher
-/// missed events (it was offline, large directory dump, etc.).
+/// missed events (it was offline, large directory dump, etc.). Off the UI
+/// thread for the same reason as the bulk import above.
 #[tauri::command]
-pub fn rescan_folder(conv_id: i64) -> AppResult<RescanResult> {
+pub async fn rescan_folder(conv_id: i64) -> AppResult<RescanResult> {
+    super::run_blocking(move || rescan_folder_blocking(conv_id)).await
+}
+
+fn rescan_folder_blocking(conv_id: i64) -> AppResult<RescanResult> {
     let row: Option<(String, String, i64)> = db::with_conn(|conn| {
         conn.query_row(
             "SELECT v.last_mount, c.source_relpath, c.source_volume_id
@@ -125,15 +145,13 @@ pub fn rescan_folder(conv_id: i64) -> AppResult<RescanResult> {
             root.display()
         )));
     }
+
+    let job = services::jobs::ImportJob::begin()
+        .ok_or_else(|| AppError::InvalidArg(super::media::BUSY.into()))?;
     let paths = services::folder_scanner::enumerate_media(&root);
-    let mut added = 0usize;
-    for p in paths {
-        match super::media::ingest_one(conv_id, &p, false, true) {
-            Ok(Some(_)) => added += 1,
-            Ok(None) => {}
-            Err(e) => eprintln!("rescan ingest failed for {}: {e}", p.display()),
-        }
-    }
+    let (added, _cancelled) =
+        super::media::ingest_batch(conv_id, &paths, &job, false, true, |_, _| {});
+
     if added > 0 {
         let now = now_ms();
         let _ = db::with_conn(|conn| -> AppResult<()> {

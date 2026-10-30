@@ -11,6 +11,7 @@ import type {
   ConversationKind,
   ConvChangedEvent,
   GeotaggedMedia,
+  ImportProgressEvent,
   MissingFileStrategy,
   Message,
   RepairOutcome,
@@ -121,6 +122,22 @@ export async function createManualFromFolder(
 
 export async function rescanFolder(convId: number): Promise<{ added: number }> {
   return invoke<{ added: number }>("rescan_folder", { convId });
+}
+
+/** Ask the running import/scan to stop at the next file boundary. */
+export async function cancelImport(): Promise<void> {
+  if (!isTauri()) return;
+  await invoke("cancel_import");
+}
+
+/** Subscribe to backend `import:progress` events (import / folder scan). */
+export async function onImportProgress(
+  handler: (payload: ImportProgressEvent) => void,
+): Promise<UnlistenFn> {
+  if (!isTauri()) return () => {};
+  return listen<ImportProgressEvent>("import:progress", (e) =>
+    handler(e.payload),
+  );
 }
 
 export async function incrementPlayCount(messageId: number): Promise<number> {

@@ -68,6 +68,17 @@ export interface ConvChangedEvent {
   broken: number;
 }
 
+/** Payload of the backend `import:progress` event. */
+export interface ImportProgressEvent {
+  convId: number;
+  done: number;
+  /** 0 = still enumerating the folder (show an indeterminate bar). */
+  total: number;
+  current: string | null;
+  finished: boolean;
+  cancelled: boolean;
+}
+
 export type MissingFileStrategy = "hide" | "placeholder";
 
 export type RepairScope =

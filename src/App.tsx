@@ -10,8 +10,14 @@ import { VaultDialog } from "./components/dialogs/VaultDialog";
 import { ConvUnlockDialog } from "./components/dialogs/ConvUnlockDialog";
 import { ProfileDrawer } from "./components/profile/ProfileDrawer";
 import { MapView } from "./components/map/MapView";
-import { onConvChanged, onVolumesChanged, openUrl } from "./ipc/client";
+import {
+  onConvChanged,
+  onImportProgress,
+  onVolumesChanged,
+  openUrl,
+} from "./ipc/client";
 import { useConversationsStore } from "./stores/conversations";
+import { useImportJobStore } from "./stores/importJob";
 import { useMessagesStore } from "./stores/messages";
 import { useSessionStore } from "./stores/session";
 import { useSettingsStore } from "./stores/settings";
@@ -82,6 +88,7 @@ export default function App() {
     if (!ready) return;
     let unlistenConv: (() => void) | null = null;
     let unlistenVol: (() => void) | null = null;
+    let unlistenImport: (() => void) | null = null;
     let cancelled = false;
 
     void onConvChanged((payload) => {
@@ -110,10 +117,19 @@ export default function App() {
       else unlistenVol = fn;
     });
 
+    // 导入跑在后台线程上，进度靠事件推上来（见 ImportProgressBar）
+    void onImportProgress((payload) => {
+      useImportJobStore.getState().apply(payload);
+    }).then((fn) => {
+      if (cancelled) fn();
+      else unlistenImport = fn;
+    });
+
     return () => {
       cancelled = true;
       unlistenConv?.();
       unlistenVol?.();
+      unlistenImport?.();
     };
   }, [ready]);
 

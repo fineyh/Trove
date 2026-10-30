@@ -6,6 +6,7 @@ import { useSessionStore } from "../../stores/session";
 import { isTauri } from "../../hooks/useIsTauri";
 import { cn } from "../../lib/cn";
 import * as ipc from "../../ipc/client";
+import { ImportProgressBar } from "../ui/ImportProgressBar";
 
 type Mode = "manual" | "folder_bulk" | "folder_watch";
 
@@ -239,6 +240,11 @@ export function NewConversationDialog() {
         )}
 
         {error && <div className="text-xs text-red-500">{error}</div>}
+
+        {/* 批量导入跑在后台线程上，这里能实时显示进度、也能中途取消 */}
+        <div className="-mx-5 -mb-1 empty:hidden">
+          <ImportProgressBar />
+        </div>
 
         <div className="flex justify-end gap-2 pt-1">
           <button

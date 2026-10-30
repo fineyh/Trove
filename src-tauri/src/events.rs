@@ -47,3 +47,26 @@ pub fn emit_geo_backfill_done(updated: usize) {
         let _ = h.emit("geo:backfill-done", GeoBackfillDone { updated });
     }
 }
+
+/// Progress of a running import / folder scan. Emitted from the blocking
+/// thread that does the work, throttled by the caller (one event per N files),
+/// with `finished` marking the last one so the UI can clear its progress bar
+/// even when the job was cut short.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportProgress {
+    pub conv_id: i64,
+    pub done: usize,
+    /// 0 while still enumerating the folder (UI shows an indeterminate bar).
+    pub total: usize,
+    /// Name of the file being hashed — the slow part, worth showing.
+    pub current: Option<String>,
+    pub finished: bool,
+    pub cancelled: bool,
+}
+
+pub fn emit_import_progress(payload: ImportProgress) {
+    if let Some(h) = APP_HANDLE.get() {
+        let _ = h.emit("import:progress", payload);
+    }
+}
