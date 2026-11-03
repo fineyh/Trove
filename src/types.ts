@@ -77,6 +77,8 @@ export interface ImportProgressEvent {
   current: string | null;
   finished: boolean;
   cancelled: boolean;
+  /** 单个文件导入失败的个数（不会中断整批）。 */
+  failed: number;
 }
 
 export type MissingFileStrategy = "hide" | "placeholder";

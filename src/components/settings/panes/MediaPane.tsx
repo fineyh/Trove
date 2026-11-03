@@ -4,6 +4,7 @@ import * as ipc from "../../../ipc/client";
 import type { RepairScope } from "../../../types";
 import { BrokenManagerDialog } from "./BrokenManagerDialog";
 import { cn } from "../../../lib/cn";
+import { toast } from "../../../stores/toast";
 
 const SCOPE_OPTIONS: ReadonlyArray<{ value: RepairScope; label: string; desc: string }> = [
   {
@@ -38,7 +39,7 @@ export function MediaPane() {
       const total = groups.reduce((acc, g) => acc + g.items.length, 0);
       setCount(total);
     } catch (e) {
-      console.error("list_broken_pointers failed", e);
+      toast.error("读取失效文件列表失败", e);
       setCount(null);
     } finally {
       setLoading(false);

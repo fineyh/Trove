@@ -1,6 +1,7 @@
 import { Lock, X } from "lucide-react";
 import { useState } from "react";
 import { useVaultStore } from "../../stores/vault";
+import { errText } from "../../lib/errors";
 
 type Mode = "set" | "change" | "remove";
 
@@ -77,7 +78,7 @@ export function VaultDialog() {
       reset();
       close();
     } catch (err: unknown) {
-      const m = err instanceof Error ? err.message : String(err);
+      const m = errText(err);
       setError(m);
       setBusy(false);
     }

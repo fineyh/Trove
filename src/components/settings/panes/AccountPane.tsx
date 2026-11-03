@@ -2,6 +2,7 @@ import { LogIn, LogOut, User } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useAuthStore } from "../../../stores/auth";
 import { useVaultStore } from "../../../stores/vault";
+import { errText } from "../../../lib/errors";
 
 export function AccountPane() {
   const status = useAuthStore((s) => s.status);
@@ -26,7 +27,7 @@ export function AccountPane() {
     try {
       await login();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errText(e));
     }
   };
 
@@ -35,7 +36,7 @@ export function AccountPane() {
     try {
       await doLogout();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errText(e));
     }
   };
 

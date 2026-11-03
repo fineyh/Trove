@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import * as ipc from "../ipc/client";
+import { toast } from "./toast";
 import type { AuthStatus } from "../types";
 
 const INITIAL: AuthStatus = {
@@ -28,7 +29,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       const status = await ipc.authStatus();
       set({ status, ready: true });
     } catch (e) {
-      console.error("authStatus failed", e);
+      toast.error("读取账号状态失败", e);
       set({ ready: true });
     }
   },

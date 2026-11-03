@@ -6,6 +6,7 @@ import { useVaultStore } from "../../stores/vault";
 import * as ipc from "../../ipc/client";
 import type { Conversation, SearchHit } from "../../types";
 import { cn } from "../../lib/cn";
+import { toast } from "../../stores/toast";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 import { ContextMenu } from "../ui/ContextMenu";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
@@ -146,7 +147,7 @@ export function ChatList() {
         if (!cancelled) setHits(res);
       })
       .catch((e) => {
-        if (!cancelled) console.error("search failed", e);
+        if (!cancelled) toast.error("搜索失败", e);
       });
     return () => {
       cancelled = true;
@@ -195,7 +196,7 @@ export function ChatList() {
       if (wasActive) setActive(null);
       setConfirmDeleteId(null);
     } catch (e) {
-      console.error("delete conversation failed", e);
+      toast.error("删除会话失败", e);
     } finally {
       setDeleteBusy(false);
     }

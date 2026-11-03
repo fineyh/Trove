@@ -4,6 +4,7 @@ import { useVaultStore } from "../../stores/vault";
 import { useConversationsStore } from "../../stores/conversations";
 import { useMessagesStore } from "../../stores/messages";
 import * as ipc from "../../ipc/client";
+import { errText } from "../../lib/errors";
 
 export function ConvUnlockDialog() {
   const dialog = useVaultStore((s) => s.dialog);
@@ -36,7 +37,7 @@ export function ConvUnlockDialog() {
       await reloadMessages(convId);
       handleClose();
     } catch (err: unknown) {
-      const m = err instanceof Error ? err.message : String(err);
+      const m = errText(err);
       setError(m);
       setBusy(false);
     }

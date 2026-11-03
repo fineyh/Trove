@@ -22,6 +22,7 @@ import type {
 } from "../../../types";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { cn } from "../../../lib/cn";
+import { errText } from "../../../lib/errors";
 
 interface BrokenManagerDialogProps {
   scope: RepairScope;
@@ -60,7 +61,7 @@ export function BrokenManagerDialog({ scope, onClose }: BrokenManagerDialogProps
       setLoadError(null);
     } catch (e) {
       console.error("list_broken_pointers failed", e);
-      setLoadError(String(e));
+      setLoadError(errText(e));
       setGroups([]);
     }
   }, []);
@@ -163,7 +164,7 @@ export function BrokenManagerDialog({ scope, onClose }: BrokenManagerDialogProps
       }
     } catch (e) {
       console.error("repair_media failed", e);
-      setHint(sourceMessageId, { tone: "error", text: `修复失败: ${String(e)}` });
+      setHint(sourceMessageId, { tone: "error", text: `修复失败: ${errText(e)}` });
     } finally {
       setProcessingMedia((prev) => {
         const next = new Set(prev);
@@ -184,7 +185,7 @@ export function BrokenManagerDialog({ scope, onClose }: BrokenManagerDialogProps
       await runRepair(item.mediaId, item.messageId, picked);
     } catch (e) {
       console.error("open dialog failed", e);
-      setHint(item.messageId, { tone: "error", text: `打开文件选择器失败: ${String(e)}` });
+      setHint(item.messageId, { tone: "error", text: `打开文件选择器失败: ${errText(e)}` });
     }
   };
 
@@ -234,7 +235,7 @@ export function BrokenManagerDialog({ scope, onClose }: BrokenManagerDialogProps
       console.error("delete_message failed", e);
       setHint(pendingDelete.item.messageId, {
         tone: "error",
-        text: `删除失败: ${String(e)}`,
+        text: `删除失败: ${errText(e)}`,
       });
     } finally {
       setDeleteBusy(false);

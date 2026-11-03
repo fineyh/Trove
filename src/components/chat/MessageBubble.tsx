@@ -5,6 +5,7 @@ import { mediaUrl } from "../../ipc/client";
 import { useSessionStore } from "../../stores/session";
 import { useMessagesStore } from "../../stores/messages";
 import { useConversationsStore } from "../../stores/conversations";
+import { toast } from "../../stores/toast";
 import { ContextMenu, type ContextMenuItem } from "../ui/ContextMenu";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { openPlayerWindow } from "../../lib/playerWindow";
@@ -205,7 +206,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
       await remove(message.id, message.convId, canDeleteFile && deleteFile);
       setConfirmOpen(false);
     } catch (err) {
-      console.error("delete message failed", err);
+      toast.error("删除消息失败", err);
     } finally {
       setBusy(false);
     }

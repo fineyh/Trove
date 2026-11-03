@@ -5,6 +5,7 @@ import { useConversationsStore } from "../../stores/conversations";
 import { useSessionStore } from "../../stores/session";
 import { isTauri } from "../../hooks/useIsTauri";
 import { cn } from "../../lib/cn";
+import { errText } from "../../lib/errors";
 import * as ipc from "../../ipc/client";
 import { ImportProgressBar } from "../ui/ImportProgressBar";
 
@@ -99,9 +100,8 @@ export function NewConversationDialog() {
       setActive(id);
       close();
     } catch (e: unknown) {
-      const m = e instanceof Error ? e.message : String(e);
       console.error("create_conversation failed", e);
-      setError(m);
+      setError(errText(e));
       setBusy(false);
     }
   };

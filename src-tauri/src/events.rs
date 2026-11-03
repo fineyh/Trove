@@ -63,6 +63,10 @@ pub struct ImportProgress {
     pub current: Option<String>,
     pub finished: bool,
     pub cancelled: bool,
+    /// Files that errored out. One bad file never stops the batch, so without
+    /// this the UI has no way to say "97 imported, 3 failed" and the failures
+    /// stay invisible to the user.
+    pub failed: usize,
 }
 
 pub fn emit_import_progress(payload: ImportProgress) {

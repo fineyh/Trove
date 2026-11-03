@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import * as ipc from "../ipc/client";
+import { toast } from "./toast";
 import type {
   AppSettings,
   MissingFileStrategy,
@@ -39,7 +40,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       ]);
       set({ settings, volumes, stats, loading: false });
     } catch (e) {
-      console.error("settings.load failed", e);
+      toast.error("读取设置失败", e);
       set({ loading: false });
     }
   },
@@ -48,7 +49,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       const volumes = await ipc.listVolumes();
       set({ volumes });
     } catch (e) {
-      console.error("listVolumes failed", e);
+      toast.error("读取卷列表失败", e);
     }
   },
   loadStats: async () => {
@@ -56,7 +57,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       const stats = await ipc.getStorageStats();
       set({ stats });
     } catch (e) {
-      console.error("getStorageStats failed", e);
+      toast.error("读取存储统计失败", e);
     }
   },
   setMissingStrategy: async (value) => {

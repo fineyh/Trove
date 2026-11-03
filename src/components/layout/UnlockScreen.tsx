@@ -1,6 +1,7 @@
 import { Lock } from "lucide-react";
 import { useState } from "react";
 import { useVaultStore } from "../../stores/vault";
+import { errText } from "../../lib/errors";
 
 export function UnlockScreen() {
   const unlock = useVaultStore((s) => s.unlock);
@@ -17,13 +18,7 @@ export function UnlockScreen() {
       await unlock(password);
       setPassword("");
     } catch (err: unknown) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : typeof err === "string"
-            ? err
-            : "解锁失败";
-      setError(message);
+      setError(errText(err, "解锁失败"));
       setBusy(false);
     }
   };

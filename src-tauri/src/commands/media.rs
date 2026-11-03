@@ -65,6 +65,7 @@ pub(crate) fn ingest_batch(
 ) -> (usize, bool) {
     let total = paths.len();
     let mut imported = 0usize;
+    let mut failed = 0usize;
     let mut cancelled = false;
 
     for (idx, path) in paths.iter().enumerate() {
@@ -82,6 +83,7 @@ pub(crate) fn ingest_batch(
                     .map(|s| s.to_string_lossy().to_string()),
                 finished: false,
                 cancelled: false,
+                failed,
             });
         }
         match ingest_one(conv_id, path, allow_message_dup, use_mtime_for_created_at) {
@@ -90,7 +92,10 @@ pub(crate) fn ingest_batch(
                 on_imported(path, msg);
             }
             Ok(None) => {}
-            Err(e) => eprintln!("import failed for {}: {e}", path.display()),
+            Err(e) => {
+                failed += 1;
+                eprintln!("import failed for {}: {e}", path.display());
+            }
         }
     }
 
@@ -102,6 +107,7 @@ pub(crate) fn ingest_batch(
         current: None,
         finished: true,
         cancelled,
+        failed,
     });
     (imported, cancelled)
 }

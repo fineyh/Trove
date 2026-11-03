@@ -5,6 +5,7 @@ import * as ipc from "../../../ipc/client";
 import { useVaultStore } from "../../../stores/vault";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { isTauri } from "../../../hooks/useIsTauri";
+import { errText } from "../../../lib/errors";
 import type { BackupExportResult } from "../../../types";
 
 function formatBytes(n: number): string {
@@ -49,7 +50,7 @@ export function BackupPane() {
       const result = await ipc.exportBackup(dest);
       setExported(result);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errText(e));
     } finally {
       setBusy(null);
     }
@@ -71,7 +72,7 @@ export function BackupPane() {
         setPendingImportPath(src);
       }
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errText(e));
     }
   };
 
@@ -89,7 +90,7 @@ export function BackupPane() {
       );
       await relaunch();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errText(e));
       setBusy(null);
     }
   };

@@ -6,6 +6,7 @@ import type { VolumePayload, VolumeStat } from "../../../types";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import * as ipc from "../../../ipc/client";
 import { cn } from "../../../lib/cn";
+import { toast } from "../../../stores/toast";
 
 function formatBytes(n: number): string {
   if (!Number.isFinite(n) || n <= 0) return "0 B";
@@ -45,8 +46,12 @@ export function StoragePane() {
   );
 
   const handleRescan = async () => {
-    await rescan();
-    await refreshConvs();
+    try {
+      await rescan();
+      await refreshConvs();
+    } catch (e) {
+      toast.error("重新扇描卷失败", e);
+    }
   };
 
   const handleForgetConfirm = async () => {
@@ -56,6 +61,8 @@ export function StoragePane() {
       await forget(pendingForget.id);
       await refreshConvs();
       setPendingForget(null);
+    } catch (e) {
+      toast.error("移除卷记录失败", e);
     } finally {
       setForgetBusy(false);
     }
@@ -74,7 +81,7 @@ export function StoragePane() {
         copyTimerRef.current = null;
       }, 1500);
     } catch (e) {
-      console.error("clipboard.writeText failed", e);
+      toast.error("复制路径失败", e);
     }
   };
 
@@ -83,7 +90,7 @@ export function StoragePane() {
     try {
       await ipc.openPath(stats.dataDir);
     } catch (e) {
-      console.error("open dataDir failed", e);
+      toast.error("打开数据目录失败", e);
     }
   };
 

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useConversationsStore } from "../../stores/conversations";
 import { EMPTY_MESSAGES, useMessagesStore } from "../../stores/messages";
 import { useSessionStore } from "../../stores/session";
+import { toast } from "../../stores/toast";
 import { ContextMenu } from "../ui/ContextMenu";
 import { MediaGrid } from "./MediaGrid";
 
@@ -119,7 +120,7 @@ export function ProfileDrawer() {
               await rename(conv.id, next);
               setRenaming(false);
             } catch (e) {
-              console.error("rename conversation failed", e);
+              toast.error("修改会话名失败", e);
             } finally {
               setRenameBusy(false);
             }

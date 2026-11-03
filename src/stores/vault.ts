@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import * as ipc from "../ipc/client";
+import { toast } from "./toast";
 import type { VaultStatus } from "../types";
 
 type DialogMode = null | "set" | "change" | "remove" | "unlock-conv";
@@ -32,7 +33,7 @@ export const useVaultStore = create<VaultState>((set, get) => ({
       const status = await ipc.vaultStatus();
       set({ status, ready: true });
     } catch (e) {
-      console.error("vaultStatus failed", e);
+      toast.error("读取加密状态失败", e);
       set({ ready: true });
     }
   },

@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import * as ipc from "../ipc/client";
+import { toast } from "./toast";
 import type { Message } from "../types";
 
 /** Stable empty reference — return this from selectors instead of `?? []`
@@ -43,7 +44,7 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
         loading: { ...s.loading, [convId]: false },
       }));
     } catch (e) {
-      console.error("listMessages failed", e);
+      toast.error("加载消息失败", e);
       set((s) => ({ loading: { ...s.loading, [convId]: false } }));
     }
   },
@@ -72,7 +73,7 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
         };
       });
     } catch (e) {
-      console.error("listMessages (older) failed", e);
+      toast.error("加载更早的消息失败", e);
       set((st) => ({ loadingOlder: { ...st.loadingOlder, [convId]: false } }));
     }
   },

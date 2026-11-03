@@ -2,6 +2,7 @@ import { Paperclip, Send } from "lucide-react";
 import { useState } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useMessagesStore } from "../../stores/messages";
+import { toast } from "../../stores/toast";
 import { ImportProgressBar } from "../ui/ImportProgressBar";
 import { isTauri } from "../../hooks/useIsTauri";
 
@@ -25,7 +26,7 @@ export function Composer({ convId, disabled, disabledReason }: ComposerProps) {
       await sendText(convId, value);
       setText("");
     } catch (e) {
-      console.error("send_text failed", e);
+      toast.error("发送失败", e);
     } finally {
       setBusy(false);
     }
@@ -33,7 +34,7 @@ export function Composer({ convId, disabled, disabledReason }: ComposerProps) {
 
   const handlePick = async () => {
     if (!isTauri()) {
-      console.warn("file picker requires Tauri runtime");
+      toast.info("文件选择器只能在桌面应用里使用");
       return;
     }
     try {
@@ -66,7 +67,7 @@ export function Composer({ convId, disabled, disabledReason }: ComposerProps) {
       setBusy(true);
       await importFiles(convId, paths);
     } catch (e) {
-      console.error("import_files failed", e);
+      toast.error("导入失败", e);
     } finally {
       setBusy(false);
     }

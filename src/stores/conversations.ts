@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import * as ipc from "../ipc/client";
+import { toast } from "./toast";
 import type { Conversation } from "../types";
 
 interface ConversationsState {
@@ -31,7 +32,7 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
       const list = await ipc.listConversations();
       set({ list, loading: false });
     } catch (e) {
-      console.error("listConversations failed", e);
+      toast.error("加载会话列表失败", e);
       set({ loading: false });
     }
   },

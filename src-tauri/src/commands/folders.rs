@@ -81,6 +81,7 @@ fn create_manual_from_folder_blocking(
         current: None,
         finished: false,
         cancelled: false,
+        failed: 0,
     });
     let paths = services::folder_scanner::enumerate_media(&folder);
 
