@@ -1,4 +1,4 @@
--- Trove SQLite schema v1
+-- Trove SQLite schema (latest; see db/migrations.rs SCHEMA_LATEST)
 -- See plans/1-telegram-trove-... for full design rationale.
 
 BEGIN;
@@ -48,6 +48,9 @@ CREATE TABLE media (
   lat         REAL,
   lon         REAL,
   geo_scanned INTEGER NOT NULL DEFAULT 0,
+  -- v5: 这一行的缩略图试过没有。见 migrations.rs 的 V4_TO_V5 —— 它有一段
+  -- 前史，而且已在 v5 的老库里这个值不是干净的 0。
+  thumb_scanned INTEGER NOT NULL DEFAULT 0,
   UNIQUE (volume_id, relpath)
 );
 
