@@ -16,8 +16,15 @@ pub struct VolumePayload {
     pub broken_count: i64,
 }
 
+/// `enumerate_mounted` probes every drive letter, which can block for seconds
+/// on an empty card reader or an offline network mapping — never on the thread
+/// that paints the window (ADR-034).
 #[tauri::command]
-pub fn list_volumes() -> AppResult<Vec<VolumePayload>> {
+pub async fn list_volumes() -> AppResult<Vec<VolumePayload>> {
+    super::run_blocking(list_volumes_blocking).await
+}
+
+fn list_volumes_blocking() -> AppResult<Vec<VolumePayload>> {
     let mounted = services::volume_resolver::enumerate_mounted();
     let mounted_map: HashMap<String, String> = mounted
         .into_iter()
@@ -53,10 +60,15 @@ pub fn list_volumes() -> AppResult<Vec<VolumePayload>> {
     })
 }
 
+/// Same full reconciliation the boot scan does, on demand from the storage
+/// pane. It emits `volumes:changed` itself, so the UI refreshes when it lands.
 #[tauri::command]
-pub fn rescan_volumes() -> AppResult<()> {
-    services::volume_monitor::boot_scan().map_err(crate::AppError::InvalidArg)?;
-    Ok(())
+pub async fn rescan_volumes() -> AppResult<()> {
+    super::run_blocking(|| {
+        services::volume_monitor::boot_scan().map_err(crate::AppError::InvalidArg)?;
+        Ok(())
+    })
+    .await
 }
 
 #[tauri::command]

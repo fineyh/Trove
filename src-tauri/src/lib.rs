@@ -33,10 +33,10 @@ pub fn run() {
             events::init(app.handle().clone());
             services::volume_monitor::start();
             if !has_master {
-                services::volume_monitor::run_boot_scan();
-                if let Err(e) = commands::conversations::boot_existing_watchers() {
-                    eprintln!("boot_existing_watchers: {e}");
-                }
+                // Detached on purpose: probing drive letters and stat-ing
+                // every media row must not delay the first paint. See
+                // `commands::spawn_boot_tasks` and ADR-034.
+                commands::spawn_boot_tasks();
             }
             Ok(())
         })

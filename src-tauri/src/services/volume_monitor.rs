@@ -165,6 +165,10 @@ pub fn boot_scan() -> Result<(), String> {
         Ok(())
     })
     .map_err(|e| e.to_string())?;
+    // The scan no longer runs before the window exists (ADR-034), so whatever
+    // it just changed — rows flipped to broken, a volume's mount point — is
+    // already on screen as stale. Tell the UI to re-read.
+    events::emit_volumes_changed();
     Ok(())
 }
 

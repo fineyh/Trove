@@ -152,8 +152,39 @@ mod windows_impl {
     use std::os::windows::ffi::{OsStrExt, OsStringExt};
     use std::path::{Path, PathBuf};
     use windows_sys::Win32::Storage::FileSystem::{
-        GetLogicalDriveStringsW, GetVolumeInformationW, GetVolumePathNameW,
+        GetDriveTypeW, GetLogicalDriveStringsW, GetVolumeInformationW, GetVolumePathNameW,
     };
+    use windows_sys::Win32::System::Diagnostics::Debug::{
+        SetThreadErrorMode, SEM_FAILCRITICALERRORS,
+    };
+
+    // GetDriveTypeW return values we want to skip. Note we deliberately keep
+    // DRIVE_REMOVABLE (USB sticks) and DRIVE_REMOTE (network / Cryptomator /
+    // WinFsp mounts) — a Trove library can legitimately live on either.
+    const DRIVE_UNKNOWN: u32 = 0;
+    const DRIVE_NO_ROOT_DIR: u32 = 1;
+    const DRIVE_CDROM: u32 = 5;
+
+    /// While alive, Windows reports device errors to us instead of putting up
+    /// the modal "There is no disk in the drive" box, and a probe of an empty
+    /// removable slot fails immediately rather than waiting out the hardware.
+    /// Restores the previous mode on drop.
+    struct QuietErrorMode(u32);
+
+    impl QuietErrorMode {
+        fn enter() -> Self {
+            let mut old = 0u32;
+            unsafe { SetThreadErrorMode(SEM_FAILCRITICALERRORS, &mut old) };
+            Self(old)
+        }
+    }
+
+    impl Drop for QuietErrorMode {
+        fn drop(&mut self) {
+            let mut ignored = 0u32;
+            unsafe { SetThreadErrorMode(self.0, &mut ignored) };
+        }
+    }
 
     fn to_wide(s: &str) -> Vec<u16> {
         std::ffi::OsStr::new(s)
@@ -240,6 +271,7 @@ mod windows_impl {
     }
 
     pub fn enumerate() -> Vec<VolumeInfo> {
+        let _quiet = QuietErrorMode::enter();
         let mut buf = [0u16; 1024];
         let n = unsafe { GetLogicalDriveStringsW(buf.len() as u32, buf.as_mut_ptr()) };
         if n == 0 {
@@ -252,6 +284,16 @@ mod windows_impl {
         }
         let mut out = Vec::with_capacity(roots.len());
         for r in roots {
+            // An empty optical drive spins its motor up for every
+            // GetVolumeInformationW, which is seconds of nothing. Ask the
+            // cheap question first. (`identify` also has a fallback that
+            // would otherwise invent a `win-letter-X` volume for that empty
+            // drive and report it as mounted.)
+            let wide = to_wide(&r);
+            let drive_type = unsafe { GetDriveTypeW(wide.as_ptr()) };
+            if matches!(drive_type, DRIVE_UNKNOWN | DRIVE_NO_ROOT_DIR | DRIVE_CDROM) {
+                continue;
+            }
             if let Ok(info) = identify(Path::new(&r)) {
                 out.push(info);
             }
