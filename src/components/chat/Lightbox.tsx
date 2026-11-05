@@ -9,11 +9,12 @@ import {
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { Message } from "../../types";
 import { mediaUrl } from "../../ipc/client";
-import { EMPTY_MESSAGES, useMessagesStore } from "../../stores/messages";
+import { EMPTY_MEDIA, useConvMediaStore } from "../../stores/convMedia";
+import { useMessagesStore } from "../../stores/messages";
 import { useSessionStore } from "../../stores/session";
 import { isHeicPath } from "../../lib/heic";
 import { useDisplayableImageUrl } from "../../lib/useDisplayableImageUrl";
-import { useRotation } from "../../lib/useRotation";
+import { useViewerTransform } from "../../lib/useViewerTransform";
 import { RotatableVideo } from "../ui/RotatableVideo";
 
 interface LightboxProps {
@@ -21,16 +22,32 @@ interface LightboxProps {
 }
 
 export function Lightbox({ convId }: LightboxProps) {
-  const messages =
-    useMessagesStore((s) => s.byConv[convId]) ?? EMPTY_MESSAGES;
+  // Sourced from the conversation's media sequence, not the chat's loaded
+  // slice: paging the chat used to cap this viewer at the newest `PAGE_SIZE`
+  // messages, so in a folder conversation with thousands of photos the arrow
+  // keys stopped a few dozen in and the rest were unreachable.
+  const media = useConvMediaStore((s) => s.byConv[convId]) ?? EMPTY_MEDIA;
+  const mediaLoading = useConvMediaStore((s) => s.loading[convId] === true);
+  const loadingOlder = useConvMediaStore((s) => s.loadingOlder[convId] === true);
+  const hasMore = useConvMediaStore((s) => s.hasMore[convId] === true);
+  const loadOlder = useConvMediaStore((s) => s.loadOlder);
+  const ensureContains = useConvMediaStore((s) => s.ensureContains);
+
   const registerPlay = useMessagesStore((s) => s.registerPlay);
   const activeId = useSessionStore((s) => s.lightboxMessageId);
   const close = useSessionStore((s) => s.closeLightbox);
   const open = useSessionStore((s) => s.openLightbox);
 
+  // The clicked item may sit older than the media pages held so far (opened
+  // from a chat message the user had scrolled back to); page until it's here.
+  useEffect(() => {
+    if (activeId === null) return;
+    void ensureContains(convId, activeId);
+  }, [convId, activeId, ensureContains]);
+
   const playable = useMemo(
-    () => messages.filter((m) => m.media && m.media.state === "live"),
-    [messages],
+    () => media.filter((m) => m.media && m.media.state === "live"),
+    [media],
   );
   const idx = useMemo(
     () => playable.findIndex((m) => m.id === activeId),
@@ -38,15 +55,47 @@ export function Lightbox({ convId }: LightboxProps) {
   );
   const current: Message | null = idx >= 0 ? playable[idx] : null;
 
+  // "Older" is toward index 0. At the start of what's loaded there may still
+  // be more behind it, so fetch a page and then step into it.
+  const canPrev = idx > 0 || (idx >= 0 && hasMore);
   const goPrev = useCallback(() => {
-    if (idx > 0) open(playable[idx - 1].id);
-  }, [idx, playable, open]);
+    if (idx > 0) {
+      open(playable[idx - 1].id);
+      return;
+    }
+    if (idx !== 0 || !hasMore || loadingOlder) return;
+    const anchor = playable[0]?.id;
+    void loadOlder(convId).then(() => {
+      const next = useConvMediaStore.getState().byConv[convId] ?? [];
+      const live = next.filter((m) => m.media && m.media.state === "live");
+      const at = live.findIndex((m) => m.id === anchor);
+      if (at > 0) open(live[at - 1].id);
+    });
+  }, [idx, playable, open, hasMore, loadingOlder, loadOlder, convId]);
+
+  const canNext = idx >= 0 && idx < playable.length - 1;
   const goNext = useCallback(() => {
-    if (idx >= 0 && idx < playable.length - 1) open(playable[idx + 1].id);
-  }, [idx, playable, open]);
+    if (canNext) open(playable[idx + 1].id);
+  }, [canNext, idx, playable, open]);
+
+  const {
+    rotation,
+    rotateLeft,
+    rotateRight,
+    scale,
+    zoomed,
+    zoomIn,
+    zoomOut,
+    resetView,
+    stageRef,
+    mediaRef,
+    mediaStyle,
+    rotationStyle,
+    mediaHandlers,
+  } = useViewerTransform(current?.id);
 
   useEffect(() => {
-    if (!current) return;
+    if (activeId === null) return;
     const onKey = (e: KeyboardEvent) => {
       // While fullscreen, let Esc exit fullscreen instead of closing the viewer.
       if (e.key === "Escape") {
@@ -54,10 +103,13 @@ export function Lightbox({ convId }: LightboxProps) {
         close();
       } else if (e.key === "ArrowLeft") goPrev();
       else if (e.key === "ArrowRight") goNext();
+      else if (e.key === "+" || e.key === "=") zoomIn();
+      else if (e.key === "-" || e.key === "_") zoomOut();
+      else if (e.key === "0") resetView();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [current, close, goPrev, goNext]);
+  }, [activeId, close, goPrev, goNext, zoomIn, zoomOut, resetView]);
 
   const playedRef = useRef<Set<number>>(new Set());
   useEffect(() => {
@@ -71,11 +123,22 @@ export function Lightbox({ convId }: LightboxProps) {
   // Must run unconditionally (before the early return) — empty path is a no-op.
   const absolutePath = current?.media?.absolutePath ?? "";
   const image = useDisplayableImageUrl(absolutePath, mediaUrl(absolutePath));
-  const { rotation, rotateLeft, rotateRight, mediaStyle } = useRotation(
-    current?.id,
-  );
 
-  if (!current || !current.media) return null;
+  if (activeId === null) return null;
+
+  if (!current || !current.media) {
+    // Still paging back to the clicked item, or it has gone away (deleted, or
+    // its volume unmounted and `missing_file_strategy` hides it).
+    if (!mediaLoading && !loadingOlder) return null;
+    return (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/90"
+        onClick={close}
+      >
+        <Loader2 size={28} className="animate-spin text-white/70" />
+      </div>
+    );
+  }
 
   const url = mediaUrl(current.media.absolutePath);
   const isImage =
@@ -83,10 +146,24 @@ export function Lightbox({ convId }: LightboxProps) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/90"
+      ref={stageRef}
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-black/90"
       onClick={close}
     >
       <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
+        {zoomed && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              resetView();
+            }}
+            className="flex h-10 items-center rounded-full bg-white/10 px-3 text-xs font-medium text-white hover:bg-white/20"
+            title="恢复适应窗口 (0)"
+          >
+            {Math.round(scale * 100)}% · 重置
+          </button>
+        )}
         <button
           type="button"
           onClick={(e) => {
@@ -122,7 +199,7 @@ export function Lightbox({ convId }: LightboxProps) {
         </button>
       </div>
 
-      {idx > 0 && (
+      {canPrev && (
         <button
           type="button"
           onClick={(e) => {
@@ -132,10 +209,14 @@ export function Lightbox({ convId }: LightboxProps) {
           className="absolute left-4 top-1/2 z-10 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
           title="上一个 (←)"
         >
-          <ChevronLeft size={24} />
+          {loadingOlder && idx === 0 ? (
+            <Loader2 size={20} className="animate-spin" />
+          ) : (
+            <ChevronLeft size={24} />
+          )}
         </button>
       )}
-      {idx < playable.length - 1 && (
+      {canNext && (
         <button
           type="button"
           onClick={(e) => {
@@ -150,7 +231,7 @@ export function Lightbox({ convId }: LightboxProps) {
       )}
 
       <div
-        className="flex max-h-[90vh] max-w-[90vw] flex-col items-center gap-3"
+        className="flex flex-col items-center gap-3"
         onClick={(e) => e.stopPropagation()}
       >
         {isImage ? (
@@ -162,20 +243,25 @@ export function Lightbox({ convId }: LightboxProps) {
             <Loader2 size={28} className="animate-spin text-white/70" />
           ) : (
             <img
+              ref={mediaRef}
               src={image.url}
               alt={current.caption ?? ""}
               className="object-contain"
               style={mediaStyle}
+              draggable={false}
+              {...mediaHandlers}
             />
           )
         ) : (
           <RotatableVideo
             src={url}
             autoPlay
-            style={mediaStyle}
+            style={rotationStyle}
             rotation={rotation}
           />
         )}
+        {/* Always rendered: hiding it while zoomed would change the image's
+            layout box mid-gesture and throw off the cursor anchoring. */}
         {current.caption && (
           <div className="max-w-2xl text-center text-sm text-white/80">
             {current.caption}

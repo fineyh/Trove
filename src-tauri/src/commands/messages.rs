@@ -168,13 +168,22 @@ fn default_limit() -> i64 {
 /// The cursor comparison is a row-value `<` written out longhand — `?2`/`?3`
 /// are `i64::MAX` on the first page, which no real row can match, so one
 /// statement serves both the first page and every page after it.
-fn page_sql(hide_broken: bool) -> String {
+///
+/// `media_only` narrows the page to messages that carry media. The fullscreen
+/// viewer and the profile drawer's grid page over *that* sequence instead of
+/// the chat's, so they are no longer capped at whatever the chat happens to
+/// have scrolled into memory. Same cursor shape, so one cursor type and one
+/// set of row-value semantics cover both sequences.
+fn page_sql(hide_broken: bool, media_only: bool) -> String {
     let mut sql = String::from(
         "SELECT m.id FROM messages m
          LEFT JOIN media md ON md.id = m.media_id
          WHERE m.conv_id = ?1
            AND (m.created_at < ?2 OR (m.created_at = ?2 AND m.id < ?3))",
     );
+    if media_only {
+        sql.push_str(" AND m.media_id IS NOT NULL");
+    }
     if hide_broken {
         sql.push_str(" AND (m.media_id IS NULL OR md.state = 'live')");
     }
@@ -182,14 +191,8 @@ fn page_sql(hide_broken: bool) -> String {
     sql
 }
 
-/// One page of a conversation, oldest → newest.
-///
-/// The page is cut from the *newest* end: a chat opens pinned to the bottom,
-/// so the first screen must be the latest messages (this used to take the
-/// oldest 100 instead, which hid everything imported afterwards). Caller
-/// detects "more above" by getting a full `limit` rows back.
-#[tauri::command]
-pub fn list_messages(args: ListMessagesArgs) -> AppResult<Vec<MessagePayload>> {
+/// `missing_file_strategy = 'hide'` keeps unreachable media out of every page.
+fn hide_broken_setting() -> AppResult<bool> {
     let strategy: String = db::with_conn(|conn| {
         conn.query_row(
             "SELECT value FROM settings WHERE key = 'missing_file_strategy'",
@@ -198,23 +201,29 @@ pub fn list_messages(args: ListMessagesArgs) -> AppResult<Vec<MessagePayload>> {
         )
         .map_err(AppError::from)
     })?;
-    let hide_broken = strategy == "hide";
+    Ok(strategy == "hide")
+}
+
+/// Shared body of `list_messages` and `list_conv_media`: cut one page from the
+/// newest end, then hand it back chronologically.
+fn fetch_page(
+    conv_id: i64,
+    before: Option<&MessageCursor>,
+    limit: i64,
+    media_only: bool,
+) -> AppResult<Vec<MessagePayload>> {
+    let hide_broken = hide_broken_setting()?;
 
     // No cursor = first page. The sentinel sorts after every real row, so the
     // same comparison covers both cases without a second SQL branch.
-    let (cursor_ts, cursor_id) = args
-        .before
-        .as_ref()
+    let (cursor_ts, cursor_id) = before
         .map(|c| (c.created_at, c.id))
         .unwrap_or((i64::MAX, i64::MAX));
 
     db::with_conn(|conn| {
-        let mut stmt = conn.prepare(&page_sql(hide_broken))?;
+        let mut stmt = conn.prepare(&page_sql(hide_broken, media_only))?;
         let mut ids: Vec<i64> = stmt
-            .query_map(
-                params![args.conv_id, cursor_ts, cursor_id, args.limit],
-                |r| r.get(0),
-            )?
+            .query_map(params![conv_id, cursor_ts, cursor_id, limit], |r| r.get(0))?
             .collect::<rusqlite::Result<_>>()?;
         // Query ran newest-first to cut the page; hand it back chronologically.
         ids.reverse();
@@ -225,6 +234,43 @@ pub fn list_messages(args: ListMessagesArgs) -> AppResult<Vec<MessagePayload>> {
         }
         Ok(out)
     })
+}
+
+/// One page of a conversation, oldest → newest.
+///
+/// The page is cut from the *newest* end: a chat opens pinned to the bottom,
+/// so the first screen must be the latest messages (this used to take the
+/// oldest 100 instead, which hid everything imported afterwards). Caller
+/// detects "more above" by getting a full `limit` rows back.
+#[tauri::command]
+pub fn list_messages(args: ListMessagesArgs) -> AppResult<Vec<MessagePayload>> {
+    fetch_page(args.conv_id, args.before.as_ref(), args.limit, false)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListConvMediaArgs {
+    pub conv_id: i64,
+    /// Omit for the newest page; pass the oldest media message already held.
+    #[serde(default)]
+    pub before: Option<MessageCursor>,
+    #[serde(default = "default_media_limit")]
+    pub limit: i64,
+}
+
+fn default_media_limit() -> i64 {
+    80
+}
+
+/// One page of a conversation's media messages, oldest -> newest.
+///
+/// Separate from `list_messages` on purpose: the fullscreen viewer and the
+/// profile drawer's grid used to read whatever page the chat had loaded, so in
+/// a conversation with thousands of photos the viewer's arrow keys reached
+/// only the newest `PAGE_SIZE` of them and silently hid the rest.
+#[tauri::command]
+pub fn list_conv_media(args: ListConvMediaArgs) -> AppResult<Vec<MessagePayload>> {
+    fetch_page(args.conv_id, args.before.as_ref(), args.limit, true)
 }
 
 #[derive(Debug, Deserialize)]
@@ -407,8 +453,18 @@ mod tests {
         cursor: Option<(i64, i64)>,
         limit: i64,
     ) -> Vec<i64> {
+        page_opts(conn, hide_broken, false, cursor, limit)
+    }
+
+    fn page_opts(
+        conn: &Connection,
+        hide_broken: bool,
+        media_only: bool,
+        cursor: Option<(i64, i64)>,
+        limit: i64,
+    ) -> Vec<i64> {
         let (ts, id) = cursor.unwrap_or((i64::MAX, i64::MAX));
-        let mut stmt = conn.prepare(&page_sql(hide_broken)).unwrap();
+        let mut stmt = conn.prepare(&page_sql(hide_broken, media_only)).unwrap();
         let mut ids: Vec<i64> = stmt
             .query_map(params![1i64, ts, id, limit], |r| r.get(0))
             .unwrap()
@@ -477,5 +533,34 @@ mod tests {
     fn other_conversations_never_leak_in() {
         let conn = fixture();
         assert!(!page(&conn, false, None, 10).contains(&99));
+    }
+
+    /// The media sequence the viewers page over: text-only rows drop out, and
+    /// `hide_broken` still applies on top of it.
+    #[test]
+    fn media_only_keeps_just_the_media_rows() {
+        let conn = fixture();
+        // id 5 is the only row with media, and that media is broken.
+        assert_eq!(page_opts(&conn, false, true, None, 10), vec![5]);
+        assert_eq!(page_opts(&conn, true, true, None, 10), Vec::<i64>::new());
+    }
+
+    /// Paging the media sequence uses the same composite cursor, so a media
+    /// page boundary landing on tied timestamps must not repeat or skip either.
+    #[test]
+    fn media_only_pages_with_the_same_cursor() {
+        let conn = fixture();
+        conn.execute_batch(
+            "INSERT INTO media (id, state) VALUES (2, 'live'), (3, 'live'), (4, 'live');
+             INSERT INTO messages (id, conv_id, media_id, created_at)
+               VALUES (10, 1, 2, 300), (11, 1, 3, 300), (12, 1, 4, 400);",
+        )
+        .unwrap();
+        // Chronologically the live-media rows are 10(300) 11(300) 12(400).
+        assert_eq!(page_opts(&conn, true, true, None, 2), vec![11, 12]);
+        assert_eq!(
+            page_opts(&conn, true, true, Some(cursor_of(&conn, 11)), 2),
+            vec![10]
+        );
     }
 }

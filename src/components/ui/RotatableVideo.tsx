@@ -17,7 +17,7 @@ interface RotatableVideoProps {
   src: string;
   /** The rotation transform style; applied to the `<video>` frame only. */
   style?: CSSProperties;
-  /** Signed multiple of 90 from `useRotation`; lets fullscreen swap the fill
+  /** Signed multiple of 90 from `useViewerTransform`; lets fullscreen swap the fill
    *  caps at a quarter turn so a rotated clip still fills the screen. */
   rotation?: number;
   autoPlay?: boolean;

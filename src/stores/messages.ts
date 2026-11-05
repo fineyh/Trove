@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import * as ipc from "../ipc/client";
+import { useConvMediaStore } from "./convMedia";
 import { toast } from "./toast";
 import type { Message } from "../types";
 
@@ -90,6 +91,9 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
     await ipc.importFiles(convId, paths);
     // Back to the newest page — that's where the just-imported files are.
     await get().load(convId);
+    // The media sequence the viewer/grid page over just grew; drop its cache
+    // so the next open refetches instead of showing a stale list.
+    useConvMediaStore.getState().invalidate(convId);
   },
   registerPlay: async (messageId) => {
     const next = await ipc.incrementPlayCount(messageId);
@@ -113,5 +117,8 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
         [convId]: (s.byConv[convId] ?? []).filter((m) => m.id !== messageId),
       },
     }));
+    // Same treatment for the media sequence: drop it locally rather than
+    // invalidating, so an open grid/viewer keeps its scroll position.
+    useConvMediaStore.getState().removeLocal(convId, messageId);
   },
 }));

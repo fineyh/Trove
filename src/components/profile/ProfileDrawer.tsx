@@ -1,7 +1,6 @@
 import { MoreHorizontal, Pencil, Pin, PinOff, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useConversationsStore } from "../../stores/conversations";
-import { EMPTY_MESSAGES, useMessagesStore } from "../../stores/messages";
 import { useSessionStore } from "../../stores/session";
 import { toast } from "../../stores/toast";
 import { ContextMenu } from "../ui/ContextMenu";
@@ -16,10 +15,6 @@ export function ProfileDrawer() {
   );
   const rename = useConversationsStore((s) => s.rename);
   const togglePinned = useConversationsStore((s) => s.togglePinned);
-  const messages =
-    useMessagesStore((s) =>
-      activeId !== null ? s.byConv[activeId] : undefined,
-    ) ?? EMPTY_MESSAGES;
 
   const moreBtnRef = useRef<HTMLButtonElement>(null);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
@@ -74,7 +69,7 @@ export function ProfileDrawer() {
           </div>
         </header>
         <div className="flex-1 overflow-hidden">
-          <MediaGrid messages={messages} />
+          <MediaGrid convId={conv.id} />
         </div>
       </aside>
 

@@ -92,6 +92,27 @@ export async function listMessages(
   return invoke<Message[]>("list_messages", { args });
 }
 
+export interface ListConvMediaArgs {
+  convId: number;
+  /** Omit for the newest page; pass the oldest media message already held. */
+  before?: MessageCursor;
+  limit?: number;
+}
+
+/**
+ * One page of a conversation's *media* messages, oldest -> newest.
+ *
+ * Deliberately not `listMessages`: the viewer and the profile-drawer grid need
+ * the conversation's whole media sequence, not the slice of chat the user has
+ * scrolled into memory.
+ */
+export async function listConvMedia(
+  args: ListConvMediaArgs,
+): Promise<Message[]> {
+  if (!isTauri()) return [];
+  return invoke<Message[]>("list_conv_media", { args });
+}
+
 export async function sendText(
   convId: number,
   text: string,

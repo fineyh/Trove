@@ -12,7 +12,7 @@ import type { GeotaggedMedia } from "../../types";
 import { mediaUrl } from "../../ipc/client";
 import { isHeicPath } from "../../lib/heic";
 import { useDisplayableImageUrl } from "../../lib/useDisplayableImageUrl";
-import { useRotation } from "../../lib/useRotation";
+import { useViewerTransform } from "../../lib/useViewerTransform";
 import { RotatableVideo } from "../ui/RotatableVideo";
 
 interface MapPhotoViewerProps {
@@ -44,6 +44,22 @@ export function MapPhotoViewer({
     if (index < items.length - 1) onIndexChange(index + 1);
   }, [index, items.length, onIndexChange]);
 
+  const {
+    rotation,
+    rotateLeft,
+    rotateRight,
+    scale,
+    zoomed,
+    zoomIn,
+    zoomOut,
+    resetView,
+    stageRef,
+    mediaRef,
+    mediaStyle,
+    rotationStyle,
+    mediaHandlers,
+  } = useViewerTransform(index);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // While fullscreen, let Esc exit fullscreen instead of closing the viewer.
@@ -52,15 +68,17 @@ export function MapPhotoViewer({
         onClose();
       } else if (e.key === "ArrowLeft") goPrev();
       else if (e.key === "ArrowRight") goNext();
+      else if (e.key === "+" || e.key === "=") zoomIn();
+      else if (e.key === "-" || e.key === "_") zoomOut();
+      else if (e.key === "0") resetView();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, goPrev, goNext]);
+  }, [onClose, goPrev, goNext, zoomIn, zoomOut, resetView]);
 
   // Must run unconditionally (before the early return) — empty path is a no-op.
   const absolutePath = current?.absolutePath ?? "";
   const image = useDisplayableImageUrl(absolutePath, mediaUrl(absolutePath));
-  const { rotation, rotateLeft, rotateRight, mediaStyle } = useRotation(index);
 
   if (!current) return null;
 
@@ -71,7 +89,8 @@ export function MapPhotoViewer({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/90"
+      ref={stageRef}
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-black/90"
       onClick={onClose}
     >
       <button
@@ -88,6 +107,19 @@ export function MapPhotoViewer({
       </button>
 
       <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
+        {zoomed && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              resetView();
+            }}
+            className="flex h-10 items-center rounded-full bg-white/10 px-3 text-xs font-medium text-white hover:bg-white/20"
+            title="恢复适应窗口 (0)"
+          >
+            {Math.round(scale * 100)}% · 重置
+          </button>
+        )}
         <button
           type="button"
           onClick={(e) => {
@@ -151,7 +183,7 @@ export function MapPhotoViewer({
       )}
 
       <div
-        className="flex max-h-[90vh] max-w-[90vw] flex-col items-center gap-3"
+        className="flex flex-col items-center gap-3"
         onClick={(e) => e.stopPropagation()}
       >
         {!canPreview ? (
@@ -167,17 +199,20 @@ export function MapPhotoViewer({
             <Loader2 size={28} className="animate-spin text-white/70" />
           ) : (
             <img
+              ref={mediaRef}
               src={image.url}
               alt=""
               className="object-contain"
               style={mediaStyle}
+              draggable={false}
+              {...mediaHandlers}
             />
           )
         ) : (
           <RotatableVideo
             src={url}
             autoPlay
-            style={mediaStyle}
+            style={rotationStyle}
             rotation={rotation}
           />
         )}

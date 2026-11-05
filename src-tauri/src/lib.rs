@@ -50,6 +50,7 @@ pub fn run() {
             commands::conversations::lock_conversation,
             commands::conversations::list_unlocked_conversations,
             commands::messages::list_messages,
+            commands::messages::list_conv_media,
             commands::messages::send_text,
             commands::messages::increment_play_count,
             commands::messages::delete_message,

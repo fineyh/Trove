@@ -74,6 +74,11 @@ let activeEl: HTMLElement | null = null;
 let naturalW = 0;
 let naturalH = 0;
 let rotation = 0;
+// Zoom / pan state. Images only (see `setupImageZoom`); for a video these stay
+// at 1 / 0,0 so the transform is pure rotation, exactly as before.
+let scale = 1;
+let panX = 0;
+let panY = 0;
 
 /** Apply the rotation transform + explicit frame size to the frame. The picture
  *  always fills its stage (100vw × the content area, or the whole screen in
@@ -84,7 +89,10 @@ let rotation = 0;
  *  The dimensions swap at a quarter turn so a rotated frame still fits. */
 function applyMediaCaps(): void {
   if (!activeEl) return;
-  activeEl.style.transform = `rotate(${rotation}deg)`;
+  // `translate` sits outermost so a drag moves the picture the way the hand
+  // moves at any rotation; `scale` is uniform so it commutes with the spin.
+  activeEl.style.transform =
+    `translate(${panX}px, ${panY}px) scale(${scale}) rotate(${rotation}deg)`;
   const quarter = ((((rotation % 360) + 360) % 360) % 180) !== 0;
   // In fullscreen there's no titlebar to subtract; the stage is the full screen.
   const stageH = document.fullscreenElement
@@ -111,12 +119,153 @@ function applyLayout(): void {
 
 document.getElementById("rotate-left")?.addEventListener("click", () => {
   rotation -= 90;
+  resetZoom();
   applyLayout();
 });
 document.getElementById("rotate-right")?.addEventListener("click", () => {
   rotation += 90;
+  resetZoom();
   applyLayout();
 });
+
+// --- Zoom + pan (images only, view-only) ------------------------------------
+//
+// Mirrors `src/lib/useViewerTransform.ts` in the React app; kept as plain DOM
+// code here because this window deliberately pulls in no React. The picture
+// fills #stage with `object-fit: contain`, so scaling the element scales the
+// letterboxed picture inside it.
+
+const MIN_SCALE = 1;
+const MAX_SCALE = 8;
+const WHEEL_FACTOR = 0.0015;
+const FALLBACK_DOUBLE_CLICK_SCALE = 2.5;
+
+const clampTo = (n: number, lo: number, hi: number): number =>
+  Math.min(hi, Math.max(lo, n));
+
+function resetZoom(): void {
+  scale = 1;
+  panX = 0;
+  panY = 0;
+}
+
+/** On-screen size of the letterboxed picture at scale 1, before rotation. */
+function contentSize(el: HTMLElement): { w: number; h: number } {
+  const elW = el.clientWidth;
+  const elH = el.clientHeight;
+  if (!naturalW || !naturalH || !elW || !elH) return { w: elW, h: elH };
+  const ar = naturalW / naturalH;
+  const w = Math.min(elW, elH * ar);
+  return { w, h: w / ar };
+}
+
+/** Only as much pan as there is overflow, so at fit size it cannot move. */
+function clampPan(el: HTMLElement, stage: HTMLElement): void {
+  const { w, h } = contentSize(el);
+  const quarter = ((((rotation % 360) + 360) % 360) % 180) !== 0;
+  const shownW = (quarter ? h : w) * scale;
+  const shownH = (quarter ? w : h) * scale;
+  const maxX = Math.max(0, (shownW - stage.clientWidth) / 2);
+  const maxY = Math.max(0, (shownH - stage.clientHeight) / 2);
+  panX = clampTo(panX, -maxX, maxX);
+  panY = clampTo(panY, -maxY, maxY);
+}
+
+function setupImageZoom(image: HTMLImageElement): void {
+  const stage = document.getElementById("stage");
+  if (!stage) return;
+
+  const syncCursor = (): void => {
+    image.style.cursor = scale > MIN_SCALE ? "grab" : "zoom-in";
+  };
+  syncCursor();
+
+  /** Scale change that keeps the content point under (ax, ay) fixed. The
+   *  transformed box's centre is the untransformed centre plus the pan, so
+   *  `getBoundingClientRect()` gives us the anchor maths for free. */
+  const zoomTo = (next: number, ax?: number, ay?: number): void => {
+    const s2 = clampTo(next, MIN_SCALE, MAX_SCALE);
+    if (s2 === scale) return;
+    if (s2 === MIN_SCALE) {
+      resetZoom();
+      applyMediaCaps();
+      return;
+    }
+    if (ax !== undefined && ay !== undefined) {
+      const rect = image.getBoundingClientRect();
+      const k = 1 - s2 / scale;
+      panX += (ax - (rect.left + rect.width / 2)) * k;
+      panY += (ay - (rect.top + rect.height / 2)) * k;
+    }
+    scale = s2;
+    clampPan(image, stage);
+    applyMediaCaps();
+    syncCursor();
+  };
+
+  stage.addEventListener(
+    "wheel",
+    (e) => {
+      e.preventDefault();
+      zoomTo(scale * Math.exp(-e.deltaY * WHEEL_FACTOR), e.clientX, e.clientY);
+    },
+    { passive: false },
+  );
+
+  image.addEventListener("dblclick", (e) => {
+    if (scale > MIN_SCALE) {
+      resetZoom();
+      applyMediaCaps();
+      syncCursor();
+      return;
+    }
+    const { w } = contentSize(image);
+    const oneToOne = w ? clampTo(naturalW / w, MIN_SCALE, MAX_SCALE) : 1;
+    zoomTo(
+      oneToOne > MIN_SCALE ? oneToOne : FALLBACK_DOUBLE_CLICK_SCALE,
+      e.clientX,
+      e.clientY,
+    );
+  });
+
+  image.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0 || scale <= MIN_SCALE) return;
+    e.preventDefault();
+    const startX = panX;
+    const startY = panY;
+    const originX = e.clientX;
+    const originY = e.clientY;
+    image.setPointerCapture(e.pointerId);
+    image.style.cursor = "grabbing";
+
+    const onMove = (ev: PointerEvent): void => {
+      panX = startX + (ev.clientX - originX);
+      panY = startY + (ev.clientY - originY);
+      clampPan(image, stage);
+      applyMediaCaps();
+    };
+    const onUp = (ev: PointerEvent): void => {
+      image.releasePointerCapture?.(ev.pointerId);
+      image.removeEventListener("pointermove", onMove);
+      image.removeEventListener("pointerup", onUp);
+      image.removeEventListener("pointercancel", onUp);
+      syncCursor();
+    };
+    image.addEventListener("pointermove", onMove);
+    image.addEventListener("pointerup", onUp);
+    image.addEventListener("pointercancel", onUp);
+  });
+
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "+" || e.key === "=") zoomTo(scale * 1.25);
+    else if (e.key === "-" || e.key === "_") zoomTo(scale / 1.25);
+    else if (e.key === "0") {
+      resetZoom();
+      applyMediaCaps();
+      syncCursor();
+    }
+  });
+}
 
 // --- Custom video controls --------------------------------------------------
 
@@ -372,6 +521,7 @@ if (kind === "image") {
       },
       { once: true },
     );
+    setupImageZoom(image);
     if (isHeic) {
       // WebView can't decode HEIC; convert to a JPEG blob URL first. heic-to
       // (and its WASM) is dynamically imported so plain images don't pay for it.

@@ -17,6 +17,7 @@ import {
   openUrl,
 } from "./ipc/client";
 import { useConversationsStore } from "./stores/conversations";
+import { useConvMediaStore } from "./stores/convMedia";
 import { useImportJobStore } from "./stores/importJob";
 import { useMessagesStore } from "./stores/messages";
 import { useSessionStore } from "./stores/session";
@@ -95,6 +96,10 @@ export default function App() {
       const refresh = useConversationsStore.getState().refresh;
       void refresh();
 
+      // The watcher / volume monitor changed this conversation's media set,
+      // so the viewer+grid cache is stale whether or not it is on screen.
+      useConvMediaStore.getState().invalidate(payload.convId);
+
       const activeId = useSessionStore.getState().activeConversationId;
       if (activeId === payload.convId) {
         const load = useMessagesStore.getState().load;
@@ -110,6 +115,7 @@ export default function App() {
       void useSettingsStore.getState().loadVolumes();
       const activeId = useSessionStore.getState().activeConversationId;
       if (activeId !== null) {
+        useConvMediaStore.getState().invalidate(activeId);
         void useMessagesStore.getState().load(activeId);
       }
     }).then((fn) => {
