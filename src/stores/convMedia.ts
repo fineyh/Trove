@@ -12,6 +12,7 @@
 
 import { create } from "zustand";
 import * as ipc from "../ipc/client";
+import { currentLib, stillOn } from "./libraries";
 import { toast } from "./toast";
 import type { Message } from "../types";
 
@@ -25,7 +26,7 @@ export const EMPTY_MEDIA: readonly Message[] = Object.freeze([]);
 export const MEDIA_PAGE_SIZE = 80;
 
 /** Safety net for `ensureContains`: a target that never shows up (deleted
- *  between render and click, filtered out by `missing_file_strategy`, …) must
+ *  between render and click, filtered out by the offline-content setting, …) must
  *  not page an entire library into memory. */
 const MAX_ENSURE_PAGES = 25;
 
@@ -43,6 +44,8 @@ interface ConvMediaState {
   /** Page backwards until `messageId` is held (or nothing older is left), so
    *  the viewer can open on an item the chat had scrolled past. */
   ensureContains: (convId: number, messageId: number) => Promise<void>;
+  /** Drop every cache (library switched). */
+  reset: () => void;
   /** Forget a conversation's cache — the media set changed underneath us. */
   invalidate: (convId: number) => void;
   /** Drop one item locally, the way `messages.remove` does, so the grid and
@@ -56,16 +59,21 @@ export const useConvMediaStore = create<ConvMediaState>((set, get) => ({
   loadingOlder: {},
   hasMore: {},
 
+  reset: () => set({ byConv: {}, loading: {}, loadingOlder: {}, hasMore: {} }),
+
   load: async (convId) => {
+    const lib = currentLib();
     set((s) => ({ loading: { ...s.loading, [convId]: true } }));
     try {
-      const list = await ipc.listConvMedia({ convId, limit: MEDIA_PAGE_SIZE });
+      const list = await ipc.listConvMedia(lib, { convId, limit: MEDIA_PAGE_SIZE });
+      if (!stillOn(lib)) return;
       set((s) => ({
         byConv: { ...s.byConv, [convId]: list },
         hasMore: { ...s.hasMore, [convId]: list.length >= MEDIA_PAGE_SIZE },
         loading: { ...s.loading, [convId]: false },
       }));
     } catch (e) {
+      if (!stillOn(lib)) return;
       toast.error("加载媒体列表失败", e);
       set((s) => ({ loading: { ...s.loading, [convId]: false } }));
     }
@@ -83,13 +91,15 @@ export const useConvMediaStore = create<ConvMediaState>((set, get) => ({
     const held = s.byConv[convId];
     if (!held || held.length === 0) return;
     const oldest = held[0];
+    const lib = currentLib();
     set((st) => ({ loadingOlder: { ...st.loadingOlder, [convId]: true } }));
     try {
-      const older = await ipc.listConvMedia({
+      const older = await ipc.listConvMedia(lib, {
         convId,
         before: { createdAt: oldest.createdAt, id: oldest.id },
         limit: MEDIA_PAGE_SIZE,
       });
+      if (!stillOn(lib)) return;
       set((st) => {
         // Re-read: a full `load` may have replaced the list while we waited.
         const current = st.byConv[convId] ?? [];
@@ -102,6 +112,7 @@ export const useConvMediaStore = create<ConvMediaState>((set, get) => ({
         };
       });
     } catch (e) {
+      if (!stillOn(lib)) return;
       toast.error("加载更早的媒体失败", e);
       set((st) => ({ loadingOlder: { ...st.loadingOlder, [convId]: false } }));
     }

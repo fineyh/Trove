@@ -15,6 +15,10 @@ pub enum AppError {
     #[error("invalid argument: {0}")]
     InvalidArg(String),
 
+    /// The library isn't open. The frontend matches on the "locked:" prefix.
+    #[error("locked: {0}")]
+    Locked(String),
+
     #[error("updater error: {0}")]
     Updater(#[from] tauri_plugin_updater::Error),
 

@@ -1,6 +1,9 @@
-import { MoreHorizontal, Pencil, Pin, PinOff, X } from "lucide-react";
+import { ArrowRightLeft, ImagePlus, MoreHorizontal, Pencil, Pin, PinOff, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { useConversationsStore } from "../../stores/conversations";
+import { useLibrariesStore } from "../../stores/libraries";
+import { ConvAvatar } from "../ui/ConvAvatar";
 import { useSessionStore } from "../../stores/session";
 import { toast } from "../../stores/toast";
 import { ContextMenu } from "../ui/ContextMenu";
@@ -15,6 +18,9 @@ export function ProfileDrawer() {
   );
   const rename = useConversationsStore((s) => s.rename);
   const togglePinned = useConversationsStore((s) => s.togglePinned);
+  const setAvatar = useConversationsStore((s) => s.setAvatar);
+  const setMoving = useSessionStore((s) => s.setMovingConversation);
+  const libraryCount = useLibrariesStore((s) => s.list.length);
 
   const moreBtnRef = useRef<HTMLButtonElement>(null);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
@@ -40,9 +46,10 @@ export function ProfileDrawer() {
   return (
     <>
       <div className="fixed inset-0 z-30 bg-black/30" onClick={close} />
-      <aside className="fixed right-0 top-0 z-40 flex h-full w-96 flex-col border-l border-app-border bg-app-panel shadow-xl">
-        <header className="flex items-center justify-between border-b border-app-border px-4 py-3">
-          <div className="min-w-0">
+      <aside className="fixed right-0 top-0 z-40 flex h-full w-96 animate-pop-in flex-col border-l border-app-border bg-app-panel shadow-2xl">
+        <header className="flex items-center justify-between gap-3 border-b border-app-border px-4 py-3">
+          <ConvAvatar conv={conv} size={40} />
+          <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-semibold">{conv.name}</div>
             <div className="text-xs text-app-muted">
               {conv.messageCount} 条消息 ·{" "}
@@ -90,6 +97,28 @@ export function ProfileDrawer() {
             label: "修改会话名",
             icon: <Pencil size={14} />,
             onClick: startRename,
+          },
+          {
+            label: "更换头像…",
+            icon: <ImagePlus size={14} />,
+            onClick: () => {
+              setMenu(null);
+              void openFileDialog({
+                multiple: false,
+                filters: [{ name: "图片", extensions: ["jpg", "jpeg", "png", "webp", "gif", "avif", "bmp"] }],
+              })
+                .then((p) => (typeof p === "string" ? setAvatar(conv.id, p) : undefined))
+                .catch((e) => toast.error("更换头像失败", e));
+            },
+          },
+          {
+            label: "移到其他库…",
+            icon: <ArrowRightLeft size={14} />,
+            disabled: libraryCount < 2,
+            onClick: () => {
+              setMenu(null);
+              setMoving(conv.id);
+            },
           },
         ]}
         onClose={() => setMenu(null)}

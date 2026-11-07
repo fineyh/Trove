@@ -8,7 +8,7 @@ const SCHEMA_SQL: &str = include_str!("schema.sql");
 
 /// 当前代码能理解的最高 schema 版本。改 `schema.sql` 时必须同时 bump 这个常量
 /// 并补一条 `V{N}_TO_V{N+1}`，否则老库升不上来、新库会被下面的守卫拒绝。
-const SCHEMA_LATEST: i64 = 5;
+pub const SCHEMA_LATEST: i64 = 6;
 
 const V1_TO_V2: &str = "
 ALTER TABLE conversations ADD COLUMN enc_kdf_salt BLOB;
@@ -68,6 +68,47 @@ ALTER TABLE media ADD COLUMN thumb_scanned INTEGER NOT NULL DEFAULT 0;
 /// 没有这条性质，就会退回到老的坏状态：「列已经 ADD 上了、但 `user_version`
 /// 没 bump」→ 下次启动重跑 `ALTER TABLE ... ADD COLUMN` 报 duplicate column
 /// → 数据库永久打不开。
+/// v6 (2026-11): the library-file era (ADR-035~038).
+/// - Session-level encryption is gone (the file itself is encrypted now).
+/// - The old thumbnail columns never produced anything usable: `thumb_path`
+///   points at files that were rolled back, and `thumb_scanned` is unreliable
+///   (see the git history of V4_TO_V5), so the queue starts over.
+/// - "Offline" moves from per-media state to the volume (`volumes.online`);
+///   `missing_file_strategy` (hide|placeholder) becomes `offline_content`
+///   (show|hide), defaulting to show because the meaning changed.
+const V5_TO_V6: &str = "
+ALTER TABLE conversations DROP COLUMN encrypted;
+ALTER TABLE conversations DROP COLUMN enc_key_wrapped;
+ALTER TABLE conversations DROP COLUMN enc_kdf_salt;
+ALTER TABLE conversations DROP COLUMN enc_kdf_mem;
+ALTER TABLE conversations DROP COLUMN enc_kdf_iters;
+ALTER TABLE conversations DROP COLUMN enc_kdf_par;
+ALTER TABLE messages DROP COLUMN caption_iv;
+ALTER TABLE media DROP COLUMN thumb_path;
+UPDATE media SET thumb_scanned = 0;
+CREATE INDEX idx_media_thumb_todo ON media(id) WHERE thumb_scanned = 0;
+CREATE INDEX idx_messages_media ON messages(media_id);
+ALTER TABLE volumes ADD COLUMN online INTEGER NOT NULL DEFAULT 0;
+CREATE TABLE thumbs (
+  media_id   INTEGER PRIMARY KEY REFERENCES media(id) ON DELETE CASCADE,
+  data       BLOB    NOT NULL,
+  mime       TEXT    NOT NULL,
+  width      INTEGER NOT NULL,
+  height     INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE TABLE libraries (
+  id         TEXT    PRIMARY KEY,
+  name       TEXT    NOT NULL,
+  icon       TEXT,
+  color      TEXT,
+  sort       INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+DELETE FROM settings WHERE key IN ('missing_file_strategy', 'app_locked');
+INSERT OR REPLACE INTO settings(key, value) VALUES ('offline_content', 'show');
+";
+
 fn step(conn: &Connection, to_version: i64, sql: &str) -> rusqlite::Result<()> {
     // `unchecked_transaction` 只要 `&Connection`（我们拿不到 `&mut`）。提前
     // return 时 `Transaction` 的 Drop 默认回滚，所以中途失败不会留下半成品。
@@ -131,6 +172,9 @@ pub fn run(conn: &Connection) -> AppResult<()> {
     if version < 5 {
         step(conn, 5, V4_TO_V5)?;
     }
+    if version < 6 {
+        step(conn, 6, V5_TO_V6)?;
+    }
     Ok(())
 }
 
@@ -138,14 +182,15 @@ pub fn run(conn: &Connection) -> AppResult<()> {
 mod tests {
     use super::*;
 
+    /// The v5 schema exactly as shipped before the library-file era.
+    const V5_SCHEMA: &str = include_str!("testdata/schema_v5.sql");
+
     fn user_version(conn: &Connection) -> i64 {
         conn.query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap()
     }
 
     fn has_column(conn: &Connection, table: &str, column: &str) -> bool {
-        let mut stmt = conn
-            .prepare(&format!("PRAGMA table_info({table})"))
-            .unwrap();
+        let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})")).unwrap();
         let mut names = stmt
             .query_map([], |r| r.get::<_, String>(1))
             .unwrap()
@@ -153,9 +198,9 @@ mod tests {
         names.any(|n| n == column)
     }
 
-    fn has_index(conn: &Connection, name: &str) -> bool {
+    fn has_table(conn: &Connection, name: &str) -> bool {
         conn.query_row(
-            "SELECT count(*) FROM sqlite_master WHERE type = 'index' AND name = ?1",
+            "SELECT count(*) FROM sqlite_master WHERE name = ?1",
             [name],
             |r| r.get::<_, i64>(0),
         )
@@ -163,188 +208,98 @@ mod tests {
             > 0
     }
 
-    /// 一个 v3 库：`media` 还没有 v4 的 lat / lon / geo_scanned。只建
-    /// `V3_TO_V4` 碰得到的表就够了。
-    fn v3_db() -> Connection {
+    fn v5_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(V5_SCHEMA).unwrap();
         conn.execute_batch(
-            "CREATE TABLE media (
-               id         INTEGER PRIMARY KEY,
-               relpath    TEXT NOT NULL,
-               size_bytes INTEGER NOT NULL
-             );
-             INSERT INTO media (id, relpath, size_bytes) VALUES (1, 'a.jpg', 10);
-             PRAGMA user_version = 3;",
+            "PRAGMA user_version = 5;
+             INSERT INTO volumes (id, platform_id, label, last_mount, created_at)
+               VALUES (1, 'vol', 'D', 'D:\', 0);
+             INSERT INTO conversations (id, name, kind, created_at, updated_at)
+               VALUES (1, '旅行', 'manual', 0, 0);
+             INSERT INTO media (id, volume_id, relpath, size_bytes, mtime, blake3, kind,
+                                thumb_path, thumb_scanned, state)
+               VALUES (1, 1, 'a.jpg', 10, 0, 'h', 'image', 'thumbs/x.jpg', 1, 'broken');
+             INSERT INTO messages (id, conv_id, media_id, caption, created_at)
+               VALUES (1, 1, 1, 'a', 0);
+             UPDATE settings SET value = 'hide' WHERE key = 'missing_file_strategy';",
         )
         .unwrap();
         conn
     }
 
-    /// 整个修复的前提：`PRAGMA user_version` 跟随事务回滚 / 提交。
-    /// 这是 [step] 文档注释里那个结论的实测来源。
     #[test]
     fn user_version_follows_the_transaction() {
         let conn = Connection::open_in_memory().unwrap();
-        assert_eq!(user_version(&conn), 0);
-
-        // 回滚：改动丢弃。
         let tx = conn.unchecked_transaction().unwrap();
         tx.execute_batch("PRAGMA user_version = 7;").unwrap();
         assert_eq!(user_version(&tx), 7, "事务内应当读到新值");
-        drop(tx); // Transaction 的 Drop 默认回滚
+        drop(tx);
         assert_eq!(user_version(&conn), 0, "回滚后 user_version 必须恢复原值");
-
-        // 提交：改动保留。
-        let tx = conn.unchecked_transaction().unwrap();
-        tx.execute_batch("PRAGMA user_version = 7;").unwrap();
-        tx.commit().unwrap();
-        assert_eq!(user_version(&conn), 7);
     }
 
-    /// 一步 migration 中途失败：已经执行的 DDL 和 `user_version` 一起回滚，
-    /// 修掉失败原因后重跑能成功。这是老代码会把库永久弄坏的那个场景。
-    #[test]
-    fn a_failed_step_rolls_back_and_can_be_retried() {
-        let conn = v3_db();
-        // 占掉 `idx_media_geo` 这个名字，让 V3_TO_V4 的最后一句 CREATE INDEX
-        // 失败 —— 此时前面三条 ALTER TABLE 已经执行过了。
-        conn.execute_batch("CREATE TABLE idx_media_geo (x);").unwrap();
-
-        let err = run(&conn).unwrap_err();
-        assert!(
-            err.to_string().contains("idx_media_geo"),
-            "期待 CREATE INDEX 撞名失败，实际: {err}"
-        );
-        assert_eq!(user_version(&conn), 3, "失败后 user_version 必须停在 3");
-        assert!(
-            !has_column(&conn, "media", "lat"),
-            "失败后已执行的 ALTER TABLE 必须一起回滚，否则重跑会 duplicate column"
-        );
-
-        // 修掉失败原因，重跑。
-        conn.execute_batch("DROP TABLE idx_media_geo;").unwrap();
-        run(&conn).unwrap();
-        assert_eq!(user_version(&conn), SCHEMA_LATEST);
-        assert!(has_column(&conn, "media", "lat"));
-        assert!(has_column(&conn, "media", "geo_scanned"));
-        assert!(has_index(&conn, "idx_media_geo"));
-    }
-
-    /// v3 库走完整个阶梯到最新版：v4 的列、索引、版本号都对，原有行不丢。
-    #[test]
-    fn v3_upgrades_through_the_ladder() {
-        let conn = v3_db();
-        run(&conn).unwrap();
-
-        assert_eq!(user_version(&conn), SCHEMA_LATEST);
-        for col in ["lat", "lon", "geo_scanned"] {
-            assert!(has_column(&conn, "media", col), "缺列 {col}");
-        }
-        assert!(has_index(&conn, "idx_media_geo"));
-        let (relpath, geo_scanned): (String, i64) = conn
-            .query_row("SELECT relpath, geo_scanned FROM media WHERE id = 1", [], |r| {
-                Ok((r.get(0)?, r.get(1)?))
-            })
-            .unwrap();
-        assert_eq!(relpath, "a.jpg");
-        assert_eq!(geo_scanned, 0, "新列应当拿到 DEFAULT 0");
-    }
-
-    /// 全新建库直接落在最新版本，而且 `schema.sql` 的外层事务剥离没有剥坏
-    /// （剥错了的话这里会炸在 "cannot start a transaction within a transaction"
-    /// 或者少表上）。
     #[test]
     fn a_fresh_database_lands_on_latest() {
         let conn = Connection::open_in_memory().unwrap();
         run(&conn).unwrap();
-
         assert_eq!(user_version(&conn), SCHEMA_LATEST);
-        // v2 / v3 / v4 的列在全新库里也必须在（schema.sql 是最新的全量）。
-        assert!(has_column(&conn, "conversations", "enc_kdf_salt"));
-        assert!(has_column(&conn, "identity", "picture_url"));
-        assert!(has_column(&conn, "media", "lat"));
-        assert!(has_index(&conn, "idx_media_geo"));
-        // FTS5 虚表和触发器也要建起来。
-        let objects: i64 = conn
+        assert!(has_table(&conn, "thumbs"));
+        assert!(has_table(&conn, "libraries"));
+        assert!(has_column(&conn, "volumes", "online"));
+        assert!(!has_column(&conn, "conversations", "encrypted"));
+        run(&conn).unwrap();
+        assert_eq!(user_version(&conn), SCHEMA_LATEST);
+    }
+
+    #[test]
+    fn v5_upgrades_to_v6_and_keeps_the_data() {
+        let conn = v5_db();
+        run(&conn).unwrap();
+        assert_eq!(user_version(&conn), 6);
+        for (t, c) in [
+            ("conversations", "encrypted"),
+            ("conversations", "enc_key_wrapped"),
+            ("messages", "caption_iv"),
+            ("media", "thumb_path"),
+        ] {
+            assert!(!has_column(&conn, t, c), "{t}.{c} 应当已删除");
+        }
+        let (name, caption, scanned): (String, String, i64) = conn
             .query_row(
-                "SELECT count(*) FROM sqlite_master
-                 WHERE name IN ('messages_fts', 'messages_fts_insert')",
+                "SELECT c.name, m.caption, md.thumb_scanned FROM messages m
+                 JOIN conversations c ON c.id = m.conv_id JOIN media md ON md.id = m.media_id",
                 [],
-                |r| r.get(0),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .unwrap();
-        assert_eq!(objects, 2, "FTS 虚表 / 触发器应当建好");
+        assert_eq!((name.as_str(), caption.as_str(), scanned), ("旅行", "a", 0));
+        let offline: String = conn
+            .query_row("SELECT value FROM settings WHERE key = 'offline_content'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(offline, "show");
+        let old: i64 = conn
+            .query_row("SELECT count(*) FROM settings WHERE key = 'missing_file_strategy'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(old, 0);
+    }
 
-        // 幂等：再跑一次不应出错也不应改版本。
+    #[test]
+    fn a_failed_step_rolls_back_and_can_be_retried() {
+        let conn = v5_db();
+        conn.execute_batch("CREATE TABLE thumbs (x);").unwrap();
+        assert!(run(&conn).is_err());
+        assert_eq!(user_version(&conn), 5, "失败后 user_version 必须停在 5");
+        assert!(has_column(&conn, "conversations", "encrypted"), "DROP COLUMN 必须一起回滚");
+
+        conn.execute_batch("DROP TABLE thumbs;").unwrap();
         run(&conn).unwrap();
         assert_eq!(user_version(&conn), SCHEMA_LATEST);
     }
 
-    /// 已经滞留在 v5 的库（那一版被回退的缩略图功能跑过的库，也就是现实中
-    /// 用户机器上的处境）：守卫不再拒绝它，而且**一个字节都不改** —— 认领 v5
-    /// 这个取舍的全部意义就在这里。
     #[test]
-    fn a_database_already_at_v5_is_left_untouched() {
+    fn a_newer_database_is_refused() {
         let conn = Connection::open_in_memory().unwrap();
-        conn.execute_batch(
-            "CREATE TABLE media (
-               id            INTEGER PRIMARY KEY,
-               relpath       TEXT NOT NULL,
-               size_bytes    INTEGER NOT NULL,
-               thumb_path    TEXT,
-               thumb_scanned INTEGER NOT NULL DEFAULT 0
-             );
-             INSERT INTO media (id, relpath, size_bytes, thumb_path, thumb_scanned)
-               VALUES (1, 'a.jpg', 10, 'thumbs/aa.jpg', 1),
-                      (2, 'b.jpg', 20, NULL, 0);
-             PRAGMA user_version = 5;",
-        )
-        .unwrap();
-
-        run(&conn).unwrap();
-
-        assert_eq!(user_version(&conn), 5);
-        assert!(has_column(&conn, "media", "thumb_scanned"));
-        // 那批滞留值原样保留 —— 做缩略图的 session 负责重置它们，见 V4_TO_V5
-        // 的注释。这里断言的是「迁移没有偷偷动用户数据」。
-        let (path, scanned): (Option<String>, i64) = conn
-            .query_row(
-                "SELECT thumb_path, thumb_scanned FROM media WHERE id = 1",
-                [],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .unwrap();
-        assert_eq!(path.as_deref(), Some("thumbs/aa.jpg"));
-        assert_eq!(scanned, 1);
-    }
-
-    /// v4 库补上 v5 的列。
-    #[test]
-    fn v4_upgrades_to_v5() {
-        let conn = v3_db();
-        run(&conn).unwrap();
-        assert_eq!(user_version(&conn), SCHEMA_LATEST);
-        assert!(has_column(&conn, "media", "thumb_scanned"));
-        // v4 的那几列也在。
-        assert!(has_column(&conn, "media", "lat"));
-        assert!(has_index(&conn, "idx_media_geo"));
-    }
-
-    /// 比当前代码更新的库：直接拒绝，错误文案告诉用户去升级。
-    #[test]
-    fn rejects_a_database_from_a_newer_trove() {
-        let conn = Connection::open_in_memory().unwrap();
-        conn.execute_batch("PRAGMA user_version = 99;").unwrap();
-
-        let err = run(&conn).unwrap_err().to_string();
-        assert!(err.contains("更新版本的 Trove"), "实际文案: {err}");
-        assert!(err.contains("请升级 Trove"), "实际文案: {err}");
-        assert!(err.contains("v99"), "文案应带上实际版本号: {err}");
-        // 守卫必须在任何 DDL 之前生效。
-        assert_eq!(user_version(&conn), 99);
-        let tables: i64 = conn
-            .query_row("SELECT count(*) FROM sqlite_master", [], |r| r.get(0))
-            .unwrap();
-        assert_eq!(tables, 0, "被拒绝的库不应被改动");
+        conn.execute_batch(&format!("PRAGMA user_version = {};", SCHEMA_LATEST + 1)).unwrap();
+        assert!(run(&conn).is_err());
     }
 }

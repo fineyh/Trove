@@ -1,4 +1,4 @@
-use crate::{AppError, AppResult};
+use crate::{db, AppError, AppResult};
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -78,4 +78,44 @@ pub fn open_url(url: String) -> AppResult<()> {
     cmd.spawn()
         .map_err(|e| AppError::InvalidArg(format!("open url failed: {e}")))?;
     Ok(())
+}
+
+fn media_path(lib: &str, media_id: i64) -> AppResult<PathBuf> {
+    let p = db::with_lib(lib, |c| super::messages::media_abs_path(c, media_id))?
+        .ok_or_else(|| AppError::NotFound(format!("media #{media_id}")))?;
+    if !p.exists() {
+        return Err(AppError::NotFound("文件不在原位置（所在的盘没连接，或文件已被移走）".into()));
+    }
+    Ok(p)
+}
+
+/// Open a media file with the system's default application. By id, so the
+/// path never has to travel through the WebView.
+#[tauri::command]
+pub fn open_media(lib: String, media_id: i64) -> AppResult<()> {
+    let p = media_path(&lib, media_id)?;
+    open_path(p.to_string_lossy().to_string())
+}
+
+/// Show a media file selected in the system file manager.
+#[tauri::command]
+pub fn reveal_media(lib: String, media_id: i64) -> AppResult<()> {
+    let p = media_path(&lib, media_id)?;
+    #[cfg(target_os = "windows")]
+    let res = Command::new("explorer").arg(format!("/select,{}", p.display())).spawn();
+    #[cfg(target_os = "macos")]
+    let res = Command::new("open").arg("-R").arg(&p).spawn();
+    #[cfg(target_os = "linux")]
+    let res = Command::new("xdg-open").arg(p.parent().unwrap_or(&p)).spawn();
+    res.map_err(|e| AppError::InvalidArg(format!("spawn file manager failed: {e}")))?;
+    Ok(())
+}
+
+/// Copy a media file's full path to the clipboard is done in the UI; this
+/// just hands the path over on explicit request.
+#[tauri::command]
+pub fn media_path_for_copy(lib: String, media_id: i64) -> AppResult<String> {
+    let p = db::with_lib(&lib, |c| super::messages::media_abs_path(c, media_id))?
+        .ok_or_else(|| AppError::NotFound(format!("media #{media_id}")))?;
+    Ok(p.to_string_lossy().to_string())
 }

@@ -1,12 +1,30 @@
 import { useEffect, useMemo, useState } from "react";
-import { ImageOff, Loader2, Play } from "lucide-react";
+import { CloudOff, ImageOff, Loader2, Play } from "lucide-react";
 import type { Message } from "../../types";
-import { mediaUrl } from "../../ipc/client";
+import { mediaSrc, openMedia } from "../../ipc/client";
 import { EMPTY_MEDIA, useConvMediaStore } from "../../stores/convMedia";
+import { useLibrariesStore } from "../../stores/libraries";
 import { useSessionStore } from "../../stores/session";
+import { useThumbUrl } from "../../stores/thumbs";
+import { toast } from "../../stores/toast";
 import { cn } from "../../lib/cn";
-import { isHeicPath } from "../../lib/heic";
-import { useDisplayableImageUrl } from "../../lib/useDisplayableImageUrl";
+import { isHeicExt } from "../../lib/heic";
+import { formatDuration, isImageMedia } from "../../lib/media";
+
+/** Grid click: view what can be viewed, explain what can't. */
+function openItem(m: Message, view: (id: number) => void) {
+  const media = m.media!;
+  if (media.status === "offline") {
+    toast.info("文件所在的盘没有连接", "连接后就能打开。");
+    return;
+  }
+  if (media.kind === "other" && !isImageMedia(media)) {
+    const lib = useLibrariesStore.getState().current;
+    if (lib) void openMedia(lib, media.id).catch((e) => toast.error("打开失败", e));
+    return;
+  }
+  view(m.id);
+}
 
 type Tab = "all" | "image" | "video" | "other";
 
@@ -43,7 +61,13 @@ export function MediaGrid({ convId }: MediaGridProps) {
     () =>
       media
         .filter((m) => m.media)
-        .filter((m) => (tab === "all" ? true : m.media!.kind === tab))
+        .filter((m) => {
+          if (tab === "all") return true;
+          const img = isImageMedia(m.media!);
+          if (tab === "image") return img;
+          if (tab === "video") return m.media!.kind === "video";
+          return !img && m.media!.kind !== "video";
+        })
         .slice()
         .reverse(),
     [media, tab],
@@ -81,7 +105,7 @@ export function MediaGrid({ convId }: MediaGridProps) {
           <>
             <div className="grid grid-cols-3 gap-1.5">
               {items.map((m) => (
-                <GridItem key={m.id} message={m} onOpen={() => open(m.id)} />
+                <GridItem key={m.id} message={m} onOpen={() => openItem(m, open)} />
               ))}
             </div>
             {hasMore && (
@@ -110,56 +134,56 @@ function GridItem({
   message: Message;
   onOpen: () => void;
 }) {
-  const absolutePath = message.media!.absolutePath;
-  // Treat HEIC/HEIF as image regardless of stored `kind` (mime_guess may have
-  // tagged older rows "other"); decode it to a displayable blob URL.
-  const isImage =
-    message.media!.kind === "image" || isHeicPath(absolutePath);
-  // Hook must run unconditionally (before the broken early-return). For videos
-  // the path isn't HEIC so it resolves to the asset URL immediately and unused.
-  const image = useDisplayableImageUrl(absolutePath, mediaUrl(absolutePath));
+  const lib = useLibrariesStore((st) => st.current);
+  const media = message.media!;
+  const thumb = useThumbUrl(lib, media);
+  const isImage = isImageMedia(media);
+  const [failed, setFailed] = useState(false);
+  // Before its thumbnail exists, a plain image can show the original.
+  const fallback =
+    !thumb && isImage && !isHeicExt(media.ext) && lib && media.status === "ok"
+      ? mediaSrc(lib, media.id)
+      : null;
+  const src = thumb ?? fallback;
+  const offline = media.status === "offline";
+  const missing = media.status === "missing";
 
-  if (message.media!.state === "broken") {
-    return (
-      <div
-        title="文件暂时不可用"
-        className="flex aspect-square items-center justify-center rounded-md border border-dashed border-app-border bg-app-subtle/40 text-app-muted"
-      >
-        <ImageOff size={20} />
-      </div>
-    );
-  }
-  const url = mediaUrl(absolutePath);
   return (
     <button
       type="button"
       onClick={onOpen}
-      className="relative aspect-square overflow-hidden rounded-md bg-black/5"
+      disabled={missing}
+      title={offline ? "所在的盘没有连接" : missing ? "文件不在原位置" : undefined}
+      className="group relative aspect-square overflow-hidden rounded-lg bg-app-subtle"
     >
-      {isImage ? (
-        image.status === "error" ? (
-          <span className="flex h-full w-full items-center justify-center text-app-muted">
-            <ImageOff size={20} />
-          </span>
-        ) : image.status === "loading" || !image.url ? (
-          <span className="flex h-full w-full items-center justify-center bg-app-subtle/40 text-app-muted">
-            <Loader2 size={18} className="animate-spin" />
-          </span>
-        ) : (
-          <img src={image.url} className="h-full w-full object-cover" alt="" />
-        )
+      {src && !failed ? (
+        <img
+          src={src}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          draggable={false}
+          onError={() => setFailed(true)}
+          className={cn(
+            "h-full w-full object-cover transition-transform duration-300 group-hover:scale-105",
+            (offline || missing) && "opacity-60 grayscale",
+          )}
+        />
       ) : (
-        <>
-          <video
-            src={url}
-            preload="metadata"
-            muted
-            className="h-full w-full object-cover"
-          />
-          <span className="absolute inset-0 flex items-center justify-center bg-black/20 text-white">
-            <Play size={20} fill="currentColor" />
-          </span>
-        </>
+        <span className="flex h-full w-full items-center justify-center text-app-muted">
+          {missing || failed ? <ImageOff size={18} /> : offline ? <CloudOff size={18} /> : media.kind === "video" ? <Play size={18} /> : <Loader2 size={16} className="animate-spin" />}
+        </span>
+      )}
+      {media.kind === "video" && src && !failed && (
+        <span className="absolute bottom-1 left-1 flex items-center gap-0.5 rounded bg-black/55 px-1 py-px text-[10px] font-medium text-white">
+          <Play size={8} fill="currentColor" />
+          {media.durationMs ? formatDuration(media.durationMs) : ""}
+        </span>
+      )}
+      {(offline || missing) && (
+        <span className="absolute right-1 top-1 rounded-full bg-black/60 p-1 text-white">
+          {offline ? <CloudOff size={10} /> : <ImageOff size={10} />}
+        </span>
       )}
     </button>
   );

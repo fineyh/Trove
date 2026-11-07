@@ -1,64 +1,29 @@
-import { Lock } from "lucide-react";
-import { useState } from "react";
-import { useVaultStore } from "../../stores/vault";
-import { errText } from "../../lib/errors";
+import { ShieldCheck } from "lucide-react";
+import { useSecurityStore } from "../../stores/security";
+import { UnlockForm } from "../library/UnlockForm";
 
+/** Shown at start (and after locking) when a startup password is set. */
 export function UnlockScreen() {
-  const unlock = useVaultStore((s) => s.unlock);
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (busy || !password) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await unlock(password);
-      setPassword("");
-    } catch (err: unknown) {
-      setError(errText(err, "解锁失败"));
-      setBusy(false);
-    }
-  };
+  const unlock = useSecurityStore((s) => s.unlock);
+  const hasRecovery = useSecurityStore((s) => s.status?.appRecovery === true);
 
   return (
-    <div className="flex h-screen w-screen items-center justify-center bg-app-bg">
-      <form
-        onSubmit={submit}
-        className="flex w-full max-w-sm flex-col gap-5 rounded-2xl border border-app-border bg-app-panel p-8 shadow-2xl"
-      >
-        <div className="flex flex-col items-center gap-2">
-          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-app-accent/10 text-app-accent">
-            <Lock size={26} />
-          </div>
-          <div className="text-lg font-semibold">解锁 Trove</div>
-          <div className="text-center text-xs text-app-muted">
-            数据库已加密，请输入主密码继续。
-            <br />
-            忘记密码即数据无法恢复。
-          </div>
+    <div className="relative flex h-screen w-screen items-center justify-center overflow-hidden bg-app">
+      <div className="pointer-events-none absolute -top-40 left-1/2 h-[520px] w-[720px] -translate-x-1/2 rounded-full bg-app-accent/10 blur-3xl" />
+      <div className="relative flex w-full max-w-sm animate-pop-in flex-col items-center gap-6 px-6">
+        <div className="flex h-16 w-16 items-center justify-center rounded-[22px] bg-gradient-to-br from-app-accent to-indigo-600 text-white shadow-lg shadow-app-accent/25">
+          <ShieldCheck size={30} strokeWidth={1.75} />
         </div>
-
-        <input
-          type="password"
-          autoFocus
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="主密码"
-          className="rounded-md border border-app-border bg-app-subtle px-3 py-2 text-sm outline-none focus:border-app-accent/60 focus:bg-app-panel"
+        <div className="flex flex-col items-center gap-1.5 text-center">
+          <div className="text-xl font-semibold tracking-tight">Trove 已锁定</div>
+          <div className="text-sm text-app-muted">输入启动密码继续</div>
+        </div>
+        <UnlockForm
+          allowRecovery={hasRecovery}
+          passwordPlaceholder="启动密码"
+          onUnlock={(secret, method) => unlock(secret, method)}
         />
-        {error && <div className="text-xs text-red-500">{error}</div>}
-
-        <button
-          type="submit"
-          disabled={busy || password.length === 0}
-          className="rounded-md bg-app-accent px-3 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-40"
-        >
-          {busy ? "解锁中..." : "解锁"}
-        </button>
-      </form>
+      </div>
     </div>
   );
 }

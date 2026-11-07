@@ -1,18 +1,10 @@
-//! Settings → Backup: export / import .trovebackup.
+//! Settings → Backup: export / import `.trovebackup` (see services/backup.rs).
 //!
-//! Export does a WAL checkpoint then copies the live trove.db (and
-//! vault.json + thumbs/ if present) into a zip.
-//!
-//! Import:
-//!   1. Validate the zip + manifest
-//!   2. Close the DB connection
-//!   3. Move current trove.db / vault.json / thumbs/ aside to
-//!      <data_dir>/backups/<unix_ts>/  (safety net — never destructive)
-//!   4. Copy extracted files into place
-//!   5. Return — the frontend triggers an app restart via plugin-process
-//!      because reopening the DB needs to re-run the vault flow.
+//! Import never deletes: the current keyring and libraries are moved to
+//! `<data>/backups/<ts>/`, then the app relaunches so boot runs against the
+//! restored files.
 
-use crate::services::{backup, vault};
+use crate::services::{backup, session};
 use crate::{db, AppError, AppResult};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -22,6 +14,10 @@ use tauri::AppHandle;
 #[serde(rename_all = "camelCase")]
 pub struct ExportArgs {
     pub dest_path: String,
+    /// Seal this backup's keyring with its own password. Ignored when a
+    /// startup password is set (the backup is protected by that already).
+    #[serde(default)]
+    pub password: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -29,8 +25,29 @@ pub struct ExportArgs {
 pub struct ExportResult {
     pub dest_path: String,
     pub bytes: u64,
-    pub includes_vault: bool,
-    pub db_encrypted: bool,
+    pub password_protected: bool,
+}
+
+#[tauri::command]
+pub async fn export_backup(app: AppHandle, args: ExportArgs) -> AppResult<ExportResult> {
+    if !session::is_app_unlocked() {
+        return Err(AppError::Locked("app".into()));
+    }
+    let app_version = app.config().version.clone().unwrap_or_else(|| "unknown".into());
+    super::run_blocking(move || {
+        let pw = args.password.filter(|p| !p.is_empty());
+        if let Some(p) = &pw {
+            super::security::require_password(p)?;
+        }
+        let dest = PathBuf::from(&args.dest_path);
+        let out = backup::export(&dest, &app_version, pw.as_deref())?;
+        Ok(ExportResult {
+            dest_path: dest.to_string_lossy().to_string(),
+            bytes: out.bytes,
+            password_protected: out.password_protected,
+        })
+    })
+    .await
 }
 
 #[derive(Debug, Deserialize)]
@@ -42,98 +59,25 @@ pub struct ImportArgs {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportResult {
+    /// Where the replaced data was moved.
     pub backup_dir: String,
-    pub restored_db_bytes: u64,
-    pub includes_vault: bool,
-    pub db_encrypted: bool,
+    pub password_protected: bool,
+    pub libraries: usize,
 }
 
 #[tauri::command]
-pub fn export_backup(app: AppHandle, args: ExportArgs) -> AppResult<ExportResult> {
-    if !vault::is_unlocked() {
-        return Err(AppError::InvalidArg(
-            "vault is locked — unlock the master password before exporting".into(),
-        ));
-    }
-
-    backup::checkpoint_db()?;
-
-    let data_dir = vault::data_dir();
-    let dest = PathBuf::from(&args.dest_path);
-    let app_version = app
-        .config()
-        .version
-        .clone()
-        .unwrap_or_else(|| "unknown".to_string());
-    let db_encrypted = vault::has_master_password();
-
-    let bytes = backup::write_backup_zip(&dest, &data_dir, &app_version, db_encrypted)?;
-
-    Ok(ExportResult {
-        dest_path: dest.to_string_lossy().to_string(),
-        bytes,
-        includes_vault: db_encrypted,
-        db_encrypted,
+pub async fn import_backup(args: ImportArgs) -> AppResult<ImportResult> {
+    super::run_blocking(move || {
+        let data_dir = session::data_dir();
+        let staged = backup::stage(&PathBuf::from(&args.source_path), &data_dir)?;
+        crate::services::file_watcher::stop_all();
+        db::close_all();
+        let aside = backup::install(&staged, &data_dir)?;
+        Ok(ImportResult {
+            backup_dir: aside.to_string_lossy().to_string(),
+            password_protected: staged.manifest.password_protected,
+            libraries: staged.manifest.libraries,
+        })
     })
-}
-
-#[tauri::command]
-pub fn import_backup(args: ImportArgs) -> AppResult<ImportResult> {
-    let data_dir = vault::data_dir();
-    let src = PathBuf::from(&args.source_path);
-
-    // 1. Validate + extract.
-    let parsed = backup::read_backup_zip(&src, &data_dir)?;
-
-    // 2. Close the live DB so we can replace the file.
-    crate::services::file_watcher::stop_all();
-    db::close();
-
-    // 3. Move current state aside.
-    let backup_dir = match backup::move_aside_current(&data_dir) {
-        Ok(p) => p,
-        Err(e) => {
-            backup::cleanup_temp(&parsed.temp_dir);
-            return Err(e);
-        }
-    };
-
-    // 4. Install the extracted files.
-    let restored_db_bytes = match backup::install_extracted(&data_dir, &parsed.temp_dir) {
-        Ok(n) => n,
-        Err(e) => {
-            // Best-effort rollback: move files back from backup_dir.
-            let _ = rollback_from(&data_dir, &backup_dir);
-            backup::cleanup_temp(&parsed.temp_dir);
-            return Err(e);
-        }
-    };
-
-    // 5. Cleanup the extraction temp.
-    backup::cleanup_temp(&parsed.temp_dir);
-
-    // 6. Wipe vault in-memory state. The frontend is expected to relaunch
-    //    the app so init() / boot_scan run cleanly against the new files.
-    vault::forget_keys();
-
-    Ok(ImportResult {
-        backup_dir: backup_dir.to_string_lossy().to_string(),
-        restored_db_bytes,
-        includes_vault: parsed.manifest.includes_vault,
-        db_encrypted: parsed.manifest.db_encrypted,
-    })
-}
-
-fn rollback_from(data_dir: &std::path::Path, backup_dir: &std::path::Path) -> std::io::Result<()> {
-    for name in ["trove.db", "vault.json", "trove.db-wal", "trove.db-shm"] {
-        let src = backup_dir.join(name);
-        if src.exists() {
-            let _ = std::fs::rename(&src, data_dir.join(name));
-        }
-    }
-    let thumbs = backup_dir.join("thumbs");
-    if thumbs.is_dir() {
-        let _ = std::fs::rename(&thumbs, data_dir.join("thumbs"));
-    }
-    Ok(())
+    .await
 }

@@ -4,7 +4,7 @@
 // title-bar controls (pin toggle, close) and to resize itself to the media's
 // real dimensions.
 //
-// The media source arrives pre-built (already a `convertFileSrc` asset URL)
+// The media source arrives pre-built (already a `trove://` URL that names the media by id)
 // via the `src` query param; `title` labels the window; `kind` is
 // "video" | "image".
 
@@ -526,7 +526,7 @@ if (kind === "image") {
       // WebView can't decode HEIC; convert to a JPEG blob URL first. heic-to
       // (and its WASM) is dynamically imported so plain images don't pay for it.
       void import("../lib/heic")
-        .then(({ decodeHeicToUrl }) => decodeHeicToUrl(src, src))
+        .then(({ decodeHeicToUrl }) => decodeHeicToUrl(src))
         .then((url) => {
           image.src = url;
         })

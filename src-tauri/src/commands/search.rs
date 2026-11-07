@@ -13,14 +13,14 @@ pub struct SearchHit {
 }
 
 #[tauri::command]
-pub fn search(query: String) -> AppResult<Vec<SearchHit>> {
+pub fn search(lib: String, query: String) -> AppResult<Vec<SearchHit>> {
     let q = query.trim().to_string();
     if q.is_empty() {
         return Ok(vec![]);
     }
     let pattern = format!("%{}%", q.to_lowercase());
 
-    db::with_conn(|conn| {
+    db::with_lib(&lib, |conn| {
         let mut hits: Vec<SearchHit> = Vec::new();
 
         // Conversations by name (LIKE — handles CJK better than FTS5 default).
@@ -41,14 +41,12 @@ pub fn search(query: String) -> AppResult<Vec<SearchHit>> {
             hits.push(row?);
         }
 
-        // Messages by caption. Encrypted conversations are excluded — their
-        // captions are ciphertext blobs, so a LIKE match would be both
-        // useless and a privacy footgun (revealing key/IV substrings).
+        // Messages by caption (the file name, unless edited).
         let mut msg_stmt = conn.prepare(
             "SELECT m.id, m.conv_id, m.caption, m.created_at, c.name
              FROM messages m
              JOIN conversations c ON c.id = m.conv_id
-             WHERE c.archived = 0 AND c.encrypted = 0
+             WHERE c.archived = 0
                AND m.caption IS NOT NULL AND lower(m.caption) LIKE ?1
              ORDER BY m.created_at DESC LIMIT 50",
         )?;

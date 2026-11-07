@@ -3,9 +3,11 @@ import {
   getAllWebviewWindows,
 } from "@tauri-apps/api/webviewWindow";
 import type { Message } from "../types";
-import { mediaUrl } from "../ipc/client";
+import { mediaSrc } from "../ipc/client";
+import { currentLib } from "../stores/libraries";
 import { useMessagesStore } from "../stores/messages";
-import { isHeicPath } from "./heic";
+import { isHeicExt } from "./heic";
+import { isImageMedia } from "./media";
 
 /** Label prefix for every media (video/image) popup window. */
 export const PLAYER_LABEL_PREFIX = "player-";
@@ -28,14 +30,18 @@ const CASCADE_STEP = 32;
  * Open a video or image in its own standalone popup window. Each media item
  * gets a dedicated `WebviewWindow` loading the lightweight `player.html`;
  * re-invoking for an already-open item just refocuses it. The media URL is
- * passed pre-built (asset protocol) via query string, so the popup needs no
+ * passed pre-built (`trove://`, ids only) via query string, so the popup needs no
  * IPC.
  */
 export async function openPlayerWindow(message: Message): Promise<void> {
-  const kind = message.media?.kind;
-  if (!message.media || (kind !== "video" && kind !== "image")) return;
+  if (!message.media) return;
+  const kind =
+    message.media.kind === "video" ? "video" : isImageMedia(message.media) ? "image" : null;
+  if (!kind) return;
 
-  const label = `${PLAYER_LABEL_PREFIX}${message.id}`;
+  const lib = currentLib();
+  // Ids are per library, so the label names both.
+  const label = `${PLAYER_LABEL_PREFIX}${lib}-${message.id}`;
 
   const existing = await WebviewWindow.getByLabel(label);
   if (existing) {
@@ -44,12 +50,13 @@ export async function openPlayerWindow(message: Message): Promise<void> {
     return;
   }
 
-  const src = mediaUrl(message.media.absolutePath);
+  // An id-only trove:// URL: no path ever reaches the popup (ADR-037).
+  const src = mediaSrc(lib, message.media.id);
   const title =
     message.caption?.trim() || (kind === "image" ? "Trove 图片" : "Trove 视频");
   const params = new URLSearchParams({ src, title, kind });
   // Flag HEIC so the player decodes it (WebView can't show HEIC natively).
-  if (kind === "image" && isHeicPath(message.media.absolutePath)) {
+  if (kind === "image" && isHeicExt(message.media.ext)) {
     params.set("heic", "1");
   }
   const query = params.toString();
@@ -79,6 +86,8 @@ export async function openPlayerWindow(message: Message): Promise<void> {
     width: initW,
     height: initH + PLAYER_TITLEBAR_HEIGHT,
     decorations: false,
+    // Like the main window: no history or disk cache (ADR-037).
+    incognito: true,
     resizable: true,
     // Not always-on-top by default — the player exposes a pin toggle instead.
     x: 120 + offset,

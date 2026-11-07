@@ -1,5 +1,6 @@
 import { Loader2, X } from "lucide-react";
 import { useImportJobStore } from "../../stores/importJob";
+import { useLibrariesStore } from "../../stores/libraries";
 
 interface ImportProgressBarProps {
   /** Only show the bar when the running job belongs to this conversation.
@@ -13,9 +14,11 @@ export function ImportProgressBar({ convId }: ImportProgressBarProps) {
   const job = useImportJobStore((s) => s.job);
   const cancelling = useImportJobStore((s) => s.cancelling);
   const cancel = useImportJobStore((s) => s.cancel);
+  const lib = useLibrariesStore((s) => s.current);
 
   if (!job) return null;
-  if (convId !== undefined && job.convId !== convId) return null;
+  // Conversation ids are per library: match both.
+  if (convId !== undefined && (job.convId !== convId || job.lib !== lib)) return null;
 
   // total 0 = backend still enumerating the folder.
   const counting = job.total === 0;

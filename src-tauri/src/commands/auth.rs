@@ -13,8 +13,7 @@
 //! plaintext, and we tag with a 1-byte version prefix to be unambiguous.
 
 use crate::services::{
-    crypto::{self, IDENTITY_REFRESH_AAD},
-    oauth, vault,
+    oauth, session,
 };
 use crate::{db, AppError, AppResult};
 use rusqlite::{params, OptionalExtension};
@@ -44,7 +43,6 @@ const GOOGLE_USERINFO_URL: &str = "https://openidconnect.googleapis.com/v1/useri
 const SCOPES: &[&str] = &["openid", "email", "profile"];
 
 // Storage marker bytes: 0x01 = sealed (AES-GCM via master KEK), 0x00 = plaintext.
-const STORAGE_VERSION_SEALED: u8 = 0x01;
 const STORAGE_VERSION_PLAIN: u8 = 0x00;
 
 #[derive(Debug, Serialize, Clone)]
@@ -54,13 +52,13 @@ pub struct AuthStatus {
     pub email: Option<String>,
     pub display_name: Option<String>,
     pub picture_url: Option<String>,
-    /// Mirrors `vault::is_unlocked()` — frontend uses it to enable/disable buttons.
+    /// Mirrors `session::is_app_unlocked()` — frontend uses it to enable/disable buttons.
     pub vault_unlocked: bool,
 }
 
 #[tauri::command]
 pub fn auth_status() -> AppResult<AuthStatus> {
-    let vault_unlocked = vault::is_unlocked();
+    let vault_unlocked = session::is_app_unlocked();
     if !vault_unlocked {
         return Ok(AuthStatus {
             has_identity: false,
@@ -70,7 +68,7 @@ pub fn auth_status() -> AppResult<AuthStatus> {
             vault_unlocked,
         });
     }
-    db::with_conn(|conn| {
+    db::with_main(|conn| {
         let row = conn
             .query_row(
                 "SELECT email, display_name, picture_url FROM identity WHERE id = 1",
@@ -105,7 +103,7 @@ pub fn auth_status() -> AppResult<AuthStatus> {
 
 #[tauri::command]
 pub async fn google_login(app: AppHandle) -> AppResult<AuthStatus> {
-    if !vault::is_unlocked() {
+    if !session::is_app_unlocked() {
         return Err(AppError::InvalidArg(
             "vault is locked — unlock the master password before logging in".into(),
         ));
@@ -131,7 +129,7 @@ pub async fn google_login(app: AppHandle) -> AppResult<AuthStatus> {
         None => None,
     };
 
-    db::with_conn(|conn| {
+    db::with_main(|conn| {
         // Need to keep an existing refresh_token if Google didn't return a new one
         // (only the first authorization returns one unless prompt=consent forced it,
         // which we do — but be defensive).
@@ -171,29 +169,22 @@ pub async fn google_login(app: AppHandle) -> AppResult<AuthStatus> {
 
 #[tauri::command]
 pub fn logout() -> AppResult<()> {
-    if !vault::is_unlocked() {
+    if !session::is_app_unlocked() {
         return Err(AppError::InvalidArg("vault is locked".into()));
     }
-    db::with_conn(|conn| {
+    db::with_main(|conn| {
         conn.execute("DELETE FROM identity WHERE id = 1", [])?;
         Ok(())
     })
 }
 
+/// The main library file is encrypted (ADR-036), so the token is stored as-is;
+/// the old per-field seal with the master KEK is gone with the master KEK.
 fn encode_refresh_token(rt: &str) -> AppResult<Vec<u8>> {
-    if let Some(kek) = vault::master_kek() {
-        let sealed = crypto::seal_blob(&kek, rt.as_bytes(), IDENTITY_REFRESH_AAD)
-            .map_err(AppError::from)?;
-        let mut out = Vec::with_capacity(1 + sealed.len());
-        out.push(STORAGE_VERSION_SEALED);
-        out.extend_from_slice(&sealed);
-        Ok(out)
-    } else {
-        let mut out = Vec::with_capacity(1 + rt.len());
-        out.push(STORAGE_VERSION_PLAIN);
-        out.extend_from_slice(rt.as_bytes());
-        Ok(out)
-    }
+    let mut out = Vec::with_capacity(1 + rt.len());
+    out.push(STORAGE_VERSION_PLAIN);
+    out.extend_from_slice(rt.as_bytes());
+    Ok(out)
 }
 
 #[allow(dead_code)]
@@ -201,15 +192,8 @@ pub fn decode_refresh_token(blob: &[u8]) -> AppResult<String> {
     let (&tag, rest) = blob
         .split_first()
         .ok_or_else(|| AppError::InvalidArg("empty refresh blob".into()))?;
-    let bytes = match tag {
-        STORAGE_VERSION_SEALED => {
-            let kek = vault::master_kek().ok_or_else(|| {
-                AppError::InvalidArg("vault is locked — cannot decrypt refresh token".into())
-            })?;
-            crypto::open_blob(&kek, rest, IDENTITY_REFRESH_AAD).map_err(AppError::from)?
-        }
-        STORAGE_VERSION_PLAIN => rest.to_vec(),
-        _ => return Err(AppError::InvalidArg(format!("unknown refresh blob tag: {tag:#x}"))),
-    };
-    String::from_utf8(bytes).map_err(|e| AppError::InvalidArg(format!("refresh utf8: {e}")))
+    if tag != STORAGE_VERSION_PLAIN {
+        return Err(AppError::InvalidArg("refresh token from the master-password era; log in again".into()));
+    }
+    String::from_utf8(rest.to_vec()).map_err(|e| AppError::InvalidArg(format!("refresh utf8: {e}")))
 }

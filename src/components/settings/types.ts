@@ -28,7 +28,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { key: "account", label: "账号", icon: User },
   { key: "general", label: "通用", icon: Sliders },
   { key: "storage", label: "存储", icon: HardDrive },
-  { key: "media", label: "媒体管理", icon: Image },
+  { key: "media", label: "丢失的文件", icon: Image },
   { key: "security", label: "安全", icon: Lock },
   { key: "backup", label: "备份", icon: Archive },
   { key: "about", label: "关于", icon: Info },

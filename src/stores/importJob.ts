@@ -17,6 +17,8 @@ export const useImportJobStore = create<ImportJobState>((set) => ({
   job: null,
   cancelling: false,
   apply: (payload) => {
+    // Imports run in the library they were started in; the bar shows on that
+    // conversation's composer only, and the receipts below name no library.
     if (payload.finished) {
       set({ job: null, cancelling: false });
       // 进度条消失原本是唯一的「结束」信号，而单文件失败只进了后端

@@ -1,5 +1,6 @@
--- Trove SQLite schema (latest; see db/migrations.rs SCHEMA_LATEST)
--- See plans/1-telegram-trove-... for full design rationale.
+-- Trove library schema (latest; see db/migrations.rs SCHEMA_LATEST).
+-- Every library file has exactly this structure (ADR-038). The main library
+-- additionally fills `libraries` and holds the app-wide `settings` / `identity`.
 
 BEGIN;
 
@@ -8,6 +9,9 @@ CREATE TABLE volumes (
   platform_id TEXT    NOT NULL UNIQUE,
   label       TEXT,
   last_mount  TEXT,
+  -- Is the volume mounted right now? Runtime fact kept by volume_monitor;
+  -- it decides "offline" for every media row on this volume (ADR-035).
+  online      INTEGER NOT NULL DEFAULT 0,
   created_at  INTEGER NOT NULL
 );
 
@@ -18,12 +22,6 @@ CREATE TABLE conversations (
   kind            TEXT    NOT NULL CHECK (kind IN ('manual', 'folder_watch')),
   source_volume_id INTEGER REFERENCES volumes(id) ON DELETE SET NULL,
   source_relpath  TEXT,
-  encrypted       INTEGER NOT NULL DEFAULT 0,
-  enc_key_wrapped BLOB,
-  enc_kdf_salt    BLOB,
-  enc_kdf_mem     INTEGER,
-  enc_kdf_iters   INTEGER,
-  enc_kdf_par     INTEGER,
   pinned          INTEGER NOT NULL DEFAULT 0,
   archived        INTEGER NOT NULL DEFAULT 0,
   created_at      INTEGER NOT NULL,
@@ -43,13 +41,13 @@ CREATE TABLE media (
   width       INTEGER,
   height      INTEGER,
   duration_ms INTEGER,
-  thumb_path  TEXT,
+  -- 'broken' = the file is missing although its volume is online. A file on
+  -- an offline volume stays 'live': offline is the volume's fact, not ours.
   state       TEXT    NOT NULL DEFAULT 'live' CHECK (state IN ('live', 'broken')),
   lat         REAL,
   lon         REAL,
   geo_scanned INTEGER NOT NULL DEFAULT 0,
-  -- v5: 这一行的缩略图试过没有。见 migrations.rs 的 V4_TO_V5 —— 它有一段
-  -- 前史，而且已在 v5 的老库里这个值不是干净的 0。
+  -- Thumbnail queue: 0 = to do, 1 = done, 2 = gave up (undecodable).
   thumb_scanned INTEGER NOT NULL DEFAULT 0,
   UNIQUE (volume_id, relpath)
 );
@@ -57,20 +55,31 @@ CREATE TABLE media (
 CREATE INDEX idx_media_blake3 ON media(blake3);
 CREATE INDEX idx_media_size ON media(size_bytes);
 CREATE INDEX idx_media_geo ON media(lat, lon) WHERE lat IS NOT NULL;
+CREATE INDEX idx_media_thumb_todo ON media(id) WHERE thumb_scanned = 0;
+
+-- Thumbnails are a performance cache living next to their row (ADR-037):
+-- same file, same key, same transaction, gone with the media row.
+CREATE TABLE thumbs (
+  media_id   INTEGER PRIMARY KEY REFERENCES media(id) ON DELETE CASCADE,
+  data       BLOB    NOT NULL,
+  mime       TEXT    NOT NULL,
+  width      INTEGER NOT NULL,
+  height     INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+);
 
 CREATE TABLE messages (
   id         INTEGER PRIMARY KEY,
   conv_id    INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
   media_id   INTEGER REFERENCES media(id) ON DELETE SET NULL,
   caption    TEXT,
-  caption_iv BLOB,
   play_count INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL
 );
 
 CREATE INDEX idx_messages_conv_time ON messages(conv_id, created_at);
+CREATE INDEX idx_messages_media ON messages(media_id);
 
--- FTS5 mirror of caption + conversation name for search
 CREATE VIRTUAL TABLE messages_fts USING fts5(
   caption,
   content='messages',
@@ -110,8 +119,18 @@ CREATE TABLE settings (
   value TEXT
 );
 
+-- Names and order of all libraries. Only the main library's copy is used;
+-- the keyring knows ids, never names.
+CREATE TABLE libraries (
+  id         TEXT    PRIMARY KEY,
+  name       TEXT    NOT NULL,
+  icon       TEXT,
+  color      TEXT,
+  sort       INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+
 INSERT INTO settings(key, value) VALUES
-  ('missing_file_strategy', 'hide'),
-  ('app_locked', '0');
+  ('offline_content', 'show');
 
 COMMIT;

@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import * as ipc from "../../../ipc/client";
 import { useConversationsStore } from "../../../stores/conversations";
+import { currentLib, useLibrariesStore } from "../../../stores/libraries";
 import type {
   BrokenGroup,
   BrokenItem,
@@ -56,7 +57,7 @@ export function BrokenManagerDialog({ scope, onClose }: BrokenManagerDialogProps
 
   const loadList = useCallback(async () => {
     try {
-      const list = await ipc.listBrokenPointers();
+      const list = await ipc.listBrokenPointers(currentLib());
       setGroups(list);
       setLoadError(null);
     } catch (e) {
@@ -156,7 +157,7 @@ export function BrokenManagerDialog({ scope, onClose }: BrokenManagerDialogProps
     });
     setHint(sourceMessageId, null);
     try {
-      const outcome = await ipc.repairMedia({ mediaId, scope, explicitPath });
+      const outcome = await ipc.repairMedia(currentLib(), { mediaId, scope, explicitPath });
       applyRepairOutcome(mediaId, outcome, sourceMessageId);
       if (outcome.status === "repaired") {
         // Conversation messages should refresh too (preview, etc.)
@@ -226,7 +227,7 @@ export function BrokenManagerDialog({ scope, onClose }: BrokenManagerDialogProps
     if (!pendingDelete) return;
     setDeleteBusy(true);
     try {
-      await ipc.deleteMessage(pendingDelete.item.messageId);
+      await ipc.deleteMessage(currentLib(), pendingDelete.item.messageId);
       // Reload list — backend may have cascaded media + broken_pointers cleanup.
       await loadList();
       void refreshConvs();
@@ -254,7 +255,7 @@ export function BrokenManagerDialog({ scope, onClose }: BrokenManagerDialogProps
         <div className="flex items-center justify-between border-b border-app-border px-5 py-3">
           <div className="flex items-center gap-2 text-base font-semibold">
             <FileWarning size={16} className="text-amber-500" />
-            失效文件管理
+            丢失文件管理
             {groups !== null && (
               <span className="text-sm font-normal text-app-muted">
                 共 {totalCount} 个
@@ -283,7 +284,7 @@ export function BrokenManagerDialog({ scope, onClose }: BrokenManagerDialogProps
             </div>
           ) : groups.length === 0 ? (
             <div className="flex items-center justify-center py-12 text-sm text-app-muted">
-              暂无失效文件
+              没有丢失的文件
             </div>
           ) : (
             <ul className="flex flex-col gap-2">
@@ -363,7 +364,7 @@ function GroupSection({
         <div className="flex-1 truncate text-sm font-medium">
           {group.convName}
           <span className="ml-2 text-xs font-normal text-app-muted">
-            {group.items.length} 个失效
+            {group.items.length} 个丢失
           </span>
         </div>
         {batching && (
@@ -414,12 +415,18 @@ interface BrokenRowProps {
 
 function BrokenRow({ item, busy, hint, onAuto, onManual, onDelete }: BrokenRowProps) {
   const Icon = item.kind === "video" ? FileVideo : FileImage;
+  const lib = useLibrariesStore((s) => s.current);
   const displayPath = item.lastKnownRelpath ?? "(路径未知)";
   const volumeLabel = item.lastKnownVolumeLabel;
   return (
     <li className="flex items-center gap-3 px-3 py-2">
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-app-subtle text-app-muted">
-        <Icon size={18} />
+      {/* The thumbnail outlives the file: it's how you tell what went missing. */}
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-app-subtle text-app-muted">
+        {item.hasThumb && lib ? (
+          <img src={ipc.thumbSrc(lib, item.mediaId)} alt="" className="h-full w-full object-cover" draggable={false} />
+        ) : (
+          <Icon size={18} />
+        )}
       </div>
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="truncate font-mono text-xs" title={displayPath}>

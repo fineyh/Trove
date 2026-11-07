@@ -2,7 +2,7 @@
 // the React-free `heic.ts` can be imported by the lean player bundle.
 
 import { useEffect, useState } from "react";
-import { decodeHeicToUrl, isHeicPath } from "./heic";
+import { decodeHeicToUrl, isHeicExt } from "./heic";
 
 export type ImageUrlStatus = "ready" | "loading" | "error";
 
@@ -12,30 +12,27 @@ export interface DisplayableImageUrl {
 }
 
 /**
- * Resolve a displayable `<img>` src for a media file.
- *   - Non-HEIC: returns `assetUrl` immediately (`ready`).
- *   - HEIC: kicks off a decode, reporting `loading` then `ready` (blob URL) or
- *     `error`.
+ * Resolve a displayable `<img>` src for the original file at `url`.
+ *   - Non-HEIC: returns `url` immediately (`ready`).
+ *   - HEIC: decodes, reporting `loading` then `ready` (blob URL) or `error`.
+ * An empty `url` is a no-op, so the hook can run before data is there.
  */
-export function useDisplayableImageUrl(
-  absolutePath: string,
-  assetUrl: string,
-): DisplayableImageUrl {
-  const heic = isHeicPath(absolutePath);
+export function useDisplayableImageUrl(url: string, ext: string): DisplayableImageUrl {
+  const heic = isHeicExt(ext);
   const [state, setState] = useState<DisplayableImageUrl>(() =>
-    heic ? { url: null, status: "loading" } : { url: assetUrl, status: "ready" },
+    heic ? { url: null, status: "loading" } : { url, status: "ready" },
   );
 
   useEffect(() => {
-    if (!heic) {
-      setState({ url: assetUrl, status: "ready" });
+    if (!heic || !url) {
+      setState({ url, status: "ready" });
       return;
     }
     let cancelled = false;
     setState({ url: null, status: "loading" });
-    decodeHeicToUrl(absolutePath, assetUrl)
-      .then((url) => {
-        if (!cancelled) setState({ url, status: "ready" });
+    decodeHeicToUrl(url)
+      .then((u) => {
+        if (!cancelled) setState({ url: u, status: "ready" });
       })
       .catch(() => {
         if (!cancelled) setState({ url: null, status: "error" });
@@ -43,7 +40,7 @@ export function useDisplayableImageUrl(
     return () => {
       cancelled = true;
     };
-  }, [absolutePath, assetUrl, heic]);
+  }, [url, heic]);
 
   return state;
 }

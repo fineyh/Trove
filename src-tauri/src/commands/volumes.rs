@@ -20,22 +20,22 @@ pub struct VolumePayload {
 /// on an empty card reader or an offline network mapping — never on the thread
 /// that paints the window (ADR-034).
 #[tauri::command]
-pub async fn list_volumes() -> AppResult<Vec<VolumePayload>> {
-    super::run_blocking(list_volumes_blocking).await
+pub async fn list_volumes(lib: String) -> AppResult<Vec<VolumePayload>> {
+    super::run_blocking(move || list_volumes_blocking(&lib)).await
 }
 
-fn list_volumes_blocking() -> AppResult<Vec<VolumePayload>> {
+fn list_volumes_blocking(lib: &str) -> AppResult<Vec<VolumePayload>> {
     let mounted = services::volume_resolver::enumerate_mounted();
     let mounted_map: HashMap<String, String> = mounted
         .into_iter()
         .map(|v| (v.platform_id, v.mount_point.to_string_lossy().to_string()))
         .collect();
 
-    db::with_conn(|conn| {
+    db::with_lib(lib, |conn| {
         let mut stmt = conn.prepare(
             "SELECT v.id, v.platform_id, v.label, v.last_mount,
                     (SELECT COUNT(*) FROM media WHERE volume_id = v.id) AS total,
-                    (SELECT COUNT(*) FROM media WHERE volume_id = v.id AND state = 'broken') AS broken
+                    (SELECT COUNT(*) FROM media WHERE volume_id = v.id AND state = 'broken' AND v.online = 1) AS broken
              FROM volumes v
              ORDER BY v.id",
         )?;
@@ -63,17 +63,17 @@ fn list_volumes_blocking() -> AppResult<Vec<VolumePayload>> {
 /// Same full reconciliation the boot scan does, on demand from the storage
 /// pane. It emits `volumes:changed` itself, so the UI refreshes when it lands.
 #[tauri::command]
-pub async fn rescan_volumes() -> AppResult<()> {
-    super::run_blocking(|| {
-        services::volume_monitor::boot_scan().map_err(crate::AppError::InvalidArg)?;
+pub async fn rescan_volumes(lib: String) -> AppResult<()> {
+    super::run_blocking(move || {
+        services::volume_monitor::scan_library(&lib);
         Ok(())
     })
     .await
 }
 
 #[tauri::command]
-pub fn forget_volume(id: i64) -> AppResult<()> {
-    db::with_conn(|conn| {
+pub fn forget_volume(lib: String, id: i64) -> AppResult<()> {
+    db::with_lib(&lib, |conn| {
         conn.execute("DELETE FROM volumes WHERE id = ?1", params![id])?;
         Ok(())
     })
@@ -98,12 +98,13 @@ pub struct StorageStats {
 }
 
 #[tauri::command]
-pub fn get_storage_stats() -> AppResult<StorageStats> {
-    let data_dir = services::vault::data_dir()
+pub fn get_storage_stats(lib: String) -> AppResult<StorageStats> {
+    let lib = lib.as_str();
+    let data_dir = services::session::data_dir()
         .to_string_lossy()
         .into_owned();
 
-    db::with_conn(|conn| {
+    db::with_lib(lib, |conn| {
         let (total_media, total_bytes) = conn.query_row(
             "SELECT COUNT(*), COALESCE(SUM(size_bytes), 0) FROM media",
             [],

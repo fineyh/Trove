@@ -5,7 +5,7 @@
  *  实现：`serialize_str(&self.to_string())`），所以 `invoke` 的 reject 值是 string
  *  而不是 Error —— 两种都要认，否则用户看到的是 "[object Object]"。 */
 const RUST_PREFIX =
-  /^(?:database|io|updater) error: |^not found: |^invalid argument: /;
+  /^(?:database|io|updater) error: |^not found: |^invalid argument: |^locked: /;
 
 /** 把任意 catch 到的东西变成一句能给人看的话。 */
 export function errText(e: unknown, fallback = "未知错误"): string {

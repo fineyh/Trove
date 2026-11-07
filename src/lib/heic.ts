@@ -1,29 +1,25 @@
 // HEIC/HEIF display support.
 //
-// WebView2 (Chromium) can't decode HEIC/HEIF — patent/licensing — so a native
-// `<img src=asset://…>` to a `.heic` file renders as a broken image. We decode
+// WebView2 (Chromium) can't decode HEIC/HEIF — patent/licensing — so we decode
 // such files in the browser via `heic-to` (a libheif WASM wrapper) into a JPEG
-// blob URL the WebView *can* show.
+// blob the WebView *can* show.
 //
 // Cost control:
 //   - `heic-to` (and its ~MB of WASM) is **dynamically imported**, so it's only
-//     fetched the first time a HEIC actually needs decoding. Normal users /
-//     plain JPEG·PNG·video paths never download it.
-//   - Decoded blob URLs are cached per absolute path for the session (one decode
-//     per file, survives list scroll / re-render). We don't revoke them — the
-//     working set is bounded by how many distinct HEICs the user views.
-//   - A small concurrency gate keeps a screenful of HEICs from saturating the
-//     CPU all at once.
+//     fetched the first time a HEIC actually needs decoding. We use its `csp`
+//     build: the default one evals, which the CSP forbids.
+//   - Decoded blob URLs are kept in a small LRU and revoked on eviction. The
+//     chat and grids show stored thumbnails (ADR-037), so only the full-size
+//     viewers come through here and a handful of entries is plenty.
+//   - A small concurrency gate keeps several decodes from saturating the CPU.
 //
 // This module stays React-free so the lean `player.html` bundle can import the
 // decode primitives without pulling in React. The React hook lives in
 // `useDisplayableImageUrl.ts`.
 
-const HEIC_EXT = /\.(heic|heif)$/i;
-
-/** True when the path points at a HEIC/HEIF file (by extension). */
-export function isHeicPath(path: string): boolean {
-  return HEIC_EXT.test(path);
+/** True for HEIC/HEIF by (lower-case, dot-less) extension. */
+export function isHeicExt(ext: string | null | undefined): boolean {
+  return ext === "heic" || ext === "heif";
 }
 
 // --- Concurrency gate -------------------------------------------------------
@@ -49,39 +45,55 @@ function release(): void {
   }
 }
 
-// --- Decode + cache ---------------------------------------------------------
-
-// Keyed by absolute path. Stores the in-flight/settled promise so concurrent
-// callers for the same file dedupe onto one decode.
-const cache = new Map<string, Promise<string>>();
-
-async function decode(assetUrl: string): Promise<string> {
+/** Decode a HEIC blob into a JPEG blob. */
+export async function heicToJpeg(blob: Blob, quality = 0.9): Promise<Blob> {
   await acquire();
   try {
-    const [{ heicTo }, resp] = await Promise.all([
-      import("heic-to"),
-      fetch(assetUrl),
-    ]);
-    const blob = await resp.blob();
-    const jpeg = await heicTo({ blob, type: "image/jpeg", quality: 0.9 });
-    return URL.createObjectURL(jpeg);
+    const { heicTo } = await import("heic-to/csp");
+    return await heicTo({ blob, type: "image/jpeg", quality });
   } finally {
     release();
   }
 }
 
+// --- Decode + LRU -----------------------------------------------------------
+
+const MAX_CACHED = 24;
+// Insertion order = recency (re-inserted on hit).
+const cache = new Map<string, Promise<string>>();
+
+function touch(key: string, p: Promise<string>): void {
+  cache.delete(key);
+  cache.set(key, p);
+  while (cache.size > MAX_CACHED) {
+    const [oldKey, oldP] = cache.entries().next().value as [string, Promise<string>];
+    cache.delete(oldKey);
+    void oldP.then((u) => URL.revokeObjectURL(u)).catch(() => {});
+  }
+}
+
+async function decode(url: string): Promise<string> {
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  const jpeg = await heicToJpeg(await resp.blob());
+  return URL.createObjectURL(jpeg);
+}
+
 /**
- * Decode a HEIC asset URL into a displayable JPEG blob URL. Deduped + cached
- * by `cacheKey` (the original absolute path) for the session.
+ * Decode the HEIC at `url` into a displayable JPEG blob URL. Deduped and
+ * cached by `url` (it names the media by id, so it is a stable key).
  */
-export function decodeHeicToUrl(cacheKey: string, assetUrl: string): Promise<string> {
-  const existing = cache.get(cacheKey);
-  if (existing) return existing;
-  const p = decode(assetUrl).catch((err) => {
+export function decodeHeicToUrl(url: string): Promise<string> {
+  const existing = cache.get(url);
+  if (existing) {
+    touch(url, existing);
+    return existing;
+  }
+  const p = decode(url).catch((err) => {
     // Drop failed attempts so a later retry can re-decode.
-    cache.delete(cacheKey);
+    cache.delete(url);
     throw err;
   });
-  cache.set(cacheKey, p);
+  touch(url, p);
   return p;
 }

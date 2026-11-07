@@ -1,17 +1,9 @@
-//! Cryptographic primitives: KDF, AEAD, and key wrapping.
-//!
-//! Layout:
-//! - master password → Argon2id(salt, params) → 32-byte KEK
-//! - KEK is fed to SQLCipher as the page key (whole-DB encryption)
-//! - each encrypted conversation has its own random 32-byte conv key
-//! - conv key is wrapped by AES-GCM(KEK, conv_kdf? else KEK directly)
-//!
-//! For conversation-level passwords we mirror the KDF: the conversation
-//! has its own salt and the wrap key is derived from `conv_password`.
+//! Cryptographic primitives: KDF, AEAD, and key wrapping. How they are put
+//! together (data keys, slots) lives in `keyring.rs`.
 
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Key, Nonce};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use argon2::{Algorithm, Argon2, Params, Version};
 use rand::{rngs::OsRng, RngCore};
 use zeroize::{Zeroize, ZeroizeOnDrop};
@@ -35,10 +27,6 @@ impl SecretKey {
         &self.0
     }
 
-    /// SQLCipher accepts a hex-encoded raw key via `PRAGMA key = "x'...'"`.
-    pub fn to_sqlcipher_pragma(&self) -> String {
-        format!("\"x'{}'\"", hex::encode(self.0))
-    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -48,21 +36,26 @@ pub struct KdfParams {
     pub parallelism: u32,
 }
 
+#[cfg(test)]
 impl Default for KdfParams {
-    /// ~64 MiB, 3 iterations, single thread — interactive desktop tier.
+    /// Tests exercise the slot logic, not Argon2's cost.
     fn default() -> Self {
-        Self {
-            mem_kib: 64 * 1024,
-            iters: 3,
-            parallelism: 1,
-        }
+        Self { mem_kib: 1024, iters: 1, parallelism: 1 }
     }
 }
 
-pub fn random_salt() -> [u8; SALT_LEN] {
-    let mut s = [0u8; SALT_LEN];
-    OsRng.fill_bytes(&mut s);
-    s
+#[cfg(not(test))]
+impl Default for KdfParams {
+    /// ~256 MiB, 2 passes: about a second on a desktop. Fine now that every
+    /// derive runs off the UI thread (ADR-034); raises the cost of guessing
+    /// against a stolen keyring.
+    fn default() -> Self {
+        Self {
+            mem_kib: 256 * 1024,
+            iters: 2,
+            parallelism: 1,
+        }
+    }
 }
 
 pub fn random_nonce() -> [u8; NONCE_LEN] {
@@ -112,10 +105,10 @@ pub fn aead_decrypt(
         .map_err(|e| anyhow!("aead decrypt: {e}"))
 }
 
-/// Wrap a 32-byte conversation key under a wrap key (KEK or per-conv KEK2).
+/// Wrap a 32-byte key under a wrapping key.
 /// Output layout: nonce(12) || ciphertext(48 = 32 key + 16 tag).
-pub fn wrap_key(wrap_key: &SecretKey, conv_key: &SecretKey, aad: &[u8]) -> Result<Vec<u8>> {
-    let (nonce, ct) = aead_encrypt(wrap_key, conv_key.as_bytes(), aad)?;
+pub fn wrap_key(wrap_key: &SecretKey, key: &SecretKey, aad: &[u8]) -> Result<Vec<u8>> {
+    let (nonce, ct) = aead_encrypt(wrap_key, key.as_bytes(), aad)?;
     let mut out = Vec::with_capacity(nonce.len() + ct.len());
     out.extend_from_slice(&nonce);
     out.extend_from_slice(&ct);
@@ -136,37 +129,4 @@ pub fn unwrap_key(wrap_key: &SecretKey, wrapped: &[u8], aad: &[u8]) -> Result<Se
     let mut k = [0u8; KEY_LEN];
     k.copy_from_slice(&pt);
     Ok(SecretKey(k))
-}
-
-/// Combined ciphertext layout for caption fields: nonce(12) || ciphertext+tag.
-/// Stored in a single BLOB column (`caption_iv` already exists; we put the
-/// nonce there and the ciphertext in `caption`).
-pub fn encrypt_caption(key: &SecretKey, plaintext: &str) -> Result<(Vec<u8>, Vec<u8>)> {
-    aead_encrypt(key, plaintext.as_bytes(), b"trove:caption:v1")
-}
-
-pub fn decrypt_caption(key: &SecretKey, nonce: &[u8], ciphertext: &[u8]) -> Result<String> {
-    let pt = aead_decrypt(key, nonce, ciphertext, b"trove:caption:v1")?;
-    String::from_utf8(pt).context("decrypted caption is not valid UTF-8")
-}
-
-/// AAD for the encrypted `identity.refresh_token_enc` blob.
-pub const IDENTITY_REFRESH_AAD: &[u8] = b"trove:identity:refresh:v1";
-
-/// Seal a variable-length blob under a key with `nonce(12) || ciphertext+tag` layout.
-pub fn seal_blob(key: &SecretKey, plaintext: &[u8], aad: &[u8]) -> Result<Vec<u8>> {
-    let (nonce, ct) = aead_encrypt(key, plaintext, aad)?;
-    let mut out = Vec::with_capacity(nonce.len() + ct.len());
-    out.extend_from_slice(&nonce);
-    out.extend_from_slice(&ct);
-    Ok(out)
-}
-
-/// Inverse of [seal_blob].
-pub fn open_blob(key: &SecretKey, sealed: &[u8], aad: &[u8]) -> Result<Vec<u8>> {
-    if sealed.len() < NONCE_LEN + 16 {
-        return Err(anyhow!("sealed blob too short"));
-    }
-    let (nonce, ct) = sealed.split_at(NONCE_LEN);
-    aead_decrypt(key, nonce, ct, aad)
 }

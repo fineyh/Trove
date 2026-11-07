@@ -10,26 +10,43 @@
     "beforeBuildCommand": "npm run build"
   },
   "app": {
-    "windows": [
-      {
-        "title": "Trove",
-        "width": 1280,
-        "height": 800,
-        "minWidth": 900,
-        "minHeight": 600,
-        "decorations": true,
-        "resizable": true,
-        "fullscreen": false
-      }
-    ],
+    "windows": [],
     "security": {
-      "csp": null,
+      "csp": {
+        "default-src": "'self'",
+        "script-src": "'self' 'wasm-unsafe-eval'",
+        "style-src": "'self' 'unsafe-inline'",
+        "img-src": "'self' blob: data: http://trove.localhost trove: https://*.tile.openstreetmap.org https://*.googleusercontent.com",
+        "media-src": "'self' blob: http://trove.localhost trove:",
+        "connect-src": "'self' ipc: http://ipc.localhost http://trove.localhost trove:",
+        "worker-src": "'self' blob:",
+        "font-src": "'self' data:",
+        "object-src": "'none'",
+        "base-uri": "'self'",
+        "frame-src": "'none'",
+        "form-action": "'none'"
+      },
       "assetProtocol": {
-        "enable": true,
-        "scope": [
-          "**"
-        ]
-      }
+        "enable": false,
+        "scope": []
+      },
+      "devCsp": {
+        "default-src": "'self'",
+        "script-src": "'self' 'unsafe-inline' 'wasm-unsafe-eval'",
+        "style-src": "'self' 'unsafe-inline'",
+        "img-src": "'self' blob: data: http://trove.localhost trove: https://*.tile.openstreetmap.org https://*.googleusercontent.com",
+        "media-src": "'self' blob: http://trove.localhost trove:",
+        "connect-src": "'self' ipc: http://ipc.localhost http://trove.localhost trove: ws://localhost:1420",
+        "worker-src": "'self' blob:",
+        "font-src": "'self' data:",
+        "object-src": "'none'",
+        "base-uri": "'self'",
+        "frame-src": "'none'",
+        "form-action": "'none'"
+      },
+      "dangerousDisableAssetCspModification": [
+        "style-src"
+      ]
     }
   },
   "bundle": {

@@ -4,18 +4,21 @@ import "leaflet.markercluster";
 import "leaflet/dist/leaflet.css";
 import "leaflet.markercluster/dist/MarkerCluster.css";
 import "leaflet.markercluster/dist/MarkerCluster.Default.css";
-import { ImageOff, Loader2, MapPin, Play, X } from "lucide-react";
+import { CloudOff, ImageOff, Loader2, MapPin, Play, X } from "lucide-react";
 import { useSessionStore } from "../../stores/session";
 import { useMessagesStore } from "../../stores/messages";
+import { currentLib, stillOn, useCurrentLibrary } from "../../stores/libraries";
+import { useSettingsStore } from "../../stores/settings";
+import { useThumbUrl } from "../../stores/thumbs";
 import {
   backfillGeotags,
   listGeotaggedMedia,
-  mediaUrl,
+  mediaSrc,
   onGeoBackfillDone,
 } from "../../ipc/client";
 import type { GeotaggedMedia } from "../../types";
-import { isHeicPath } from "../../lib/heic";
-import { useDisplayableImageUrl } from "../../lib/useDisplayableImageUrl";
+import { isHeicExt } from "../../lib/heic";
+import { isImageMedia } from "../../lib/media";
 import { MapPhotoViewer } from "./MapPhotoViewer";
 
 export function MapView() {
@@ -68,6 +71,8 @@ function MapOverlay() {
   const setMapOpen = useSessionStore((s) => s.setMapOpen);
   const setActiveConversation = useSessionStore((s) => s.setActiveConversation);
   const openLightbox = useSessionStore((s) => s.openLightbox);
+  const lib = useCurrentLibrary();
+  const tilesOn = useSettingsStore((s) => s.settings.mapTiles === "online");
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -83,10 +88,13 @@ function MapOverlay() {
   // media, and re-fetch when the backfill reports new coordinates.
   useEffect(() => {
     let cancelled = false;
+    // The map shows the current library only (ADR-038): a locked library's
+    // places can't surface here, and switching library re-mounts this.
+    const libId = currentLib();
     setLoading(true);
-    listGeotaggedMedia()
+    listGeotaggedMedia(libId)
       .then((m) => {
-        if (!cancelled) {
+        if (!cancelled && stillOn(libId)) {
           setMedia(m);
           setLoading(false);
         }
@@ -94,13 +102,13 @@ function MapOverlay() {
       .catch(() => {
         if (!cancelled) setLoading(false);
       });
-    void backfillGeotags();
+    void backfillGeotags(libId);
 
     let unlisten: (() => void) | null = null;
-    void onGeoBackfillDone((updated) => {
-      if (cancelled || updated <= 0) return;
-      void listGeotaggedMedia().then((m) => {
-        if (!cancelled) setMedia(m);
+    void onGeoBackfillDone(({ lib: l, updated }) => {
+      if (cancelled || updated <= 0 || l !== libId) return;
+      void listGeotaggedMedia(libId).then((m) => {
+        if (!cancelled && stillOn(libId)) setMedia(m);
       });
     }).then((fn) => {
       if (cancelled) fn();
@@ -118,11 +126,15 @@ function MapOverlay() {
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
     const map = L.map(containerRef.current).setView([20, 0], 2);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19,
-      attribution:
-        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    }).addTo(map);
+    // Online tiles tell the tile server which areas you look at — i.e. where
+    // your photos were taken. Off = markers on a blank canvas.
+    if (tilesOn) {
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+        attribution:
+          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      }).addTo(map);
+    }
     const cluster = L.markerClusterGroup({ chunkedLoading: true });
     map.addLayer(cluster);
     mapRef.current = map;
@@ -135,7 +147,7 @@ function MapOverlay() {
       clusterRef.current = null;
       fittedRef.current = false;
     };
-  }, []);
+  }, [tilesOn]);
 
   // (Re)build markers whenever the media set changes.
   useEffect(() => {
@@ -173,11 +185,12 @@ function MapOverlay() {
   };
 
   return (
-    <div className="fixed inset-y-0 right-0 left-16 z-40 flex flex-col bg-app">
+    <div className="fixed inset-y-0 left-[68px] right-0 z-40 flex flex-col bg-app">
       <div className="flex items-center justify-between border-b border-app-border bg-app-panel px-4 py-2">
         <div className="flex items-center gap-2 text-app-fg">
           <MapPin size={18} />
           <span className="font-medium">地图</span>
+          {lib && <span className="text-sm text-app-muted">· {lib.name}</span>}
           {!loading && (
             <span className="text-sm text-app-muted">
               {media.length} 张带位置的照片
@@ -213,8 +226,15 @@ function MapOverlay() {
           </div>
         )}
 
-        <div className="pointer-events-none absolute bottom-3 left-3 z-[1000] rounded-md bg-app-panel/90 px-2.5 py-1.5 text-xs text-app-muted shadow">
-          底图来自 OpenStreetMap · 需联网
+        <div className="pointer-events-none absolute bottom-3 left-3 z-[1000] flex items-center gap-1.5 rounded-lg bg-app-panel/90 px-2.5 py-1.5 text-xs text-app-muted shadow backdrop-blur">
+          {tilesOn ? (
+            "底图来自 OpenStreetMap · 需联网"
+          ) : (
+            <>
+              <CloudOff size={12} />
+              在线底图已关闭，可在「设置 → 通用」里打开
+            </>
+          )}
         </div>
 
         {selected && (
@@ -279,53 +299,48 @@ function MapThumb({
   item: GeotaggedMedia;
   onClick: () => void;
 }) {
-  const isImage = item.kind === "image" || isHeicPath(item.absolutePath);
-  // Hook must run unconditionally; for video the path isn't HEIC so it resolves
-  // to the asset URL immediately and goes unused.
-  const image = useDisplayableImageUrl(item.absolutePath, mediaUrl(item.absolutePath));
-  const url = mediaUrl(item.absolutePath);
-
-  if (!item.available) {
-    return (
-      <div
-        title="文件暂时不可用"
-        className="flex aspect-square items-center justify-center rounded-md border border-dashed border-app-border bg-app-subtle/40 text-app-muted"
-      >
-        <ImageOff size={18} />
-      </div>
-    );
-  }
+  const lib = useCurrentLibrary()?.id ?? null;
+  const thumb = useThumbUrl(lib, { id: item.mediaId, hasThumb: item.hasThumb });
+  const isImage = isImageMedia(item);
+  const fallback =
+    !thumb && isImage && !isHeicExt(item.ext) && lib && item.status === "ok"
+      ? mediaSrc(lib, item.mediaId)
+      : null;
+  const src = thumb ?? fallback;
+  const reachable = item.status === "ok";
 
   return (
     <button
       type="button"
       onClick={onClick}
-      className="relative aspect-square overflow-hidden rounded-md bg-black/5"
+      disabled={!reachable && !src}
+      title={item.status === "offline" ? "所在的盘没有连接" : item.status === "missing" ? "文件不在原位置" : undefined}
+      className="group relative aspect-square overflow-hidden rounded-lg bg-app-subtle"
     >
-      {isImage ? (
-        image.status === "error" ? (
-          <span className="flex h-full w-full items-center justify-center text-app-muted">
-            <ImageOff size={18} />
-          </span>
-        ) : image.status === "loading" || !image.url ? (
-          <span className="flex h-full w-full items-center justify-center bg-app-subtle/40 text-app-muted">
-            <Loader2 size={16} className="animate-spin" />
-          </span>
-        ) : (
-          <img src={image.url} className="h-full w-full object-cover" alt="" />
-        )
+      {src ? (
+        <img
+          src={src}
+          alt=""
+          loading="lazy"
+          draggable={false}
+          className={"h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" + (reachable ? "" : " opacity-60 grayscale")}
+        />
       ) : (
-        <>
-          <video
-            src={url}
-            preload="metadata"
-            muted
-            className="h-full w-full object-cover"
-          />
-          <span className="absolute inset-0 flex items-center justify-center bg-black/20 text-white">
-            <Play size={18} fill="currentColor" />
+        <span className="flex h-full w-full items-center justify-center text-app-muted">
+          {reachable ? <Loader2 size={16} className="animate-spin" /> : <ImageOff size={18} />}
+        </span>
+      )}
+      {item.kind === "video" && (
+        <span className="absolute inset-0 flex items-center justify-center">
+          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-black/45 text-white">
+            <Play size={12} fill="currentColor" />
           </span>
-        </>
+        </span>
+      )}
+      {!reachable && (
+        <span className="absolute right-1 top-1 rounded-full bg-black/60 p-1 text-white">
+          {item.status === "offline" ? <CloudOff size={10} /> : <ImageOff size={10} />}
+        </span>
       )}
     </button>
   );

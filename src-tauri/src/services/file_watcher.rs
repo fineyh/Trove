@@ -34,15 +34,16 @@ struct WatcherEntry {
     watcher: RecommendedWatcher,
 }
 
-static WATCHERS: Lazy<Mutex<HashMap<i64, WatcherEntry>>> =
+static WATCHERS: Lazy<Mutex<HashMap<(String, i64), WatcherEntry>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
-pub fn start(conv_id: i64, root: PathBuf) -> Result<(), String> {
+pub fn start(lib: &str, conv_id: i64, root: PathBuf) -> Result<(), String> {
     if !root.is_dir() {
         return Err(format!("watch root not a directory: {}", root.display()));
     }
     let mut guard = WATCHERS.lock();
-    if guard.contains_key(&conv_id) {
+    let key = (lib.to_string(), conv_id);
+    if guard.contains_key(&key) {
         return Ok(());
     }
 
@@ -54,13 +55,14 @@ pub fn start(conv_id: i64, root: PathBuf) -> Result<(), String> {
         .map_err(|e| format!("watch {}: {e}", root.display()))?;
 
     let root_clone = root.clone();
+    let lib_owned = lib.to_string();
     std::thread::Builder::new()
         .name(format!("trove-watch-{conv_id}"))
-        .spawn(move || debounce_loop(conv_id, root_clone, rx))
+        .spawn(move || debounce_loop(lib_owned, conv_id, root_clone, rx))
         .map_err(|e| format!("spawn watcher thread: {e}"))?;
 
     guard.insert(
-        conv_id,
+        key,
         WatcherEntry {
             conv_id,
             root,
@@ -70,8 +72,13 @@ pub fn start(conv_id: i64, root: PathBuf) -> Result<(), String> {
     Ok(())
 }
 
-pub fn stop(conv_id: i64) {
-    WATCHERS.lock().remove(&conv_id);
+pub fn stop(lib: &str, conv_id: i64) {
+    WATCHERS.lock().remove(&(lib.to_string(), conv_id));
+}
+
+/// Stop every watcher of one library (it is being locked or deleted).
+pub fn stop_library(lib: &str) {
+    WATCHERS.lock().retain(|(l, _), _| l != lib);
 }
 
 pub fn stop_all() {
@@ -85,7 +92,7 @@ struct Pending {
     removes: HashSet<PathBuf>,
 }
 
-fn debounce_loop(conv_id: i64, root: PathBuf, rx: Receiver<notify::Result<Event>>) {
+fn debounce_loop(lib: String, conv_id: i64, root: PathBuf, rx: Receiver<notify::Result<Event>>) {
     let debounce = Duration::from_millis(DEBOUNCE_MS);
     let mut pending = Pending::default();
     let mut deadline: Option<Instant> = None;
@@ -103,7 +110,7 @@ fn debounce_loop(conv_id: i64, root: PathBuf, rx: Receiver<notify::Result<Event>
             Ok(Err(_e)) => { /* notify backend error, ignore and continue */ }
             Err(RecvTimeoutError::Timeout) => {
                 if deadline.is_some() {
-                    flush(conv_id, &root, &mut pending);
+                    flush(&lib, conv_id, &root, &mut pending);
                     deadline = None;
                 }
             }
@@ -154,16 +161,16 @@ fn handle_event(ev: Event, pending: &mut Pending) {
     }
 }
 
-fn flush(conv_id: i64, _root: &Path, pending: &mut Pending) {
+fn flush(lib: &str, conv_id: i64, _root: &Path, pending: &mut Pending) {
     let mut added = 0usize;
     let mut broken = 0usize;
     let mut renamed = 0usize;
 
     // Phase 1: detect rename pairs (remove ∩ create with matching size + blake3).
     // Each successful pair drains both sides out of the pending sets.
-    let pairs = pair_renames(pending);
+    let pairs = pair_renames(lib, pending);
     for (old_path, new_path) in pairs {
-        match handle_rename(&old_path, &new_path) {
+        match handle_rename(lib, &old_path, &new_path) {
             Ok(true) => renamed += 1,
             Ok(false) => {
                 // Pair couldn't be relocated (e.g. old row not in DB or
@@ -188,7 +195,7 @@ fn flush(conv_id: i64, _root: &Path, pending: &mut Pending) {
         if !p.is_file() {
             continue;
         }
-        match media::ingest_one(conv_id, &p, false, true) {
+        match media::ingest_one(lib, conv_id, &p, false, true) {
             Ok(Some(_)) => added += 1,
             Ok(None) => {}
             Err(e) => eprintln!("watcher ingest failed for {}: {e}", p.display()),
@@ -200,7 +207,7 @@ fn flush(conv_id: i64, _root: &Path, pending: &mut Pending) {
         if !p.is_file() {
             continue;
         }
-        if let Err(e) = media::ingest_one(conv_id, &p, false, true) {
+        if let Err(e) = media::ingest_one(lib, conv_id, &p, false, true) {
             eprintln!("watcher modify ingest failed for {}: {e}", p.display());
         }
     }
@@ -209,16 +216,16 @@ fn flush(conv_id: i64, _root: &Path, pending: &mut Pending) {
     // hash within the conv root; only mark broken if relocation fails.
     let mut hashes_used = 0usize;
     for p in pending.removes.drain() {
-        match try_relocate_removed(conv_id, &p, &mut hashes_used) {
+        match try_relocate_removed(lib, conv_id, &p, &mut hashes_used) {
             Ok(true) => renamed += 1,
-            Ok(false) => match mark_broken(&p) {
+            Ok(false) => match mark_broken(lib, &p) {
                 Ok(true) => broken += 1,
                 Ok(false) => {}
                 Err(e) => eprintln!("watcher mark_broken failed for {}: {e}", p.display()),
             },
             Err(e) => {
                 eprintln!("watcher try_relocate_removed failed for {}: {e}", p.display());
-                if let Err(e2) = mark_broken(&p) {
+                if let Err(e2) = mark_broken(lib, &p) {
                     eprintln!("watcher mark_broken fallback failed: {e2}");
                 }
             }
@@ -227,7 +234,7 @@ fn flush(conv_id: i64, _root: &Path, pending: &mut Pending) {
 
     if added > 0 || broken > 0 || renamed > 0 {
         let now = chrono::Utc::now().timestamp_millis();
-        let _ = db::with_conn(|conn| -> AppResult<()> {
+        let _ = db::with_lib(lib, |conn| -> AppResult<()> {
             conn.execute(
                 "UPDATE conversations SET updated_at = ?1 WHERE id = ?2",
                 params![now, conv_id],
@@ -235,6 +242,7 @@ fn flush(conv_id: i64, _root: &Path, pending: &mut Pending) {
             Ok(())
         });
         events::emit_conv_changed(ConvChanged {
+            lib: lib.to_string(),
             conv_id,
             added,
             broken,
@@ -246,7 +254,7 @@ fn flush(conv_id: i64, _root: &Path, pending: &mut Pending) {
 /// Look up a media row by absolute path. Returns (media_id, size_bytes,
 /// blake3) if found. Resolves the parent via `volume_resolver` and uses
 /// (platform_id, relpath) for the lookup — identical to `mark_broken`.
-fn lookup_media_by_path(path: &Path) -> AppResult<Option<(i64, i64, String)>> {
+fn lookup_media_by_path(lib: &str, path: &Path) -> AppResult<Option<(i64, i64, String)>> {
     let parent = path
         .parent()
         .ok_or_else(|| crate::AppError::InvalidArg("no parent".into()))?;
@@ -262,7 +270,7 @@ fn lookup_media_by_path(path: &Path) -> AppResult<Option<(i64, i64, String)>> {
     } else {
         format!("{}/{}", parent_resolved.relpath, file_name)
     };
-    db::with_conn(|conn| -> AppResult<Option<(i64, i64, String)>> {
+    db::with_lib(lib, |conn| -> AppResult<Option<(i64, i64, String)>> {
         Ok(conn
             .query_row(
                 "SELECT m.id, m.size_bytes, m.blake3 FROM media m
@@ -277,7 +285,7 @@ fn lookup_media_by_path(path: &Path) -> AppResult<Option<(i64, i64, String)>> {
 
 /// Pair pending removes with pending creates by (size, blake3). On match,
 /// drain both sides out and return the pair. Capped by MAX_RELOCATE_HASHES.
-fn pair_renames(pending: &mut Pending) -> Vec<(PathBuf, PathBuf)> {
+fn pair_renames(lib: &str, pending: &mut Pending) -> Vec<(PathBuf, PathBuf)> {
     if pending.removes.is_empty() || pending.creates.is_empty() {
         return Vec::new();
     }
@@ -286,7 +294,7 @@ fn pair_renames(pending: &mut Pending) -> Vec<(PathBuf, PathBuf)> {
     // (size, blake3) -> remove path
     let mut by_sig: HashMap<(i64, String), PathBuf> = HashMap::new();
     for p in pending.removes.iter() {
-        match lookup_media_by_path(p) {
+        match lookup_media_by_path(lib, p) {
             Ok(Some((_id, size, blake3))) => {
                 by_sig.insert((size, blake3), p.clone());
             }
@@ -336,11 +344,11 @@ fn pair_renames(pending: &mut Pending) -> Vec<(PathBuf, PathBuf)> {
 
 /// Relocate `media_id` (looked up from `old_path`) to `new_path`.
 /// Returns `Ok(true)` if a row was moved/merged/found-already-at-target.
-fn handle_rename(old_path: &Path, new_path: &Path) -> AppResult<bool> {
-    let Some((media_id, _, _)) = lookup_media_by_path(old_path)? else {
+fn handle_rename(lib: &str, old_path: &Path, new_path: &Path) -> AppResult<bool> {
+    let Some((media_id, _, _)) = lookup_media_by_path(lib, old_path)? else {
         return Ok(false);
     };
-    relocate::relocate_media(media_id, new_path)?;
+    relocate::relocate_media(lib, media_id, new_path)?;
     Ok(true)
 }
 
@@ -348,6 +356,7 @@ fn handle_rename(old_path: &Path, new_path: &Path) -> AppResult<bool> {
 /// removed media. If found, relocate. Hash budget is shared across the flush
 /// via `hashes_used`.
 fn try_relocate_removed(
+    lib: &str,
     conv_id: i64,
     removed_path: &Path,
     hashes_used: &mut usize,
@@ -355,10 +364,10 @@ fn try_relocate_removed(
     if *hashes_used >= MAX_RELOCATE_HASHES {
         return Ok(false);
     }
-    let Some((media_id, size, blake3)) = lookup_media_by_path(removed_path)? else {
+    let Some((media_id, size, blake3)) = lookup_media_by_path(lib, removed_path)? else {
         return Ok(false);
     };
-    let Some(root) = conv_root(conv_id)? else {
+    let Some(root) = conv_root(lib, conv_id)? else {
         return Ok(false);
     };
     let candidates = folder_scanner::enumerate_media(&root);
@@ -388,7 +397,7 @@ fn try_relocate_removed(
         };
         *hashes_used += 1;
         if candidate_hash == blake3 {
-            relocate::relocate_media(media_id, &candidate)?;
+            relocate::relocate_media(lib, media_id, &candidate)?;
             return Ok(true);
         }
     }
@@ -398,8 +407,8 @@ fn try_relocate_removed(
 /// Resolve a folder_watch conversation's current source root to an absolute
 /// path. Returns `None` for manual conversations or when the source volume is
 /// not currently mounted.
-fn conv_root(conv_id: i64) -> AppResult<Option<PathBuf>> {
-    let row: Option<(String, String, String)> = db::with_conn(|conn| {
+fn conv_root(lib: &str, conv_id: i64) -> AppResult<Option<PathBuf>> {
+    let row: Option<(String, String, String)> = db::with_lib(lib, |conn| {
         Ok(conn
             .query_row(
                 "SELECT c.kind, COALESCE(v.last_mount, ''), COALESCE(c.source_relpath, '')
@@ -427,7 +436,7 @@ fn conv_root(conv_id: i64) -> AppResult<Option<PathBuf>> {
 /// Mark the media row corresponding to `path` as broken. Returns `Ok(true)`
 /// when a row was matched. The file may already be gone, so we resolve via
 /// the parent directory and append the file name back onto its relpath.
-fn mark_broken(path: &Path) -> Result<bool, String> {
+fn mark_broken(lib: &str, path: &Path) -> Result<bool, String> {
     let parent = path.parent().ok_or_else(|| "no parent".to_string())?;
     let file_name = path
         .file_name()
@@ -441,7 +450,7 @@ fn mark_broken(path: &Path) -> Result<bool, String> {
         format!("{}/{}", parent_resolved.relpath, file_name)
     };
 
-    db::with_conn(|conn| -> AppResult<bool> {
+    db::with_lib(lib, |conn| -> AppResult<bool> {
         let id: Option<i64> = conn
             .query_row(
                 "SELECT m.id FROM media m JOIN volumes v ON v.id = m.volume_id

@@ -1,79 +1,74 @@
 import { create } from "zustand";
 import * as ipc from "../ipc/client";
+import { currentLib, stillOn } from "./libraries";
 import { toast } from "./toast";
-import type {
-  AppSettings,
-  MissingFileStrategy,
-  RepairScope,
-  StorageStats,
-  VolumePayload,
-} from "../types";
+import type { AppSettings, StorageStats, VolumePayload } from "../types";
 
 const EMPTY_VOLUMES: readonly VolumePayload[] = Object.freeze([]);
 
 interface SettingsState {
+  /** App-wide (stored in the main library). */
   settings: AppSettings;
+  /** Current library's volumes and stats. */
   volumes: readonly VolumePayload[];
   stats: StorageStats | null;
   loading: boolean;
   load: () => Promise<void>;
+  loadSettings: () => Promise<void>;
   loadVolumes: () => Promise<void>;
   loadStats: () => Promise<void>;
-  setMissingStrategy: (value: MissingFileStrategy) => Promise<void>;
-  setRepairScope: (value: RepairScope) => Promise<void>;
+  resetLibraryData: () => void;
+  save: <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => Promise<void>;
   rescan: () => Promise<void>;
   forget: (id: number) => Promise<void>;
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
-  settings: { missingFileStrategy: "hide", repairDefaultScope: "lastFolderOnly" },
+  settings: ipc.DEFAULT_SETTINGS,
   volumes: EMPTY_VOLUMES,
   stats: null,
   loading: false,
   load: async () => {
     set({ loading: true });
+    await Promise.all([get().loadSettings(), get().loadVolumes(), get().loadStats()]);
+    set({ loading: false });
+  },
+  loadSettings: async () => {
     try {
-      const [settings, volumes, stats] = await Promise.all([
-        ipc.getAllSettings(),
-        ipc.listVolumes(),
-        ipc.getStorageStats(),
-      ]);
-      set({ settings, volumes, stats, loading: false });
+      set({ settings: await ipc.getAllSettings() });
     } catch (e) {
       toast.error("读取设置失败", e);
-      set({ loading: false });
     }
   },
   loadVolumes: async () => {
+    const lib = currentLib();
     try {
-      const volumes = await ipc.listVolumes();
-      set({ volumes });
+      const volumes = await ipc.listVolumes(lib);
+      if (stillOn(lib)) set({ volumes });
     } catch (e) {
-      toast.error("读取卷列表失败", e);
+      if (stillOn(lib)) toast.error("读取卷列表失败", e);
     }
   },
   loadStats: async () => {
+    const lib = currentLib();
     try {
-      const stats = await ipc.getStorageStats();
-      set({ stats });
+      const stats = await ipc.getStorageStats(lib);
+      if (stillOn(lib)) set({ stats });
     } catch (e) {
-      toast.error("读取存储统计失败", e);
+      if (stillOn(lib)) toast.error("读取存储统计失败", e);
     }
   },
-  setMissingStrategy: async (value) => {
-    await ipc.setMissingFileStrategy(value);
-    set((s) => ({ settings: { ...s.settings, missingFileStrategy: value } }));
-  },
-  setRepairScope: async (value) => {
-    await ipc.setRepairDefaultScope(value);
-    set((s) => ({ settings: { ...s.settings, repairDefaultScope: value } }));
+  resetLibraryData: () => set({ volumes: EMPTY_VOLUMES, stats: null }),
+  save: async (key, value) => {
+    await ipc.saveSetting(key, value);
+    set((s) => ({ settings: { ...s.settings, [key]: value } }));
   },
   rescan: async () => {
-    await ipc.rescanVolumes();
+    await ipc.rescanVolumes(currentLib());
     await Promise.all([get().loadVolumes(), get().loadStats()]);
   },
   forget: async (id) => {
-    await ipc.forgetVolume(id);
+    await ipc.forgetVolume(currentLib(), id);
     await Promise.all([get().loadVolumes(), get().loadStats()]);
   },
 }));

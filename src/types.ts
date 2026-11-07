@@ -3,10 +3,8 @@ export type ConversationKind = "manual" | "folder_watch";
 export interface Conversation {
   id: number;
   name: string;
-  avatarPath: string | null;
+  hasAvatar: boolean;
   kind: ConversationKind;
-  encrypted: boolean;
-  unlocked: boolean;
   pinned: boolean;
   archived: boolean;
   createdAt: number;
@@ -14,22 +12,29 @@ export interface Conversation {
   messageCount: number;
   preview: string | null;
   previewKind: "text" | "image" | "video" | "other" | null;
+  /** folder_watch: the source folder's volume isn't mounted. */
+  sourceOffline: boolean;
 }
 
-export interface VaultStatus {
-  hasMasterPassword: boolean;
-  unlocked: boolean;
-}
+export type MediaKind = "image" | "video" | "other";
+
+/**
+ * "ok": reachable. "offline": its volume isn't mounted (not a problem, just
+ * not here). "missing": the volume is mounted but the file is gone (ADR-035).
+ */
+export type MediaStatus = "ok" | "offline" | "missing";
 
 export interface MediaPayload {
   id: number;
-  kind: "image" | "video" | "other";
+  kind: MediaKind;
   width: number | null;
   height: number | null;
   durationMs: number | null;
-  absolutePath: string;
-  state: "live" | "broken";
   sizeBytes: number;
+  /** Lower-case extension. Paths never reach the WebView (ADR-037). */
+  ext: string;
+  status: MediaStatus;
+  hasThumb: boolean;
 }
 
 export interface Message {
@@ -45,10 +50,10 @@ export interface GeotaggedMedia {
   mediaId: number;
   lat: number;
   lon: number;
-  kind: "image" | "video" | "other";
-  absolutePath: string;
-  /** False when the source volume's mount is unknown (can't preview now). */
-  available: boolean;
+  kind: MediaKind;
+  ext: string;
+  status: MediaStatus;
+  hasThumb: boolean;
   convId: number;
   messageId: number;
   createdAt: number;
@@ -63,13 +68,16 @@ export interface SearchHit {
 }
 
 export interface ConvChangedEvent {
+  lib: string;
   convId: number;
   added: number;
   broken: number;
+  renamed?: number;
 }
 
 /** Payload of the backend `import:progress` event. */
 export interface ImportProgressEvent {
+  lib: string;
   convId: number;
   done: number;
   /** 0 = still enumerating the folder (show an indeterminate bar). */
@@ -81,23 +89,30 @@ export interface ImportProgressEvent {
   failed: number;
 }
 
-export type MissingFileStrategy = "hide" | "placeholder";
+export type OfflineContent = "show" | "hide";
 
 export type RepairScope =
   | "lastFolderOnly"
   | "lastFolderRecursive"
   | "allMountedVolumes";
 
+/** 0 = never. */
+export type IdleLockMinutes = 0 | 5 | 15 | 30 | 60;
+
+export type MapTiles = "online" | "off";
+
 export interface AppSettings {
-  missingFileStrategy: MissingFileStrategy;
+  offlineContent: OfflineContent;
   repairDefaultScope: RepairScope;
+  idleLockMinutes: IdleLockMinutes;
+  mapTiles: MapTiles;
 }
 
 export interface BrokenItem {
   messageId: number;
   mediaId: number;
-  kind: "image" | "video" | "other";
-  thumbPath: string | null;
+  kind: MediaKind;
+  hasThumb: boolean;
   lastKnownRelpath: string | null;
   lastKnownVolumeLabel: string | null;
   detectedAt: number;
@@ -153,15 +168,13 @@ export interface AuthStatus {
 export interface BackupExportResult {
   destPath: string;
   bytes: number;
-  includesVault: boolean;
-  dbEncrypted: boolean;
+  passwordProtected: boolean;
 }
 
 export interface BackupImportResult {
   backupDir: string;
-  restoredDbBytes: number;
-  includesVault: boolean;
-  dbEncrypted: boolean;
+  passwordProtected: boolean;
+  libraries: number;
 }
 
 export interface UpdateInfo {
@@ -171,3 +184,41 @@ export interface UpdateInfo {
   date: string | null;
   notes: string | null;
 }
+
+// ─── Security & libraries (ADR-036 / ADR-038) ───────────────────────────────
+
+export interface SecurityStatus {
+  /** A startup password is set. */
+  appPassword: boolean;
+  appUnlocked: boolean;
+  appRecovery: boolean;
+  mainLibrary: string;
+  /** The plaintext pre-migration database is still on disk. */
+  legacyPlainCopy: boolean;
+  legacyProblem: string | null;
+}
+
+export type UnlockedBy = "app" | "password" | "recovery" | "keyfile";
+
+export interface LibraryInfo {
+  id: string;
+  name: string;
+  /** One emoji, or null for the name's first letter. */
+  icon: string | null;
+  /** One of `LIBRARY_COLORS`' keys. */
+  color: string | null;
+  isMain: boolean;
+  /** Has its own password: doesn't open with the app. */
+  encrypted: boolean;
+  unlocked: boolean;
+  unlockedBy: UnlockedBy | null;
+  hasRecovery: boolean;
+  keyfilePath: string | null;
+}
+
+export interface CreatedLibrary {
+  id: string;
+  recoveryCode: string | null;
+}
+
+export type UnlockMethod = "password" | "recovery";

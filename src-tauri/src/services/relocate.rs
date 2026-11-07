@@ -27,7 +27,7 @@ pub enum RelocateOutcome {
 /// Move `media_id` to wherever `new_path` lives. `new_path` must point at an
 /// existing file (caller is responsible for that — we don't sanity-check
 /// because the watcher path has already proven the file exists).
-pub fn relocate_media(media_id: i64, new_path: &Path) -> AppResult<RelocateOutcome> {
+pub fn relocate_media(lib: &str, media_id: i64, new_path: &Path) -> AppResult<RelocateOutcome> {
     let parent = new_path
         .parent()
         .ok_or_else(|| AppError::InvalidArg("new_path has no parent".into()))?;
@@ -46,7 +46,7 @@ pub fn relocate_media(media_id: i64, new_path: &Path) -> AppResult<RelocateOutco
     let now = chrono::Utc::now().timestamp_millis();
     let mount_str = resolved.mount_point.to_string_lossy().to_string();
 
-    db::with_conn(|conn| -> AppResult<RelocateOutcome> {
+    db::with_lib(lib, |conn| -> AppResult<RelocateOutcome> {
         // Snapshot old row.
         type OldRow = (i64, String, i64, String);
         let old: OldRow = conn
@@ -70,14 +70,14 @@ pub fn relocate_media(media_id: i64, new_path: &Path) -> AppResult<RelocateOutco
                 .optional()?;
             if let Some(id) = existing {
                 conn.execute(
-                    "UPDATE volumes SET last_mount = ?1 WHERE id = ?2",
+                    "UPDATE volumes SET last_mount = ?1, online = 1 WHERE id = ?2",
                     params![mount_str, id],
                 )?;
                 id
             } else {
                 conn.execute(
-                    "INSERT INTO volumes (platform_id, label, last_mount, created_at)
-                     VALUES (?1, ?2, ?3, ?4)",
+                    "INSERT INTO volumes (platform_id, label, last_mount, created_at, online)
+                     VALUES (?1, ?2, ?3, ?4, 1)",
                     params![resolved.platform_id, resolved.label, mount_str, now],
                 )?;
                 conn.last_insert_rowid()

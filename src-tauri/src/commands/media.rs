@@ -1,6 +1,4 @@
-use crate::services::{crypto, vault};
 use crate::{db, events, services, AppError, AppResult};
-use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -10,7 +8,6 @@ use std::path::{Path, PathBuf};
 pub struct ImportedMessage {
     pub message_id: i64,
     pub media_id: i64,
-    pub absolute_path: String,
 }
 
 fn now_ms() -> i64 {
@@ -56,6 +53,7 @@ const PROGRESS_EVERY: usize = 10;
 /// `(imported, cancelled)`; per-file errors are logged and skipped, exactly as
 /// before — one unreadable file must not abort a 10k-file scan.
 pub(crate) fn ingest_batch(
+    lib: &str,
     conv_id: i64,
     paths: &[PathBuf],
     job: &services::jobs::ImportJob,
@@ -75,6 +73,7 @@ pub(crate) fn ingest_batch(
         }
         if idx % PROGRESS_EVERY == 0 {
             events::emit_import_progress(events::ImportProgress {
+                lib: lib.to_string(),
                 conv_id,
                 done: idx,
                 total,
@@ -86,7 +85,7 @@ pub(crate) fn ingest_batch(
                 failed,
             });
         }
-        match ingest_one(conv_id, path, allow_message_dup, use_mtime_for_created_at) {
+        match ingest_one(lib, conv_id, path, allow_message_dup, use_mtime_for_created_at) {
             Ok(Some(msg)) => {
                 imported += 1;
                 on_imported(path, msg);
@@ -101,6 +100,7 @@ pub(crate) fn ingest_batch(
 
     // Always land a final event, cancelled or not, so the UI clears its bar.
     events::emit_import_progress(events::ImportProgress {
+        lib: lib.to_string(),
         conv_id,
         done: total,
         total,
@@ -125,15 +125,15 @@ pub fn cancel_import() {
 /// BLAKE3 hash and an EXIF read, which on the WebView callback thread froze
 /// the window until the whole batch was done.
 #[tauri::command]
-pub async fn import_files(args: ImportFilesArgs) -> AppResult<Vec<ImportedMessage>> {
-    super::run_blocking(move || import_files_blocking(args)).await
+pub async fn import_files(lib: String, args: ImportFilesArgs) -> AppResult<Vec<ImportedMessage>> {
+    super::run_blocking(move || import_files_blocking(&lib, args)).await
 }
 
-fn import_files_blocking(args: ImportFilesArgs) -> AppResult<Vec<ImportedMessage>> {
+fn import_files_blocking(lib: &str, args: ImportFilesArgs) -> AppResult<Vec<ImportedMessage>> {
     if args.paths.is_empty() {
         return Ok(vec![]);
     }
-    let kind: String = db::with_conn(|conn| {
+    let kind: String = db::with_lib(lib, |conn| {
         conn.query_row(
             "SELECT kind FROM conversations WHERE id = ?1",
             params![args.conv_id],
@@ -157,13 +157,13 @@ fn import_files_blocking(args: ImportFilesArgs) -> AppResult<Vec<ImportedMessage
         .collect();
 
     let mut imported = Vec::with_capacity(paths.len());
-    ingest_batch(args.conv_id, &paths, &job, true, false, |_, msg| {
+    ingest_batch(lib, args.conv_id, &paths, &job, true, false, |_, msg| {
         imported.push(msg)
     });
 
     if !imported.is_empty() {
         let now = now_ms();
-        db::with_conn(|conn| -> AppResult<()> {
+        db::with_lib(lib, |conn| -> AppResult<()> {
             conn.execute(
                 "UPDATE conversations SET updated_at = ?1 WHERE id = ?2",
                 params![now, args.conv_id],
@@ -171,6 +171,7 @@ fn import_files_blocking(args: ImportFilesArgs) -> AppResult<Vec<ImportedMessage
             Ok(())
         })?;
     }
+    services::thumbs::wake(lib);
 
     Ok(imported)
 }
@@ -191,6 +192,7 @@ fn import_files_blocking(args: ImportFilesArgs) -> AppResult<Vec<ImportedMessage
 /// Returns `None` when the file was an exact duplicate skipped by the dedup
 /// path; `Some` when a fresh message was created.
 pub(crate) fn ingest_one(
+    lib: &str,
     conv_id: i64,
     path: &Path,
     allow_message_dup: bool,
@@ -198,6 +200,7 @@ pub(crate) fn ingest_one(
 ) -> AppResult<Option<ImportedMessage>> {
     let resolved = services::volume_resolver::resolve(path).map_err(AppError::InvalidArg)?;
     let volume_id = super::conversations::ensure_volume(
+        lib,
         &resolved.platform_id,
         &resolved.label,
         &resolved.mount_point,
@@ -226,27 +229,7 @@ pub(crate) fn ingest_one(
         .unwrap_or_default();
     let created_at = if use_mtime_for_created_at { mtime } else { now_ms() };
 
-    let conv_encrypted: bool = db::with_conn(|conn| {
-        conn.query_row(
-            "SELECT encrypted FROM conversations WHERE id = ?1",
-            params![conv_id],
-            |r| r.get::<_, i64>(0),
-        )
-        .map(|v| v != 0)
-        .map_err(AppError::from)
-    })?;
-    let (caption_db, iv_db): (String, Option<Vec<u8>>) = if conv_encrypted {
-        let key = vault::get_conv_key(conv_id)
-            .ok_or_else(|| AppError::InvalidArg("conversation is locked".into()))?;
-        let (nonce, ct) =
-            crypto::encrypt_caption(&key, &filename_caption).map_err(AppError::from)?;
-        let b64 = B64.encode(&ct);
-        (b64, Some(nonce))
-    } else {
-        (filename_caption, None)
-    };
-
-    let result = db::with_conn(|conn| -> AppResult<Option<(i64, i64)>> {
+    let result = db::with_lib(lib, |conn| -> AppResult<Option<(i64, i64)>> {
         let existing: Option<i64> = conn
             .query_row(
                 "SELECT id FROM media WHERE volume_id = ?1 AND relpath = ?2",
@@ -259,7 +242,8 @@ pub(crate) fn ingest_one(
             // was edited (e.g. GPS stripped). geo_scanned is set so the backfill
             // pass skips this row.
             conn.execute(
-                "UPDATE media SET size_bytes = ?1, mtime = ?2, blake3 = ?3, state = 'live',
+                "UPDATE media SET thumb_scanned = CASE WHEN blake3 = ?3 THEN thumb_scanned ELSE 0 END,
+                    size_bytes = ?1, mtime = ?2, blake3 = ?3, state = 'live',
                     lat = ?4, lon = ?5, geo_scanned = 1
                  WHERE id = ?6",
                 params![size_bytes, mtime, blake3, lat, lon, id],
@@ -303,9 +287,9 @@ pub(crate) fn ingest_one(
         }
 
         conn.execute(
-            "INSERT INTO messages (conv_id, media_id, caption, caption_iv, play_count, created_at)
-             VALUES (?1, ?2, ?3, ?4, 0, ?5)",
-            params![conv_id, media_id, caption_db, iv_db, created_at],
+            "INSERT INTO messages (conv_id, media_id, caption, play_count, created_at)
+             VALUES (?1, ?2, ?3, 0, ?4)",
+            params![conv_id, media_id, filename_caption, created_at],
         )?;
         let msg_id = conn.last_insert_rowid();
         Ok(Some((media_id, msg_id)))
@@ -315,13 +299,8 @@ pub(crate) fn ingest_one(
         return Ok(None);
     };
 
-    let absolute = services::volume_resolver::absolute_for(&resolved.mount_point, &resolved.relpath)
-        .to_string_lossy()
-        .to_string();
-
     Ok(Some(ImportedMessage {
         message_id,
         media_id,
-        absolute_path: absolute,
     }))
 }

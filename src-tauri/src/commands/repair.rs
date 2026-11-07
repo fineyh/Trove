@@ -49,17 +49,18 @@ pub enum RepairOutcome {
 }
 
 #[tauri::command]
-pub fn repair_media(args: RepairMediaArgs) -> AppResult<RepairOutcome> {
-    let target = load_target(args.media_id)?;
-
-    if let Some(explicit) = args.explicit_path.as_ref() {
-        return repair_with_explicit(&target, Path::new(explicit));
-    }
-
-    repair_with_scope(&target, args.scope)
+pub async fn repair_media(lib: String, args: RepairMediaArgs) -> AppResult<RepairOutcome> {
+    super::run_blocking(move || {
+        let target = load_target(&lib, args.media_id)?;
+        if let Some(explicit) = args.explicit_path.as_ref() {
+            return repair_with_explicit(&lib, &target, Path::new(explicit));
+        }
+        repair_with_scope(&lib, &target, args.scope)
+    })
+    .await
 }
 
-fn repair_with_explicit(target: &Target, path: &Path) -> AppResult<RepairOutcome> {
+fn repair_with_explicit(lib: &str, target: &Target, path: &Path) -> AppResult<RepairOutcome> {
     if !path.is_file() {
         return Ok(RepairOutcome::Mismatch {
             reason: "选中的不是一个文件".into(),
@@ -83,14 +84,14 @@ fn repair_with_explicit(target: &Target, path: &Path) -> AppResult<RepairOutcome
             reason: "文件内容（blake3 哈希）与原记录不一致".into(),
         });
     }
-    relocate::relocate_media(target.media_id, path)?;
-    notify_conversations(target.media_id)?;
+    relocate::relocate_media(lib, target.media_id, path)?;
+    notify_conversations(lib, target.media_id)?;
     Ok(RepairOutcome::Repaired {
         absolute: path.to_string_lossy().to_string(),
     })
 }
 
-fn repair_with_scope(target: &Target, scope: RepairScope) -> AppResult<RepairOutcome> {
+fn repair_with_scope(lib: &str, target: &Target, scope: RepairScope) -> AppResult<RepairOutcome> {
     let mut hashes_used = 0usize;
     for root in collect_roots(target, scope) {
         let matches = scan_root(&root, target, scope, &mut hashes_used);
@@ -99,8 +100,8 @@ fn repair_with_scope(target: &Target, scope: RepairScope) -> AppResult<RepairOut
         }
         if matches.len() == 1 {
             let abs = matches.into_iter().next().unwrap();
-            relocate::relocate_media(target.media_id, &abs)?;
-            notify_conversations(target.media_id)?;
+            relocate::relocate_media(lib, target.media_id, &abs)?;
+            notify_conversations(lib, target.media_id)?;
             return Ok(RepairOutcome::Repaired {
                 absolute: abs.to_string_lossy().to_string(),
             });
@@ -149,8 +150,8 @@ struct Target {
     last_known_relpath: Option<String>,
 }
 
-fn load_target(media_id: i64) -> AppResult<Target> {
-    db::with_conn(|conn| -> AppResult<Target> {
+fn load_target(lib: &str, media_id: i64) -> AppResult<Target> {
+    db::with_lib(lib, |conn| -> AppResult<Target> {
         type Row = (i64, String, Option<String>, Option<String>);
         let row: Row = conn
             .query_row(
@@ -223,8 +224,8 @@ fn scan_root(
     found
 }
 
-fn notify_conversations(media_id: i64) -> AppResult<()> {
-    let conv_ids: Vec<i64> = db::with_conn(|conn| -> AppResult<Vec<i64>> {
+fn notify_conversations(lib: &str, media_id: i64) -> AppResult<()> {
+    let conv_ids: Vec<i64> = db::with_lib(lib, |conn| -> AppResult<Vec<i64>> {
         let mut stmt = conn.prepare(
             "SELECT DISTINCT conv_id FROM messages WHERE media_id = ?1",
         )?;
@@ -236,6 +237,7 @@ fn notify_conversations(media_id: i64) -> AppResult<()> {
     })?;
     for conv_id in conv_ids {
         events::emit_conv_changed(ConvChanged {
+            lib: lib.to_string(),
             conv_id,
             added: 0,
             broken: 0,
@@ -255,7 +257,7 @@ pub struct BrokenItem {
     pub message_id: i64,
     pub media_id: i64,
     pub kind: String,
-    pub thumb_path: Option<String>,
+    pub has_thumb: bool,
     pub last_known_relpath: Option<String>,
     pub last_known_volume_label: Option<String>,
     pub detected_at: i64,
@@ -272,12 +274,13 @@ pub struct BrokenGroup {
 }
 
 #[tauri::command]
-pub fn list_broken_pointers() -> AppResult<Vec<BrokenGroup>> {
-    db::with_conn(|conn| -> AppResult<Vec<BrokenGroup>> {
+pub fn list_broken_pointers(lib: String) -> AppResult<Vec<BrokenGroup>> {
+    let lib = lib.as_str();
+    db::with_lib(lib, |conn| -> AppResult<Vec<BrokenGroup>> {
         let mut stmt = conn.prepare(
             "SELECT
                 msg.id, msg.conv_id, msg.created_at,
-                md.id, md.kind, md.thumb_path, md.size_bytes,
+                md.id, md.kind, EXISTS (SELECT 1 FROM thumbs t WHERE t.media_id = md.id), md.size_bytes,
                 bp.detected_at, bp.last_known_relpath,
                 v.label,
                 c.name
@@ -285,7 +288,10 @@ pub fn list_broken_pointers() -> AppResult<Vec<BrokenGroup>> {
              JOIN media md ON md.id = bp.media_id
              JOIN messages msg ON msg.media_id = md.id
              JOIN conversations c ON c.id = msg.conv_id
+             JOIN volumes cur ON cur.id = md.volume_id
              LEFT JOIN volumes v ON v.id = bp.last_known_volume
+             -- Missing only: a file on an unmounted volume is offline, not lost.
+             WHERE cur.online = 1 AND md.state = 'broken'
              ORDER BY c.name COLLATE NOCASE ASC,
                       msg.conv_id ASC,
                       msg.created_at DESC,
@@ -298,7 +304,7 @@ pub fn list_broken_pointers() -> AppResult<Vec<BrokenGroup>> {
             i64,            // msg.created_at
             i64,            // md.id
             String,         // md.kind
-            Option<String>, // md.thumb_path
+            i64,            // has thumb
             i64,            // md.size_bytes
             i64,            // bp.detected_at
             Option<String>, // bp.last_known_relpath
@@ -314,7 +320,7 @@ pub fn list_broken_pointers() -> AppResult<Vec<BrokenGroup>> {
                     r.get::<_, i64>(2)?,
                     r.get::<_, i64>(3)?,
                     r.get::<_, String>(4)?,
-                    r.get::<_, Option<String>>(5)?,
+                    r.get::<_, i64>(5)?,
                     r.get::<_, i64>(6)?,
                     r.get::<_, i64>(7)?,
                     r.get::<_, Option<String>>(8)?,
@@ -333,7 +339,7 @@ pub fn list_broken_pointers() -> AppResult<Vec<BrokenGroup>> {
                 msg_created_at,
                 media_id,
                 kind,
-                thumb_path,
+                has_thumb,
                 size_bytes,
                 detected_at,
                 last_known_relpath,
@@ -344,7 +350,7 @@ pub fn list_broken_pointers() -> AppResult<Vec<BrokenGroup>> {
                 message_id: msg_id,
                 media_id,
                 kind,
-                thumb_path,
+                has_thumb: has_thumb != 0,
                 last_known_relpath,
                 last_known_volume_label,
                 detected_at,

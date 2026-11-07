@@ -5,7 +5,7 @@
 //! 0`; [`backfill_geotags`] scans those rows once (lazily, on first map open)
 //! so old libraries light up too.
 
-use crate::services::{exif, vault, volume_resolver};
+use crate::services::{exif, volume_resolver};
 use crate::{db, events, AppError, AppResult};
 use rusqlite::params;
 use serde::Serialize;
@@ -22,36 +22,34 @@ pub struct GeotaggedMedia {
     pub lat: f64,
     pub lon: f64,
     pub kind: String,
-    pub absolute_path: String,
-    pub available: bool,
+    pub ext: String,
+    /// "ok" | "offline" | "missing" — same meaning as on messages.
+    pub status: String,
+    pub has_thumb: bool,
     pub conv_id: i64,
     pub message_id: i64,
     pub created_at: i64,
 }
 
-/// Whether a conversation's media may surface on the map. Non-encrypted convs
-/// are always visible; encrypted ones only while unlocked (key cached). This
-/// mirrors `messages::render_caption`'s `vault::get_conv_key` gate so locked
-/// encrypted content never leaks its location.
-fn conv_accessible(encrypted: bool, conv_id: i64) -> bool {
-    !encrypted || vault::get_conv_key(conv_id).is_some()
-}
-
+/// The map shows one library at a time: a locked library isn't open, so its
+/// locations can't surface here at all.
 #[tauri::command]
-pub fn list_geotagged_media() -> AppResult<Vec<GeotaggedMedia>> {
-    db::with_conn(|conn| {
+pub fn list_geotagged_media(lib: String) -> AppResult<Vec<GeotaggedMedia>> {
+    let hide = super::conversations::hide_offline(&lib)?;
+    db::with_lib(&lib, |conn| {
         // A media row can be referenced by several conversations. Order by
         // media id so rows for the same media are contiguous; in Rust we pick
         // the first reference whose conversation is currently accessible.
         let mut stmt = conn.prepare(
-            "SELECT md.id, md.lat, md.lon, md.kind, v.last_mount, md.relpath,
-                    m.id AS msg_id, m.conv_id, m.created_at, c.encrypted
+            "SELECT md.id, md.lat, md.lon, md.kind, md.state, v.online, md.relpath,
+                    m.id AS msg_id, m.conv_id, m.created_at,
+                    EXISTS (SELECT 1 FROM thumbs t WHERE t.media_id = md.id)
              FROM media md
              JOIN volumes v ON v.id = md.volume_id
              JOIN messages m ON m.media_id = md.id
              JOIN conversations c ON c.id = m.conv_id
              WHERE md.lat IS NOT NULL AND md.lon IS NOT NULL
-               AND md.state = 'live' AND c.archived = 0
+               AND c.archived = 0
              ORDER BY md.id ASC, m.id ASC",
         )?;
 
@@ -60,12 +58,13 @@ pub fn list_geotagged_media() -> AppResult<Vec<GeotaggedMedia>> {
             lat: f64,
             lon: f64,
             kind: String,
-            mount: Option<String>,
+            state: String,
+            online: bool,
             relpath: String,
             msg_id: i64,
             conv_id: i64,
             created_at: i64,
-            encrypted: bool,
+            has_thumb: bool,
         }
 
         let rows = stmt.query_map([], |r| {
@@ -74,12 +73,13 @@ pub fn list_geotagged_media() -> AppResult<Vec<GeotaggedMedia>> {
                 lat: r.get(1)?,
                 lon: r.get(2)?,
                 kind: r.get(3)?,
-                mount: r.get(4)?,
-                relpath: r.get(5)?,
-                msg_id: r.get(6)?,
-                conv_id: r.get(7)?,
-                created_at: r.get(8)?,
-                encrypted: r.get::<_, i64>(9)? != 0,
+                state: r.get(4)?,
+                online: r.get::<_, i64>(5)? != 0,
+                relpath: r.get(6)?,
+                msg_id: r.get(7)?,
+                conv_id: r.get(8)?,
+                created_at: r.get(9)?,
+                has_thumb: r.get::<_, i64>(10)? != 0,
             })
         })?;
 
@@ -93,26 +93,18 @@ pub fn list_geotagged_media() -> AppResult<Vec<GeotaggedMedia>> {
                 current = Some(row.media_id);
                 chosen = false;
             }
-            if chosen || !conv_accessible(row.encrypted, row.conv_id) {
+            if chosen || (hide && !row.online) {
                 continue;
             }
             chosen = true;
-            let abs = match &row.mount {
-                Some(m) if !m.is_empty() => {
-                    volume_resolver::absolute_for(Path::new(m), &row.relpath)
-                        .to_string_lossy()
-                        .to_string()
-                }
-                _ => String::new(),
-            };
-            let available = !abs.is_empty();
             out.push(GeotaggedMedia {
                 media_id: row.media_id,
                 lat: row.lat,
                 lon: row.lon,
                 kind: row.kind,
-                absolute_path: abs,
-                available,
+                ext: super::messages::ext_of(&row.relpath),
+                status: super::messages::media_status(&row.state, row.online).to_string(),
+                has_thumb: row.has_thumb,
                 conv_id: row.conv_id,
                 message_id: row.msg_id,
                 created_at: row.created_at,
@@ -131,19 +123,17 @@ const BACKFILL_BATCH: usize = 200;
 /// immediately; emits `geo:backfill-done` when finished. Idempotent — a second
 /// call while one is in flight is a no-op.
 #[tauri::command]
-pub fn backfill_geotags() -> AppResult<()> {
-    // Bail early (and cheaply) if the vault is locked — there's nothing to scan
-    // until the DB is open anyway.
-    if !db::is_open() {
+pub fn backfill_geotags(lib: String) -> AppResult<()> {
+    if !db::is_open(&lib) {
         return Ok(());
     }
     if BACKFILL_RUNNING.swap(true, Ordering::SeqCst) {
         return Ok(()); // already running
     }
-    std::thread::spawn(|| {
-        let updated = run_backfill().unwrap_or(0);
+    std::thread::spawn(move || {
+        let updated = run_backfill(&lib).unwrap_or(0);
         BACKFILL_RUNNING.store(false, Ordering::SeqCst);
-        events::emit_geo_backfill_done(updated);
+        events::emit_geo_backfill_done(&lib, updated);
     });
     Ok(())
 }
@@ -154,18 +144,18 @@ struct Candidate {
     kind: String,
 }
 
-fn run_backfill() -> AppResult<usize> {
+fn run_backfill(lib: &str) -> AppResult<usize> {
     let mut cursor: i64 = 0;
     let mut total_updated = 0usize;
 
     loop {
         // 1. Pull a batch of unscanned candidates (cursor keeps progress so
         //    offline files we can't read don't get re-fetched this run).
-        let batch: Vec<Candidate> = db::with_conn(|conn| {
+        let batch: Vec<Candidate> = db::with_lib(lib, |conn| {
             let mut stmt = conn.prepare(
                 "SELECT md.id, v.last_mount, md.relpath, md.kind
                  FROM media md JOIN volumes v ON v.id = md.volume_id
-                 WHERE md.geo_scanned = 0 AND md.state = 'live'
+                 WHERE md.geo_scanned = 0 AND md.state = 'live' AND v.online = 1
                    AND md.kind IN ('image', 'video')
                    AND v.last_mount IS NOT NULL
                    AND md.id > ?1
@@ -208,7 +198,7 @@ fn run_backfill() -> AppResult<usize> {
         }
 
         // 3. Commit the batch in a single transaction (short lock hold).
-        let batch_updated = db::with_conn(|conn| {
+        let batch_updated = db::with_lib(lib, |conn| {
             conn.execute_batch("BEGIN")?;
             let mut n = 0usize;
             for (id, geo) in &writes {

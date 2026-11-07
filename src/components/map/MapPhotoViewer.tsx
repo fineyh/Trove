@@ -9,8 +9,9 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect } from "react";
 import type { GeotaggedMedia } from "../../types";
-import { mediaUrl } from "../../ipc/client";
-import { isHeicPath } from "../../lib/heic";
+import { mediaSrc, thumbSrc } from "../../ipc/client";
+import { useLibrariesStore } from "../../stores/libraries";
+import { isImageMedia } from "../../lib/media";
 import { useDisplayableImageUrl } from "../../lib/useDisplayableImageUrl";
 import { useViewerTransform } from "../../lib/useViewerTransform";
 import { RotatableVideo } from "../ui/RotatableVideo";
@@ -36,6 +37,7 @@ export function MapPhotoViewer({
   onJump,
 }: MapPhotoViewerProps) {
   const current = items[index] ?? null;
+  const lib = useLibrariesStore((s) => s.current) ?? "";
 
   const goPrev = useCallback(() => {
     if (index > 0) onIndexChange(index - 1);
@@ -76,16 +78,16 @@ export function MapPhotoViewer({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose, goPrev, goNext, zoomIn, zoomOut, resetView]);
 
-  // Must run unconditionally (before the early return) — empty path is a no-op.
-  const absolutePath = current?.absolutePath ?? "";
-  const image = useDisplayableImageUrl(absolutePath, mediaUrl(absolutePath));
+  const canPreview = current?.status === "ok";
+  // Must run unconditionally (before the early return) — an empty url is a no-op.
+  const url = current && lib && canPreview ? mediaSrc(lib, current.mediaId) : "";
+  const image = useDisplayableImageUrl(url, current?.ext ?? "");
 
   if (!current) return null;
 
-  const url = mediaUrl(current.absolutePath);
-  const isImage =
-    current.kind === "image" || isHeicPath(current.absolutePath);
-  const canPreview = current.available && current.absolutePath !== "";
+  const isImage = isImageMedia(current);
+  // Offline: the stored thumbnail is still something to look at.
+  const offlineThumb = !canPreview && current.hasThumb && lib ? thumbSrc(lib, current.mediaId) : null;
 
   return (
     <div
@@ -187,8 +189,13 @@ export function MapPhotoViewer({
         onClick={(e) => e.stopPropagation()}
       >
         {!canPreview ? (
-          <div className="rounded-lg border border-dashed border-white/30 px-6 py-8 text-sm text-white/70">
-            文件暂时不可用（来源未挂载）
+          <div className="flex flex-col items-center gap-3">
+            {offlineThumb && (
+              <img src={offlineThumb} alt="" className="max-h-[50vh] rounded-xl opacity-80" draggable={false} />
+            )}
+            <div className="rounded-full bg-white/10 px-4 py-1.5 text-sm text-white/80">
+              {current.status === "offline" ? "所在的盘没有连接，这是缩略图" : "文件不在原位置"}
+            </div>
           </div>
         ) : isImage ? (
           image.status === "error" ? (

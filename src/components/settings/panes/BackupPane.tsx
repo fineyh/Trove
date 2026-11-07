@@ -1,33 +1,28 @@
-import { Archive, Download, Upload } from "lucide-react";
+import { Archive, Download, Info, ShieldCheck, Upload } from "lucide-react";
 import { useState } from "react";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import * as ipc from "../../../ipc/client";
-import { useVaultStore } from "../../../stores/vault";
+import { useSecurityStore } from "../../../stores/security";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
+import { Button, Notice, Switch, TextField } from "../../ui/Modal";
 import { isTauri } from "../../../hooks/useIsTauri";
 import { errText } from "../../../lib/errors";
+import { formatBytes } from "../../../lib/media";
 import type { BackupExportResult } from "../../../types";
-
-function formatBytes(n: number): string {
-  if (!Number.isFinite(n) || n <= 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  let i = 0;
-  let v = n;
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
-    i++;
-  }
-  return `${v >= 100 || i === 0 ? Math.round(v) : v.toFixed(v >= 10 ? 1 : 2)} ${units[i]}`;
-}
+import { MIN_PASSWORD } from "../../library/LibraryDialogs";
 
 export function BackupPane() {
-  const vaultStatus = useVaultStore((s) => s.status);
-  const vaultLocked = vaultStatus.hasMasterPassword && !vaultStatus.unlocked;
+  const appPassword = useSecurityStore((s) => s.status?.appPassword === true);
 
   const [busy, setBusy] = useState<"export" | "import" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [exported, setExported] = useState<BackupExportResult | null>(null);
   const [pendingImportPath, setPendingImportPath] = useState<string | null>(null);
+  const [withPassword, setWithPassword] = useState(false);
+  const [pw, setPw] = useState("");
+  const [pw2, setPw2] = useState("");
+
+  const pwOk = !withPassword || (pw.length >= MIN_PASSWORD && pw === pw2);
 
   const handleExport = async () => {
     setError(null);
@@ -37,18 +32,17 @@ export function BackupPane() {
       return;
     }
     try {
-      const stamp = new Date()
-        .toISOString()
-        .replace(/[:.]/g, "-")
-        .slice(0, 19);
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
       const dest = await saveDialog({
         defaultPath: `trove-${stamp}.trovebackup`,
         filters: [{ name: "Trove Backup", extensions: ["trovebackup"] }],
       });
       if (!dest) return;
       setBusy("export");
-      const result = await ipc.exportBackup(dest);
+      const result = await ipc.exportBackup(dest, withPassword && !appPassword ? pw : undefined);
       setExported(result);
+      setPw("");
+      setPw2("");
     } catch (e: unknown) {
       setError(errText(e));
     } finally {
@@ -68,9 +62,7 @@ export function BackupPane() {
         directory: false,
         filters: [{ name: "Trove Backup", extensions: ["trovebackup"] }],
       });
-      if (typeof src === "string") {
-        setPendingImportPath(src);
-      }
+      if (typeof src === "string") setPendingImportPath(src);
     } catch (e: unknown) {
       setError(errText(e));
     }
@@ -81,13 +73,10 @@ export function BackupPane() {
     setBusy("import");
     setError(null);
     try {
-      const result = await ipc.importBackup(pendingImportPath);
+      await ipc.importBackup(pendingImportPath);
       setPendingImportPath(null);
-      // success → relaunch so vault/init can run cleanly
+      // Restart so boot runs against the restored keyring and libraries.
       const { relaunch } = await import("@tauri-apps/plugin-process");
-      console.info(
-        `Trove backup restored from ${pendingImportPath}; previous data preserved at ${result.backupDir}`,
-      );
       await relaunch();
     } catch (e: unknown) {
       setError(errText(e));
@@ -99,32 +88,71 @@ export function BackupPane() {
     <div className="flex flex-col gap-6">
       <h2 className="text-lg font-semibold">备份</h2>
 
+      <Notice icon={<Info size={14} />}>
+        备份只包含<b>目录和元数据</b>：所有库（会话、说明、缩略图）和钥匙环。
+        <b>不含照片和视频原文件</b>，它们仍在原来的位置，需要另外备份。
+      </Notice>
+
       <section className="flex flex-col gap-3">
         <div className="flex items-center gap-2 text-sm font-medium">
           <Download size={14} />
           导出
         </div>
-        <div className="text-xs text-app-muted">
-          打包当前数据库（加密会话保留加密）、缩略图与
-          <code className="mx-1 rounded bg-app-subtle px-1">vault.json</code>
-          为单个 <code className="mx-1 rounded bg-app-subtle px-1">.trovebackup</code>
-          文件。
+        <div className="text-xs leading-5 text-app-muted">
+          库文件本身就是加密的。没设启动密码时，拿到备份文件就能用 Trove 打开它，和拷走数据目录一样；
+          设过密码的库仍然需要它自己的密码。
         </div>
-        <button
-          type="button"
-          onClick={handleExport}
-          disabled={busy !== null || vaultLocked}
-          className="flex w-fit items-center gap-1.5 rounded-md bg-app-accent px-3 py-1.5 text-xs text-white hover:opacity-90 disabled:opacity-40"
-        >
-          <Download size={12} />
-          {busy === "export" ? "导出中..." : "选择导出位置"}
-        </button>
-        {exported && (
-          <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-600">
-            已导出到 <span className="font-mono">{exported.destPath}</span>（
-            {formatBytes(exported.bytes)}
-            {exported.dbEncrypted ? " · 加密 DB" : ""}）
+
+        {appPassword ? (
+          <div className="flex items-center gap-2 text-xs text-emerald-600 dark:text-emerald-400">
+            <ShieldCheck size={14} />
+            已设置启动密码：恢复这份备份时需要输入它。
           </div>
+        ) : (
+          <div className="flex flex-col gap-3 rounded-xl border border-app-border p-3.5">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-col">
+                <span className="text-sm font-medium">为这份备份设密码</span>
+                <span className="text-xs text-app-muted">恢复时要输入它。只作用于这一份备份文件。</span>
+              </div>
+              <Switch checked={withPassword} onChange={setWithPassword} label="为备份设密码" />
+            </div>
+            {withPassword && (
+              <div className="grid grid-cols-2 gap-3">
+                <TextField
+                  type="password"
+                  label="备份密码"
+                  value={pw}
+                  onChange={(e) => setPw(e.target.value)}
+                  error={pw.length > 0 && pw.length < MIN_PASSWORD ? `至少 ${MIN_PASSWORD} 个字符` : undefined}
+                />
+                <TextField
+                  type="password"
+                  label="再输入一次"
+                  value={pw2}
+                  onChange={(e) => setPw2(e.target.value)}
+                  error={pw2.length > 0 && pw !== pw2 ? "两次输入不一致" : undefined}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        <Button
+          variant="primary"
+          icon={<Download size={14} />}
+          onClick={handleExport}
+          disabled={busy !== null || !pwOk}
+          className="self-start"
+        >
+          {busy === "export" ? "导出中…" : "选择导出位置…"}
+        </Button>
+        {exported && (
+          <Notice tone="success">
+            已导出到 <span className="select-text break-all font-mono">{exported.destPath}</span>（
+            {formatBytes(exported.bytes)}
+            {exported.passwordProtected ? " · 有密码保护" : ""}）
+          </Notice>
         )}
       </section>
 
@@ -133,29 +161,22 @@ export function BackupPane() {
           <Upload size={14} />
           导入
         </div>
-        <div className="text-xs text-app-muted">
-          覆盖当前数据。原数据会自动保存到
-          <code className="mx-1 rounded bg-app-subtle px-1">
-            &lt;数据目录&gt;/backups/&lt;时间戳&gt;/
-          </code>
-          。导入成功后会自动重启。
+        <div className="text-xs leading-5 text-app-muted">
+          用备份替换当前数据。当前数据不会被删除，而是移到
+          <code className="mx-1 rounded bg-app-subtle px-1">&lt;数据目录&gt;/backups/&lt;时间戳&gt;/</code>
+          ，导入后应用会自动重启。
         </div>
-        <button
-          type="button"
+        <Button
+          icon={<Archive size={14} />}
           onClick={handlePickImport}
           disabled={busy !== null}
-          className="flex w-fit items-center gap-1.5 rounded-md border border-app-border px-3 py-1.5 text-xs hover:bg-app-subtle disabled:opacity-40"
+          className="self-start"
         >
-          <Archive size={12} />
-          选择 .trovebackup 文件...
-        </button>
+          选择 .trovebackup 文件…
+        </Button>
       </section>
 
-      {error && (
-        <div className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-500">
-          {error}
-        </div>
-      )}
+      {error && <Notice tone="danger">{error}</Notice>}
 
       <ConfirmDialog
         open={pendingImportPath !== null}
@@ -165,12 +186,11 @@ export function BackupPane() {
           pendingImportPath ? (
             <div className="flex flex-col gap-2">
               <div>
-                将用 <span className="font-mono">{pendingImportPath}</span>{" "}
-                覆盖当前数据。
+                将用 <span className="break-all font-mono">{pendingImportPath}</span> 替换当前数据。
               </div>
               <div className="text-xs text-app-muted">
-                当前数据会被移动到 backups/&lt;时间戳&gt;/ 目录，可手动找回。
-                导入完成后应用会立即重启。
+                当前数据会被移动到 backups/&lt;时间戳&gt;/ 目录，可手动找回。导入完成后应用会立即重启；
+                如果备份设过密码，重启后会要求输入，它会成为启动密码（之后可以在「安全」里修改或去掉）。
               </div>
             </div>
           ) : (

@@ -15,26 +15,27 @@ import { AboutPane } from "../settings/panes/AboutPane";
 export function SettingsDialog() {
   const open = useSessionStore((s) => s.settingsOpen);
   const setOpen = useSessionStore((s) => s.setSettingsOpen);
+  const initial = useSessionStore((s) => s.settingsSection);
   const load = useSettingsStore((s) => s.load);
 
   const [section, setSection] = useState<SettingsSection>(DEFAULT_SECTION);
 
   useEffect(() => {
     if (open) {
-      setSection(DEFAULT_SECTION);
+      setSection((initial as SettingsSection | null) ?? DEFAULT_SECTION);
       void load();
     }
-  }, [open, load]);
+  }, [open, initial, load]);
 
   if (!open) return null;
 
   return (
     <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-black/40"
+      className="fixed inset-0 z-40 flex animate-fade-in items-center justify-center bg-black/40 p-4 backdrop-blur-[2px]"
       onClick={() => setOpen(false)}
     >
       <div
-        className="relative flex h-[80vh] w-full max-w-4xl overflow-hidden rounded-lg border border-app-border bg-app-panel shadow-xl"
+        className="relative flex h-[80vh] w-full max-w-4xl animate-pop-in overflow-hidden rounded-2xl border border-app-border bg-app-panel shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <SettingsNav active={section} onSelect={setSection} />

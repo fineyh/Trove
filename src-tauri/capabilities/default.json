@@ -2,7 +2,9 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Default capabilities for the Trove main window",
-  "windows": ["main"],
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
     "core:path:default",
@@ -20,10 +22,6 @@
     "dialog:default",
     "dialog:allow-open",
     "fs:default",
-    {
-      "identifier": "fs:allow-read-file",
-      "allow": [{ "path": "**" }]
-    },
     "os:default",
     "shell:default",
     "process:default",

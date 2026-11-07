@@ -1,7 +1,6 @@
 import { LogIn, LogOut, User } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useAuthStore } from "../../../stores/auth";
-import { useVaultStore } from "../../../stores/vault";
 import { errText } from "../../../lib/errors";
 
 export function AccountPane() {
@@ -11,7 +10,6 @@ export function AccountPane() {
   const refresh = useAuthStore((s) => s.refresh);
   const login = useAuthStore((s) => s.login);
   const doLogout = useAuthStore((s) => s.logout);
-  const vaultStatus = useVaultStore((s) => s.status);
 
   const [error, setError] = useState<string | null>(null);
 
@@ -19,8 +17,6 @@ export function AccountPane() {
     void refresh();
   }, [refresh]);
 
-  const vaultLocked =
-    vaultStatus.hasMasterPassword && !vaultStatus.unlocked;
 
   const handleLogin = async () => {
     setError(null);
@@ -48,7 +44,7 @@ export function AccountPane() {
         <div className="text-sm font-medium">Google 身份</div>
         <div className="text-xs text-app-muted">
           仅用于在本地显示头像与邮箱，不会上传任何媒体或元数据。
-          refresh_token 在已设置主密码时会用 AES-GCM 加密后写入数据库。
+          登录凭据保存在主库里，和其他数据一样加密存放。
         </div>
 
         {!ready ? (
@@ -98,17 +94,12 @@ export function AccountPane() {
             <button
               type="button"
               onClick={handleLogin}
-              disabled={busy || vaultLocked}
+              disabled={busy}
               className="mt-1 flex items-center justify-center gap-1.5 self-start rounded-md bg-app-accent px-3 py-1.5 text-xs text-white hover:opacity-90 disabled:opacity-40"
             >
               <LogIn size={12} />
               {busy ? "等待浏览器授权..." : "用 Google 登录"}
             </button>
-            {vaultLocked && (
-              <div className="text-xs text-app-muted">
-                请先在「安全」中解锁主密码后再登录。
-              </div>
-            )}
           </div>
         )}
 

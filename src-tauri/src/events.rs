@@ -17,6 +17,7 @@ pub fn init(handle: AppHandle) {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConvChanged {
+    pub lib: String,
     pub conv_id: i64,
     pub added: usize,
     pub broken: usize,
@@ -30,21 +31,43 @@ pub fn emit_conv_changed(payload: ConvChanged) {
     }
 }
 
-pub fn emit_volumes_changed() {
+pub fn emit_volumes_changed(lib: &str) {
     if let Some(h) = APP_HANDLE.get() {
-        let _ = h.emit("volumes:changed", ());
+        let _ = h.emit("volumes:changed", lib);
+    }
+}
+
+/// The set of libraries, their names, or which of them are open changed.
+pub fn emit_libraries_changed() {
+    if let Some(h) = APP_HANDLE.get() {
+        let _ = h.emit("libraries:changed", ());
+    }
+}
+
+/// The app was locked (or its password settings changed).
+pub fn emit_security_changed() {
+    if let Some(h) = APP_HANDLE.get() {
+        let _ = h.emit("security:changed", ());
+    }
+}
+
+/// New thumbnail work may exist in `lib`; the frontend worker resumes.
+pub fn emit_thumbs_wake(lib: &str) {
+    if let Some(h) = APP_HANDLE.get() {
+        let _ = h.emit("thumbs:wake", lib);
     }
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GeoBackfillDone {
+    pub lib: String,
     pub updated: usize,
 }
 
-pub fn emit_geo_backfill_done(updated: usize) {
+pub fn emit_geo_backfill_done(lib: &str, updated: usize) {
     if let Some(h) = APP_HANDLE.get() {
-        let _ = h.emit("geo:backfill-done", GeoBackfillDone { updated });
+        let _ = h.emit("geo:backfill-done", GeoBackfillDone { lib: lib.to_string(), updated });
     }
 }
 
@@ -55,6 +78,7 @@ pub fn emit_geo_backfill_done(updated: usize) {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportProgress {
+    pub lib: String,
     pub conv_id: i64,
     pub done: usize,
     /// 0 while still enumerating the folder (UI shows an indeterminate bar).

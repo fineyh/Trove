@@ -2,6 +2,8 @@ import { Check, Copy, FolderOpen, HardDrive, RefreshCw, Trash2 } from "lucide-re
 import { useEffect, useRef, useState } from "react";
 import { useConversationsStore } from "../../../stores/conversations";
 import { useSettingsStore } from "../../../stores/settings";
+import { useCurrentLibrary } from "../../../stores/libraries";
+import { useThumbsStore } from "../../../stores/thumbs";
 import type { VolumePayload, VolumeStat } from "../../../types";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import * as ipc from "../../../ipc/client";
@@ -27,6 +29,8 @@ export function StoragePane() {
   const rescan = useSettingsStore((s) => s.rescan);
   const forget = useSettingsStore((s) => s.forget);
   const refreshConvs = useConversationsStore((s) => s.refresh);
+  const lib = useCurrentLibrary();
+  const thumbsLeft = useThumbsStore((s) => (lib ? s.remaining[lib.id] : undefined));
 
   const [pendingForget, setPendingForget] = useState<VolumePayload | null>(null);
   const [forgetBusy, setForgetBusy] = useState(false);
@@ -101,7 +105,7 @@ export function StoragePane() {
       <section className="flex flex-col gap-2">
         <div className="text-sm font-medium">数据目录</div>
         <div className="text-xs text-app-muted">
-          Trove 的数据库、缩略图与配置都保存在此目录。
+          库文件（已加密，缩略图也在里面）和钥匙环都保存在此目录。
         </div>
         <div className="mt-1 flex items-center gap-2 rounded-md border border-app-border bg-app-subtle/40 p-2">
           <div className="flex-1 truncate font-mono text-xs" title={stats?.dataDir}>
@@ -141,11 +145,24 @@ export function StoragePane() {
       </section>
 
       <section className="flex flex-col gap-2">
-        <div className="text-sm font-medium">媒体库</div>
+        <div className="text-sm font-medium">当前库{lib ? `「${lib.name}」` : ""}</div>
         <div className="grid grid-cols-3 gap-2">
           <StatCard label="文件数" value={stats ? stats.totalMedia.toLocaleString() : "—"} />
           <StatCard label="占用空间" value={stats ? formatBytes(stats.totalBytes) : "—"} />
           <StatCard label="卷数量" value={volumes.length.toString()} />
+        </div>
+        <div className="flex items-center gap-2 rounded-md border border-app-border bg-app-subtle/30 px-3 py-2 text-xs text-app-muted">
+          {thumbsLeft ? (
+            <>
+              <RefreshCw size={12} className="animate-spin text-app-accent" />
+              正在后台生成缩略图，还剩 {thumbsLeft.toLocaleString()} 个
+            </>
+          ) : (
+            <>
+              <Check size={12} className="text-emerald-500" />
+              缩略图已就绪（盘没连接的文件会在连接后补上）
+            </>
+          )}
         </div>
       </section>
 

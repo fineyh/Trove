@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import * as ipc from "../ipc/client";
 import { useConvMediaStore } from "./convMedia";
+import { useConversationsStore } from "./conversations";
+import { currentLib, stillOn } from "./libraries";
 import { toast } from "./toast";
 import type { Message } from "../types";
 
@@ -19,6 +21,8 @@ interface MessagesState {
   /** False once a page came back short — nothing older left to fetch. */
   hasMore: Record<number, boolean>;
   load: (convId: number) => Promise<void>;
+  /** Drop every cache (library switched). */
+  reset: () => void;
   loadOlder: (convId: number) => Promise<void>;
   sendText: (convId: number, text: string) => Promise<void>;
   importFiles: (convId: number, paths: string[]) => Promise<void>;
@@ -35,16 +39,20 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
   loading: {},
   loadingOlder: {},
   hasMore: {},
+  reset: () => set({ byConv: {}, loading: {}, loadingOlder: {}, hasMore: {} }),
   load: async (convId) => {
+    const lib = currentLib();
     set((s) => ({ loading: { ...s.loading, [convId]: true } }));
     try {
-      const list = await ipc.listMessages({ convId, limit: PAGE_SIZE });
+      const list = await ipc.listMessages(lib, { convId, limit: PAGE_SIZE });
+      if (!stillOn(lib)) return;
       set((s) => ({
         byConv: { ...s.byConv, [convId]: list },
         hasMore: { ...s.hasMore, [convId]: list.length >= PAGE_SIZE },
         loading: { ...s.loading, [convId]: false },
       }));
     } catch (e) {
+      if (!stillOn(lib)) return;
       toast.error("加载消息失败", e);
       set((s) => ({ loading: { ...s.loading, [convId]: false } }));
     }
@@ -55,13 +63,15 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
     const held = s.byConv[convId];
     if (!held || held.length === 0) return;
     const oldest = held[0];
+    const lib = currentLib();
     set((st) => ({ loadingOlder: { ...st.loadingOlder, [convId]: true } }));
     try {
-      const older = await ipc.listMessages({
+      const older = await ipc.listMessages(lib, {
         convId,
         before: { createdAt: oldest.createdAt, id: oldest.id },
         limit: PAGE_SIZE,
       });
+      if (!stillOn(lib)) return;
       set((st) => {
         // Re-read the list: a full `load` may have replaced it while we waited.
         const current = st.byConv[convId] ?? [];
@@ -74,21 +84,25 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
         };
       });
     } catch (e) {
+      if (!stillOn(lib)) return;
       toast.error("加载更早的消息失败", e);
       set((st) => ({ loadingOlder: { ...st.loadingOlder, [convId]: false } }));
     }
   },
   sendText: async (convId, text) => {
-    const msg = await ipc.sendText(convId, text);
+    const msg = await ipc.sendText(currentLib(), convId, text);
     set((s) => ({
       byConv: {
         ...s.byConv,
         [convId]: [...(s.byConv[convId] ?? []), msg],
       },
     }));
+    // The list's preview and "x minutes ago" move with it.
+    void useConversationsStore.getState().refresh();
   },
   importFiles: async (convId, paths) => {
-    await ipc.importFiles(convId, paths);
+    await ipc.importFiles(currentLib(), convId, paths);
+    void useConversationsStore.getState().refresh();
     // Back to the newest page — that's where the just-imported files are.
     await get().load(convId);
     // The media sequence the viewer/grid page over just grew; drop its cache
@@ -96,7 +110,7 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
     useConvMediaStore.getState().invalidate(convId);
   },
   registerPlay: async (messageId) => {
-    const next = await ipc.incrementPlayCount(messageId);
+    const next = await ipc.incrementPlayCount(currentLib(), messageId);
     set((s) => {
       const out: Record<number, Message[]> = {};
       for (const [k, list] of Object.entries(s.byConv)) {
@@ -108,7 +122,7 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
     });
   },
   remove: async (messageId, convId, deleteFile = false) => {
-    await ipc.deleteMessage(messageId, deleteFile);
+    await ipc.deleteMessage(currentLib(), messageId, deleteFile);
     // Drop it locally instead of reloading: a reload would snap the view back
     // to the newest page, losing wherever the user had scrolled to.
     set((s) => ({

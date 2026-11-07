@@ -36,12 +36,14 @@ pub struct BulkImportResult {
 /// of full-content hashes, which used to freeze the window for minutes.
 #[tauri::command]
 pub async fn create_manual_from_folder(
+    lib: String,
     args: CreateManualFromFolderArgs,
 ) -> AppResult<BulkImportResult> {
-    super::run_blocking(move || create_manual_from_folder_blocking(args)).await
+    super::run_blocking(move || create_manual_from_folder_blocking(&lib, args)).await
 }
 
 fn create_manual_from_folder_blocking(
+    lib: &str,
     args: CreateManualFromFolderArgs,
 ) -> AppResult<BulkImportResult> {
     let folder = PathBuf::from(&args.folder_path);
@@ -62,12 +64,12 @@ fn create_manual_from_folder_blocking(
         .ok_or_else(|| AppError::InvalidArg(super::media::BUSY.into()))?;
 
     let now = now_ms();
-    let conv_id: i64 = db::with_conn(|conn| {
+    let conv_id: i64 = db::with_lib(lib, |conn| {
         conn.execute(
             "INSERT INTO conversations
                 (name, avatar_path, kind, source_volume_id, source_relpath,
-                 encrypted, enc_key_wrapped, pinned, archived, created_at, updated_at)
-             VALUES (?1, NULL, 'manual', NULL, NULL, 0, NULL, 0, 0, ?2, ?2)",
+                 pinned, archived, created_at, updated_at)
+             VALUES (?1, NULL, 'manual', NULL, NULL, 0, 0, ?2, ?2)",
             params![name, now],
         )?;
         Ok::<i64, AppError>(conn.last_insert_rowid())
@@ -75,6 +77,7 @@ fn create_manual_from_folder_blocking(
 
     // total = 0 tells the UI "still counting files" (indeterminate bar).
     events::emit_import_progress(events::ImportProgress {
+        lib: lib.to_string(),
         conv_id,
         done: 0,
         total: 0,
@@ -85,20 +88,23 @@ fn create_manual_from_folder_blocking(
     });
     let paths = services::folder_scanner::enumerate_media(&folder);
 
-    let mut first_image_abs: Option<String> = None;
+    // The avatar is a reference to a media row ("media:<id>"), served as that
+    // row's thumbnail — not a file path the WebView would have to load.
+    let mut first_image: Option<String> = None;
     let (imported, _cancelled) =
-        super::media::ingest_batch(conv_id, &paths, &job, true, true, |p, msg| {
-            if first_image_abs.is_none() {
+        super::media::ingest_batch(lib, conv_id, &paths, &job, true, true, |p, msg| {
+            if first_image.is_none() {
                 let mime = mime_guess::from_path(p).first_or_octet_stream();
                 if mime.type_().as_str() == "image" {
-                    first_image_abs = Some(msg.absolute_path);
+                    first_image = Some(format!("media:{}", msg.media_id));
                 }
             }
         });
+    services::thumbs::wake(lib);
 
-    if let Some(avatar) = first_image_abs {
+    if let Some(avatar) = first_image {
         let touch = now_ms();
-        let _ = db::with_conn(|conn| -> AppResult<()> {
+        let _ = db::with_lib(lib, |conn| -> AppResult<()> {
             conn.execute(
                 "UPDATE conversations SET avatar_path = ?1, updated_at = ?2 WHERE id = ?3",
                 params![avatar, touch, conv_id],
@@ -120,12 +126,12 @@ pub struct RescanResult {
 /// missed events (it was offline, large directory dump, etc.). Off the UI
 /// thread for the same reason as the bulk import above.
 #[tauri::command]
-pub async fn rescan_folder(conv_id: i64) -> AppResult<RescanResult> {
-    super::run_blocking(move || rescan_folder_blocking(conv_id)).await
+pub async fn rescan_folder(lib: String, conv_id: i64) -> AppResult<RescanResult> {
+    super::run_blocking(move || rescan_folder_blocking(&lib, conv_id)).await
 }
 
-fn rescan_folder_blocking(conv_id: i64) -> AppResult<RescanResult> {
-    let row: Option<(String, String, i64)> = db::with_conn(|conn| {
+fn rescan_folder_blocking(lib: &str, conv_id: i64) -> AppResult<RescanResult> {
+    let row: Option<(String, String, i64)> = db::with_lib(lib, |conn| {
         conn.query_row(
             "SELECT v.last_mount, c.source_relpath, c.source_volume_id
              FROM conversations c JOIN volumes v ON v.id = c.source_volume_id
@@ -151,11 +157,12 @@ fn rescan_folder_blocking(conv_id: i64) -> AppResult<RescanResult> {
         .ok_or_else(|| AppError::InvalidArg(super::media::BUSY.into()))?;
     let paths = services::folder_scanner::enumerate_media(&root);
     let (added, _cancelled) =
-        super::media::ingest_batch(conv_id, &paths, &job, false, true, |_, _| {});
+        super::media::ingest_batch(lib, conv_id, &paths, &job, false, true, |_, _| {});
+    services::thumbs::wake(lib);
 
     if added > 0 {
         let now = now_ms();
-        let _ = db::with_conn(|conn| -> AppResult<()> {
+        let _ = db::with_lib(lib, |conn| -> AppResult<()> {
             conn.execute(
                 "UPDATE conversations SET updated_at = ?1 WHERE id = ?2",
                 params![now, conv_id],

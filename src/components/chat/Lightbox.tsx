@@ -8,14 +8,24 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { Message } from "../../types";
-import { mediaUrl } from "../../ipc/client";
+import { mediaSrc } from "../../ipc/client";
+import { useLibrariesStore } from "../../stores/libraries";
 import { EMPTY_MEDIA, useConvMediaStore } from "../../stores/convMedia";
 import { useMessagesStore } from "../../stores/messages";
 import { useSessionStore } from "../../stores/session";
-import { isHeicPath } from "../../lib/heic";
+import { isImageMedia } from "../../lib/media";
 import { useDisplayableImageUrl } from "../../lib/useDisplayableImageUrl";
 import { useViewerTransform } from "../../lib/useViewerTransform";
 import { RotatableVideo } from "../ui/RotatableVideo";
+
+/** Things this viewer can show: reachable images and videos. */
+function viewable(m: Message): boolean {
+  return (
+    m.media != null &&
+    m.media.status === "ok" &&
+    (isImageMedia(m.media) || m.media.kind === "video")
+  );
+}
 
 interface LightboxProps {
   convId: number;
@@ -36,6 +46,7 @@ export function Lightbox({ convId }: LightboxProps) {
   const registerPlay = useMessagesStore((s) => s.registerPlay);
   const activeId = useSessionStore((s) => s.lightboxMessageId);
   const close = useSessionStore((s) => s.closeLightbox);
+  const lib = useLibrariesStore((s) => s.current) ?? "";
   const open = useSessionStore((s) => s.openLightbox);
 
   // The clicked item may sit older than the media pages held so far (opened
@@ -46,7 +57,7 @@ export function Lightbox({ convId }: LightboxProps) {
   }, [convId, activeId, ensureContains]);
 
   const playable = useMemo(
-    () => media.filter((m) => m.media && m.media.state === "live"),
+    () => media.filter((m) => viewable(m)),
     [media],
   );
   const idx = useMemo(
@@ -67,7 +78,7 @@ export function Lightbox({ convId }: LightboxProps) {
     const anchor = playable[0]?.id;
     void loadOlder(convId).then(() => {
       const next = useConvMediaStore.getState().byConv[convId] ?? [];
-      const live = next.filter((m) => m.media && m.media.state === "live");
+      const live = next.filter((m) => viewable(m));
       const at = live.findIndex((m) => m.id === anchor);
       if (at > 0) open(live[at - 1].id);
     });
@@ -120,15 +131,15 @@ export function Lightbox({ convId }: LightboxProps) {
     }
   }, [current, registerPlay]);
 
-  // Must run unconditionally (before the early return) — empty path is a no-op.
-  const absolutePath = current?.media?.absolutePath ?? "";
-  const image = useDisplayableImageUrl(absolutePath, mediaUrl(absolutePath));
+  // Must run unconditionally (before the early return) — an empty url is a no-op.
+  const url = current?.media && lib ? mediaSrc(lib, current.media.id) : "";
+  const image = useDisplayableImageUrl(url, current?.media?.ext ?? "");
 
   if (activeId === null) return null;
 
   if (!current || !current.media) {
     // Still paging back to the clicked item, or it has gone away (deleted, or
-    // its volume unmounted and `missing_file_strategy` hides it).
+    // its volume went offline).
     if (!mediaLoading && !loadingOlder) return null;
     return (
       <div
@@ -140,9 +151,7 @@ export function Lightbox({ convId }: LightboxProps) {
     );
   }
 
-  const url = mediaUrl(current.media.absolutePath);
-  const isImage =
-    current.media.kind === "image" || isHeicPath(current.media.absolutePath);
+  const isImage = isImageMedia(current.media);
 
   return (
     <div

@@ -5,6 +5,7 @@ import type { RepairScope } from "../../../types";
 import { BrokenManagerDialog } from "./BrokenManagerDialog";
 import { cn } from "../../../lib/cn";
 import { toast } from "../../../stores/toast";
+import { currentLib } from "../../../stores/libraries";
 
 const SCOPE_OPTIONS: ReadonlyArray<{ value: RepairScope; label: string; desc: string }> = [
   {
@@ -26,7 +27,8 @@ const SCOPE_OPTIONS: ReadonlyArray<{ value: RepairScope; label: string; desc: st
 
 export function MediaPane() {
   const repairScope = useSettingsStore((s) => s.settings.repairDefaultScope);
-  const setRepairScope = useSettingsStore((s) => s.setRepairScope);
+  const save = useSettingsStore((s) => s.save);
+  const setRepairScope = (v: RepairScope) => save("repairDefaultScope", v);
 
   const [count, setCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
@@ -35,11 +37,11 @@ export function MediaPane() {
   const refreshCount = useCallback(async () => {
     setLoading(true);
     try {
-      const groups = await ipc.listBrokenPointers();
+      const groups = await ipc.listBrokenPointers(currentLib());
       const total = groups.reduce((acc, g) => acc + g.items.length, 0);
       setCount(total);
     } catch (e) {
-      toast.error("读取失效文件列表失败", e);
+      toast.error("读取丢失文件列表失败", e);
       setCount(null);
     } finally {
       setLoading(false);
@@ -62,15 +64,18 @@ export function MediaPane() {
       <section className="rounded-md border border-app-border">
         <div className="flex items-center justify-between gap-3 px-4 py-3">
           <div className="flex flex-col">
-            <div className="text-sm font-medium">失效文件</div>
+            <div className="text-sm font-medium">丢失的文件</div>
             <div className="text-xs text-app-muted">
               {loading
                 ? "加载中..."
                 : count === null
                   ? "—"
                   : count === 0
-                    ? "暂无失效文件"
-                    : `共 ${count} 个，集中在此处修复或删除`}
+                    ? "当前库没有丢失的文件"
+                    : `当前库有 ${count} 个文件不在原位置，可以在这里找回或删除`}
+              <span className="mt-0.5 block text-app-muted/80">
+                盘没连接的文件属于「离线」，不算丢失，不会出现在这里。
+              </span>
             </div>
           </div>
           <button
@@ -89,7 +94,7 @@ export function MediaPane() {
         <div className="border-t border-app-border px-4 py-3">
           <div className="text-sm font-medium">默认自动匹配模式</div>
           <div className="mt-1 text-xs text-app-muted">
-            在失效文件管理里点"自动匹配"时使用的搜索范围
+            在丢失文件管理里点「自动匹配」时使用的搜索范围
           </div>
           <div className="mt-3 flex flex-col gap-2">
             {SCOPE_OPTIONS.map((opt) => (
