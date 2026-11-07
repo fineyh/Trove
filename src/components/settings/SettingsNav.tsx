@@ -1,4 +1,6 @@
 import { cn } from "../../lib/cn";
+import { useUpdateStore } from "../../stores/update";
+import { UpdateDot } from "../ui/UpdateDot";
 import { NAV_ITEMS, type SettingsSection } from "./types";
 
 interface SettingsNavProps {
@@ -7,6 +9,7 @@ interface SettingsNavProps {
 }
 
 export function SettingsNav({ active, onSelect }: SettingsNavProps) {
+  const updateReady = useUpdateStore((s) => s.info?.available === true);
   return (
     <nav className="flex h-full w-[200px] shrink-0 flex-col gap-0.5 border-r border-app-border bg-app-panel p-3">
       <div className="px-2.5 pb-3 pt-1 text-base font-semibold">设置</div>
@@ -26,6 +29,7 @@ export function SettingsNav({ active, onSelect }: SettingsNavProps) {
           >
             <Icon size={16} className={cn("shrink-0", on ? "text-app-accent" : "")} />
             {item.label}
+            {item.key === "about" && updateReady && <UpdateDot className="ml-auto ring-app-panel" />}
           </button>
         );
       })}

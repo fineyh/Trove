@@ -70,9 +70,10 @@ pub fn get_setting(key: String) -> AppResult<Option<String>> {
 
 // ─── UI preferences ─────────────────────────────────────────────────────────
 //
-// Look-and-feel only (theme). Kept outside the libraries in a plain
-// `ui.json` so the lock / unlock screens can use it before anything is
-// decrypted. Nothing here is private.
+// App-level preferences that don't belong to any library: theme and update
+// settings. Kept outside the libraries in a plain `ui.json` so the lock /
+// unlock screens can use them before anything is decrypted. Nothing here is
+// private.
 
 const UI_FILE: &str = "ui.json";
 
@@ -88,6 +89,11 @@ fn read_ui() -> serde_json::Map<String, serde_json::Value> {
         .unwrap_or_default()
 }
 
+/// One value from `ui.json`, for the backend's own use.
+pub(crate) fn ui_pref(key: &str) -> Option<String> {
+    read_ui().get(key).and_then(|v| v.as_str()).map(str::to_string)
+}
+
 #[tauri::command]
 pub fn get_ui_prefs() -> HashMap<String, String> {
     read_ui()
@@ -100,13 +106,20 @@ pub fn get_ui_prefs() -> HashMap<String, String> {
 pub fn set_ui_pref(key: String, value: String) -> AppResult<()> {
     let ok = match key.as_str() {
         "theme" => matches!(value.as_str(), "system" | "light" | "dark"),
+        "update_channel" => matches!(value.as_str(), "stable" | "beta"),
+        "update_auto" => matches!(value.as_str(), "on" | "off"),
         _ => false,
     };
     if !ok {
         return Err(AppError::InvalidArg(format!("bad ui pref {key}={value}")));
     }
+    write_ui_pref(&key, &value)
+}
+
+/// Write without validation; callers inside the backend only.
+pub(crate) fn write_ui_pref(key: &str, value: &str) -> AppResult<()> {
     let mut map = read_ui();
-    map.insert(key, serde_json::Value::String(value));
+    map.insert(key.to_string(), serde_json::Value::String(value.to_string()));
     let bytes = serde_json::to_vec_pretty(&serde_json::Value::Object(map))
         .map_err(|e| AppError::Other(anyhow::anyhow!(e)))?;
     let path = ui_path();

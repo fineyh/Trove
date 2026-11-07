@@ -1,0 +1,47 @@
+# Keep the beta channel's updater manifest current (ADR-041).
+#
+# Stable users read releases/latest/download/latest.json, which GitHub already
+# resolves to the newest published non-prerelease — nothing to do for them.
+#
+# Beta users read beta.json on the fixed `beta-channel` release. Whenever any
+# release is published (stable or prerelease), copy its latest.json there —
+# unless beta.json already points at a newer version (e.g. publishing a 0.4.3
+# hotfix while 0.5.0-beta.2 is out).
+#
+# Runs on "Publish" in the GitHub UI. (Events caused by GITHUB_TOKEN don't
+# trigger workflows, so the draft created by release.yml doesn't fire this.)
+name: Update channels
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  beta:
+    if: github.event.release.tag_name != 'beta-channel'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Point beta.json at the newest release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if ! gh release view beta-channel >/dev/null 2>&1; then
+            gh release create beta-channel --prerelease \
+              --title "Beta channel (updater manifest)" \
+              --notes "Holds beta.json for the in-app updater's beta channel. Not a release — download installers from the versioned releases."
+          fi
+          gh release download "$TAG" --pattern latest.json --dir new
+          gh release download beta-channel --pattern beta.json --dir old || true
+          node scripts/pick-newer-manifest.mjs new/latest.json old/beta.json beta.json
+          gh release upload beta-channel beta.json --clobber

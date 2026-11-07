@@ -5,9 +5,11 @@ import { useLibrariesStore } from "../../stores/libraries";
 import { useSecurityStore } from "../../stores/security";
 import { useSessionStore } from "../../stores/session";
 import { toast } from "../../stores/toast";
+import { useUpdateStore } from "../../stores/update";
 import type { LibraryInfo } from "../../types";
 import { LibraryAvatar } from "../library/LibraryAvatar";
 import { IconButton } from "../ui/Button";
+import { UpdateDot } from "../ui/UpdateDot";
 import { ContextMenu, type ContextMenuEntry } from "../ui/ContextMenu";
 
 function LibraryButton({
@@ -54,6 +56,7 @@ export function Sidebar() {
   const setMapOpen = useSessionStore((s) => s.setMapOpen);
   const mapOpen = useSessionStore((s) => s.mapOpen);
   const setLibraryDialog = useSessionStore((s) => s.setLibraryDialog);
+  const updateReady = useUpdateStore((s) => s.info?.available === true);
   const [menu, setMenu] = useState<{ lib: LibraryInfo; x: number; y: number } | null>(null);
 
   const menuItems: ContextMenuEntry[] = [];
@@ -139,13 +142,16 @@ export function Sidebar() {
             onClick={() => void lockApp().catch((e) => toast.error("锁定失败", e))}
           />
         )}
-        <IconButton
-          label="设置"
-          tipSide="right"
-          size="lg"
-          icon={<Settings size={20} />}
-          onClick={() => setSettingsOpen(true)}
-        />
+        <span className="relative">
+          <IconButton
+            label={updateReady ? "设置（有新版本）" : "设置"}
+            tipSide="right"
+            size="lg"
+            icon={<Settings size={20} />}
+            onClick={() => setSettingsOpen(true, updateReady ? "about" : undefined)}
+          />
+          {updateReady && <UpdateDot className="absolute right-1.5 top-1.5" />}
+        </span>
       </div>
 
       <ContextMenu open={menu !== null} x={menu?.x ?? 0} y={menu?.y ?? 0} items={menuItems} onClose={() => setMenu(null)} />

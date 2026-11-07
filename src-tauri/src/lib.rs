@@ -129,6 +129,7 @@ pub fn run() {
             commands::backup::import_backup,
             commands::updater::check_for_update,
             commands::updater::install_update,
+            commands::updater::app_environment,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Trove");

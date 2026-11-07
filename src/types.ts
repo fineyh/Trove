@@ -183,6 +183,23 @@ export interface UpdateInfo {
   latestVersion: string | null;
   date: string | null;
   notes: string | null;
+  channel: UpdateChannel;
+  /** Unix ms. */
+  checkedAt: number;
+}
+
+export type UpdateChannel = "stable" | "beta";
+
+export type DownloadEvent =
+  | { event: "progress"; downloaded: number; total: number | null }
+  | { event: "installing" };
+
+export interface AppEnvironment {
+  version: string;
+  channel: UpdateChannel;
+  os: string;
+  arch: string;
+  webview: string | null;
 }
 
 // ─── Security & libraries (ADR-036 / ADR-038) ───────────────────────────────

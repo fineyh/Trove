@@ -18,6 +18,8 @@ function install() {
 
   let appUnlocked = !q.has("locked");
   let uiTheme = "system";
+  const uiPrefs: Record<string, string> = {};
+  const callbacks = new Map<number, (m: any) => void>();
   const settings: Record<string, string> = { offline_content: "show", map_tiles: "online", idle_lock_minutes: "15" };
 
   const libraries = [
@@ -78,8 +80,8 @@ function install() {
     security_status: () => ({ appPassword: true, appUnlocked: appUnlocked, appRecovery: true, mainLibrary: "main", legacyPlainCopy: false, legacyProblem: null }),
     app_unlock: () => { appUnlocked = true; },
     app_lock: () => { appUnlocked = false; },
-    get_ui_prefs: () => ({ theme: uiTheme }),
-    set_ui_pref: (a) => { uiTheme = a.value; },
+    get_ui_prefs: () => ({ theme: uiTheme, ...uiPrefs }),
+    set_ui_pref: (a) => { if (a.key === "theme") uiTheme = a.value; else uiPrefs[a.key] = a.value; },
     get_all_settings: () => settings,
     set_setting: (a) => { settings[a.key] = a.value; },
     list_libraries: () => libraries,
@@ -93,7 +95,33 @@ function install() {
     get_storage_stats: () => ({ dataDir: "C:\\Users\\me\\AppData\\Roaming\\com.trove.app", totalMedia: 2147, totalBytes: 38_600_000_000, byVolume: volumes.map((v) => ({ volumeId: v.id, label: v.label, mediaCount: v.mediaCount, sizeBytes: v.mediaCount * 18_000_000 })) }),
     list_broken_pointers: () => [{ convId: 1, convName: "2024 京都", items: [{ messageId: 1007, mediaId: 1007, kind: "image", hasThumb: true, lastKnownRelpath: "Photos/2024/IMG_4002.jpg", lastKnownVolumeLabel: "系统", detectedAt: now - D, sizeBytes: 3_400_000, messageCreatedAt: now - 2 * D }] }],
     auth_status: () => ({ hasIdentity: false, email: null, displayName: null, pictureUrl: null, vaultUnlocked: true }),
-    check_for_update: () => ({ available: true, currentVersion: "0.4.2", latestVersion: "0.5.0", date: "2026-11-01", notes: "- 新的界面\n- 深色模式" }),
+    check_for_update: () => {
+      const beta = uiPrefs.update_channel === "beta";
+      const checkedAt = Date.now();
+      uiPrefs.update_last_check = String(checkedAt);
+      return {
+        available: true, currentVersion: "0.4.2", latestVersion: beta ? "0.5.0-beta.2" : "0.5.0", date: "2026-11-01",
+        notes: "### 新增\n- 新的界面，深浅两套主题\n- 正式版 / 预览版两个更新通道\n### 修复\n- 弹窗文字几乎看不见",
+        channel: beta ? "beta" : "stable", checkedAt,
+      };
+    },
+    // Fakes a 24 MB download over ~4 s, then sits in "installing".
+    install_update: (a) => {
+      const send = callbacks.get(a.onEvent?.id);
+      const total = 24_000_000;
+      let i = 0;
+      let downloaded = 0;
+      const t = setInterval(() => {
+        downloaded = Math.min(total, downloaded + 1_200_000);
+        send?.({ index: i++, message: { event: "progress", downloaded, total } });
+        if (downloaded >= total) {
+          clearInterval(t);
+          send?.({ index: i++, message: { event: "installing" } });
+        }
+      }, 200);
+      return new Promise(() => {});
+    },
+    app_environment: () => ({ version: "0.4.2", channel: uiPrefs.update_channel ?? "stable", os: "Windows 10.0.26200", arch: "x86_64", webview: "131.0.2903.70" }),
     list_geotagged_media: () => [],
     thumbs_next: () => [],
     thumbs_remaining: () => 0,
@@ -105,7 +133,10 @@ function install() {
 
   let cb = 0;
   (window as any).__TAURI_INTERNALS__ = {
-    transformCallback: () => ++cb,
+    transformCallback: (fn: (m: any) => void) => {
+      callbacks.set(++cb, fn);
+      return cb;
+    },
     convertFileSrc: (p: string) => p,
     metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main", windowLabel: "main" } },
     invoke: async (cmd: string, args: any) => {
@@ -114,7 +145,8 @@ function install() {
         console.warn("[mock] unhandled", cmd, args);
         return null;
       }
-      return structuredClone(h(args ?? {}));
+      const r = h(args ?? {});
+      return r instanceof Promise ? r : structuredClone(r);
     },
   };
 

@@ -38,8 +38,9 @@ for (const a of argv) {
 const version = positionals[0];
 const doPush = opts.push;
 
-if (!version) die("Usage: npm run release <version> [--push]   e.g. npm run release 0.3.0");
-if (!/^\d+\.\d+\.\d+$/.test(version)) die(`Not a valid x.y.z version: "${version}"`);
+if (!version) die("Usage: npm run release <version> [--push]   e.g. npm run release 0.3.0 / 0.3.0-beta.1");
+// x.y.z-beta.N = preview build: CI makes it a prerelease on the beta channel (ADR-041).
+if (!/^\d+\.\d+\.\d+(-beta\.\d+)?$/.test(version)) die(`Not a valid x.y.z or x.y.z-beta.N version: "${version}"`);
 
 const git = (...a) => execFileSync("git", a, { cwd: root, encoding: "utf8" }).trim();
 

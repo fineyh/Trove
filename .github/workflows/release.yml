@@ -10,10 +10,16 @@
 #   GOOGLE_OAUTH_CLIENT_SECRET          consumed by build.rs at compile time
 #
 # The release is created as a DRAFT — review the artifacts, then click
-# "Publish" in the GitHub UI. The updater endpoint
+# "Publish" in the GitHub UI. The stable updater endpoint
 # (releases/latest/download/latest.json) only serves a PUBLISHED, non-prerelease
 # release, so publishing is the step that actually rolls the update out.
 # See notes/decisions.md ADR-016.
+#
+# Preview builds: a tag like `v0.5.0-beta.1` becomes a prerelease, which the
+# stable endpoint never serves. Publishing it runs update-channels.yml, which
+# points the beta channel's manifest at it (ADR-041). MSI can't carry a
+# prerelease version, so preview builds ship the NSIS installer only (that is
+# also what the updater installs).
 name: Release
 
 on:
@@ -72,7 +78,8 @@ jobs:
           releaseName: ${{ github.ref_name }}
           releaseBody: ${{ steps.notes.outputs.en }}
           releaseDraft: true
-          prerelease: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          args: ${{ contains(github.ref_name, '-') && '--bundles nsis' || '' }}
 
       # tauri-action set latest.json `notes` to the English body. Swap it for
       # the Chinese notes so the in-app updater shows Chinese (BOM-free write).

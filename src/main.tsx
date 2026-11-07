@@ -8,12 +8,14 @@ import { Toaster } from "./components/ui/Toaster";
 import { TooltipLayer } from "./components/ui/Tooltip";
 import { installNativeShell } from "./lib/nativeShell";
 import { initTheme } from "./stores/theme";
+import { initUpdates } from "./stores/update";
 import { installGlobalErrorHandlers } from "./lib/globalErrors";
 import "./styles.css";
 
 installGlobalErrorHandlers();
 installNativeShell();
 initTheme();
+initUpdates();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

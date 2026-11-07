@@ -1,6 +1,7 @@
-import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import { Channel, invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
+  AppEnvironment,
   AppSettings,
   AuthStatus,
   BackupExportResult,
@@ -10,6 +11,7 @@ import type {
   ConversationKind,
   ConvChangedEvent,
   CreatedLibrary,
+  DownloadEvent,
   GeotaggedMedia,
   IdleLockMinutes,
   ImportProgressEvent,
@@ -21,6 +23,7 @@ import type {
   SecurityStatus,
   StorageStats,
   UnlockMethod,
+  UpdateChannel,
   UpdateInfo,
   VolumePayload,
 } from "../types";
@@ -471,14 +474,29 @@ export async function saveSetting<K extends keyof AppSettings>(
 
 export type ThemePref = "system" | "light" | "dark";
 
-export async function getUiPrefs(): Promise<{ theme: ThemePref }> {
-  if (!isTauri()) return { theme: "system" };
-  const raw = await invoke<Record<string, string>>("get_ui_prefs");
-  const t = raw["theme"];
-  return { theme: t === "light" || t === "dark" ? t : "system" };
+export interface UiPrefs {
+  theme: ThemePref;
+  updateChannel: UpdateChannel;
+  updateAuto: boolean;
+  /** Unix ms of the last successful update check, 0 if never. */
+  updateLastCheck: number;
 }
 
-export function setUiPref(key: "theme", value: ThemePref): Promise<void> {
+export async function getUiPrefs(): Promise<UiPrefs> {
+  const raw = isTauri() ? await invoke<Record<string, string>>("get_ui_prefs") : {};
+  const t = raw["theme"];
+  return {
+    theme: t === "light" || t === "dark" ? t : "system",
+    updateChannel: raw["update_channel"] === "beta" ? "beta" : "stable",
+    updateAuto: raw["update_auto"] !== "off",
+    updateLastCheck: Number(raw["update_last_check"]) || 0,
+  };
+}
+
+export function setUiPref(key: "theme", value: ThemePref): Promise<void>;
+export function setUiPref(key: "update_channel", value: UpdateChannel): Promise<void>;
+export function setUiPref(key: "update_auto", value: "on" | "off"): Promise<void>;
+export function setUiPref(key: string, value: string): Promise<void> {
   if (!isTauri()) return Promise.resolve();
   return invoke("set_ui_pref", { key, value });
 }
@@ -566,6 +584,12 @@ export async function checkForUpdate(): Promise<UpdateInfo> {
   return invoke<UpdateInfo>("check_for_update");
 }
 
-export async function installUpdate(): Promise<void> {
-  await invoke("install_update");
+export async function installUpdate(onEvent: (e: DownloadEvent) => void): Promise<void> {
+  const ch = new Channel<DownloadEvent>(onEvent);
+  await invoke("install_update", { onEvent: ch });
+}
+
+export async function appEnvironment(): Promise<AppEnvironment | null> {
+  if (!isTauri()) return null;
+  return invoke<AppEnvironment>("app_environment");
 }
