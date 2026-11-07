@@ -1,5 +1,6 @@
 import { useSecurityStore } from "../../stores/security";
 import { UnlockForm } from "../library/UnlockForm";
+import { DragStrip } from "../ui/WindowControls";
 import appIcon from "../../../src-tauri/icons/128x128@2x.png";
 
 /** Shown at start (and after locking) when the app lock is on. */
@@ -8,7 +9,8 @@ export function UnlockScreen() {
   const hasRecovery = useSecurityStore((s) => s.status?.appRecovery === true);
 
   return (
-    <div className="flex h-screen w-screen items-center justify-center bg-app">
+    <div className="relative flex h-screen w-screen items-center justify-center bg-app">
+      <DragStrip />
       <div className="flex w-full max-w-[320px] animate-pop-in flex-col items-center gap-6 px-6">
         <img src={appIcon} alt="" className="h-16 w-16" draggable={false} />
         <div className="flex flex-col items-center gap-1 text-center">

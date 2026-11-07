@@ -15,6 +15,7 @@ import {
 } from "./components/library/LibraryDialogs";
 import { MoveConversationDialog } from "./components/library/MoveConversationDialog";
 import { RecoveryCodeDialog } from "./components/library/RecoveryCodeDialog";
+import { DragStrip, WindowControls } from "./components/ui/WindowControls";
 import {
   onConvChanged,
   onImportProgress,
@@ -59,9 +60,22 @@ export default function App() {
   useExternalLinks();
   useClosePlayersWithMain();
 
-  if (!ready) return <div className="flex h-screen w-screen bg-app" />;
-  if (!unlocked) return <UnlockScreen />;
-  return <Shell />;
+  return (
+    <>
+      {!ready ? <BlankScreen /> : unlocked ? <Shell /> : <UnlockScreen />}
+      <WindowControls />
+    </>
+  );
+}
+
+/** While the first status call is in flight: nothing to show, but the window
+ *  can already be moved. */
+function BlankScreen() {
+  return (
+    <div className="relative h-screen w-screen bg-app">
+      <DragStrip />
+    </div>
+  );
 }
 
 /** Everything behind the app lock. Mounted only while the app is unlocked,
@@ -101,7 +115,7 @@ function Shell() {
   useThumbnailWorker();
   useIdleLock();
 
-  if (!librariesReady) return <div className="flex h-screen w-screen bg-app" />;
+  if (!librariesReady) return <BlankScreen />;
 
   return (
     <div className="flex h-screen w-screen">

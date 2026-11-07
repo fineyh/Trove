@@ -7,6 +7,7 @@ import { ErrorBoundary } from "./components/ui/ErrorBoundary";
 import { Toaster } from "./components/ui/Toaster";
 import { TooltipLayer } from "./components/ui/Tooltip";
 import { installNativeShell } from "./lib/nativeShell";
+import { installWindowChrome } from "./lib/windowChrome";
 import { initTheme } from "./stores/theme";
 import { initUpdates } from "./stores/update";
 import { installGlobalErrorHandlers } from "./lib/globalErrors";
@@ -14,6 +15,7 @@ import "./styles.css";
 
 installGlobalErrorHandlers();
 installNativeShell();
+installWindowChrome();
 initTheme();
 initUpdates();
 

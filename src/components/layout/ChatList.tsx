@@ -113,7 +113,7 @@ function LibraryHeader() {
   const lock = useLibrariesStore((s) => s.lock);
   if (!lib) return null;
   return (
-    <div className="flex h-[52px] shrink-0 items-center gap-1 pl-4 pr-2.5">
+    <div data-drag-region className="flex h-[52px] shrink-0 items-center gap-1 pl-4 pr-2.5">
       <span className="min-w-0 flex-1 truncate text-base font-semibold">{lib.name}</span>
       {lib.encrypted && lib.unlocked && (
         <IconButton

@@ -86,7 +86,10 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="flex h-full w-16 shrink-0 flex-col items-center bg-app py-3">
+    <aside
+      data-drag-region
+      className="flex h-full w-16 shrink-0 flex-col items-center bg-app pb-3 pt-[calc(12px+var(--chrome-top))]"
+    >
       <nav className="flex w-full flex-col items-center gap-1">
         {libraries.map((l) => (
           <LibraryButton

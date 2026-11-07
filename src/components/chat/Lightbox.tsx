@@ -146,7 +146,8 @@ export function Lightbox({ convId }: LightboxProps) {
     if (!mediaLoading && !loadingOlder) return null;
     return (
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/90"
+        data-immersive
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/90"
         onClick={close}
       >
         <Loader2 size={28} className="animate-spin text-white/70" />
@@ -159,10 +160,11 @@ export function Lightbox({ convId }: LightboxProps) {
   return (
     <div
       ref={stageRef}
+      data-immersive
       className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-black/90"
       onClick={close}
     >
-      <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
+      <div className="absolute right-4 top-[60px] z-10 flex items-center gap-2">
         {zoomed && (
           <button
             type="button"

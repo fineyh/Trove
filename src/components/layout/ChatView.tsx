@@ -10,6 +10,8 @@ import { IconButton } from "../ui/Button";
 import { ConvAvatar } from "../ui/ConvAvatar";
 import { EmptyState } from "../ui/EmptyState";
 import { ImportProgressBar } from "../ui/ImportProgressBar";
+import { DragStrip } from "../ui/WindowControls";
+import { cn } from "../../lib/cn";
 
 export function ChatView() {
   const activeId = useSessionStore((s) => s.activeConversationId);
@@ -41,7 +43,8 @@ export function ChatView() {
 
   if (!conv || activeId === null) {
     return (
-      <div className="flex h-full flex-1 items-center justify-center bg-app-panel">
+      <div className="relative flex h-full flex-1 items-center justify-center bg-app-panel">
+        <DragStrip />
         <EmptyState icon={<MessagesSquare size={32} strokeWidth={1.5} />} title="选择一个会话" />
       </div>
     );
@@ -51,7 +54,14 @@ export function ChatView() {
 
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col bg-app-panel">
-      <header className="flex h-[52px] shrink-0 items-center gap-2 border-b border-app-border pl-3 pr-2.5">
+      <header
+        data-drag-region
+        className={cn(
+          "flex h-[52px] shrink-0 items-center gap-2 border-b border-app-border pl-3",
+          // The rightmost pane keeps the window buttons' corner free.
+          drawerOpen ? "pr-2.5" : "pr-[calc(var(--wc-width)+10px)]",
+        )}
+      >
         <button
           type="button"
           onClick={() => setDrawer(true)}

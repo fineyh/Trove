@@ -92,6 +92,7 @@ export function MapPhotoViewer({
   return (
     <div
       ref={stageRef}
+      data-immersive
       className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-black/90"
       onClick={onClose}
     >
@@ -101,14 +102,14 @@ export function MapPhotoViewer({
           e.stopPropagation();
           onJump(current);
         }}
-        className="absolute left-4 top-4 z-10 flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/20"
+        className="absolute left-4 top-[60px] z-10 flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/20"
         data-tip="在会话中打开"
       >
         <MessageSquare size={16} />
         在会话中打开
       </button>
 
-      <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
+      <div className="absolute right-4 top-[60px] z-10 flex items-center gap-2">
         {zoomed && (
           <button
             type="button"

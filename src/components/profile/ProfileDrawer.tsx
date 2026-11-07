@@ -1,4 +1,4 @@
-import { ArrowRightLeft, ImagePlus, MoreHorizontal, Pencil, Pin, PinOff, X } from "lucide-react";
+import { ArrowRightLeft, ImagePlus, MoreHorizontal, PanelRightClose, Pencil, Pin, PinOff } from "lucide-react";
 import { useRef, useState } from "react";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { useConversationsStore } from "../../stores/conversations";
@@ -58,10 +58,10 @@ export function ProfileDrawer() {
   return (
     <>
       <aside className="flex h-full w-[320px] shrink-0 animate-slide-in-right flex-col border-l border-app-border bg-app-panel">
-        <header className="flex h-[52px] shrink-0 items-center gap-1 pl-4 pr-2.5">
+        <header data-drag-region className="flex h-[52px] shrink-0 items-center gap-1 pl-4 pr-[calc(var(--wc-width)+10px)]">
           <span className="flex-1 text-sm font-semibold">会话信息</span>
           <IconButton ref={moreBtnRef} label="更多" size="sm" icon={<MoreHorizontal size={16} />} onClick={openMenu} />
-          <IconButton label="关闭" size="sm" icon={<X size={16} />} onClick={() => setOpen(false)} />
+          <IconButton label="收起" size="sm" icon={<PanelRightClose size={16} />} onClick={() => setOpen(false)} />
         </header>
 
         <div className="flex flex-col items-center gap-2 px-4 pb-5 pt-3 text-center">

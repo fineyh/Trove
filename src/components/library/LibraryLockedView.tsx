@@ -2,6 +2,7 @@ import { useLibrariesStore } from "../../stores/libraries";
 import { useSessionStore } from "../../stores/session";
 import type { LibraryInfo } from "../../types";
 import { Button } from "../ui/Button";
+import { DragStrip } from "../ui/WindowControls";
 import { LibraryAvatar } from "./LibraryAvatar";
 import { UnlockForm } from "./UnlockForm";
 
@@ -11,7 +12,8 @@ export function LibraryLockedView({ lib }: { lib: LibraryInfo }) {
   const setLibraryDialog = useSessionStore((s) => s.setLibraryDialog);
 
   return (
-    <div className="flex h-full flex-1 items-center justify-center border-l border-app-border bg-app-panel">
+    <div className="relative flex h-full flex-1 items-center justify-center border-l border-app-border bg-app-panel">
+      <DragStrip />
       <div className="flex w-full max-w-[320px] animate-pop-in flex-col items-center gap-6 px-6">
         <LibraryAvatar name={lib.name} icon={lib.icon} color={lib.color} size={64} locked />
         <div className="flex flex-col items-center gap-1 text-center">

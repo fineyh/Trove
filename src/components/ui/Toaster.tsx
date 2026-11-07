@@ -26,8 +26,9 @@ export function Toaster() {
   return (
     // z 要压过 Lightbox / 各类对话框（z-50）和地图的 Leaflet 面板（z-[1000]）。
     // 容器 pointer-events-none，只有卡片本体可点，不挡住下面的界面。
+    // 放在 52px 标题行下面，不压住右上角的窗口按钮。
     <div
-      className="pointer-events-none fixed right-4 top-4 z-[2000] flex w-[340px] max-w-[calc(100vw-2rem)] flex-col gap-2"
+      className="pointer-events-none fixed right-4 top-[60px] z-[2000] flex w-[340px] max-w-[calc(100vw-2rem)] flex-col gap-2"
       onMouseEnter={pause}
       onMouseLeave={resume}
     >

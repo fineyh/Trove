@@ -41,6 +41,49 @@
   color-scheme: dark;
 }
 
+/* ─── Window chrome (ADR-043) ──────────────────────────────────────────────
+   No system title bar. --wc-width is what the drawn window buttons take from
+   the top-right of the rightmost header; macOS draws its own traffic lights
+   top-left instead, which --chrome-top keeps clear of. */
+:root {
+  --wc-width: 138px;
+  --chrome-top: 0px;
+}
+:root[data-platform="macos"] {
+  --wc-width: 0px;
+  --chrome-top: 28px;
+}
+
+.window-controls .caption-button {
+  color: rgb(var(--fg));
+  transition: background-color 100ms ease-out, color 100ms ease-out;
+}
+.window-controls.is-inactive .caption-button {
+  color: rgb(var(--fg-3));
+}
+.window-controls .caption-button:hover {
+  background-color: rgb(var(--hover) / 0.06);
+}
+.window-controls .caption-button:active {
+  background-color: rgb(var(--hover) / 0.1);
+}
+/* Over the dark photo / video viewers. */
+body:has([data-immersive]) .window-controls .caption-button {
+  color: rgb(255 255 255 / 0.85);
+}
+body:has([data-immersive]) .window-controls .caption-button:hover {
+  background-color: rgb(255 255 255 / 0.12);
+}
+/* The platform's close red, the one colour here that isn't a token. */
+body .window-controls .caption-button.is-close:hover {
+  background-color: #c42b1c;
+  color: #fff;
+}
+body .window-controls .caption-button.is-close:active {
+  background-color: #b3271a;
+  color: #fff;
+}
+
 html,
 body,
 #root {

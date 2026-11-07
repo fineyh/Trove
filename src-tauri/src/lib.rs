@@ -52,12 +52,21 @@ pub fn run() {
             }
             // Created here rather than in tauri.conf.json so it can be
             // incognito: no history or disk cache written by the WebView.
-            tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::default())
+            let main = tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::default())
                 .title("Trove")
                 .inner_size(1280.0, 800.0)
                 .min_inner_size(900.0, 600.0)
-                .incognito(true)
-                .build()?;
+                .incognito(true);
+            // No system title bar: the panes' own headers are the title bar
+            // and the window buttons are drawn by the frontend (ADR-043).
+            // macOS keeps its traffic lights over the content instead.
+            #[cfg(target_os = "macos")]
+            let main = main
+                .title_bar_style(tauri::TitleBarStyle::Overlay)
+                .hidden_title(true);
+            #[cfg(not(target_os = "macos"))]
+            let main = main.decorations(false);
+            main.build()?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

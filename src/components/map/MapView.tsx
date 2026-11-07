@@ -4,7 +4,7 @@ import "leaflet.markercluster";
 import "leaflet/dist/leaflet.css";
 import "leaflet.markercluster/dist/MarkerCluster.css";
 import "leaflet.markercluster/dist/MarkerCluster.Default.css";
-import { CloudOff, ImageOff, Loader2, MapPin, Play, X } from "lucide-react";
+import { ArrowLeft, CloudOff, ImageOff, Loader2, MapPin, Play, X } from "lucide-react";
 import { IconButton } from "../ui/Button";
 import { EmptyState } from "../ui/EmptyState";
 import { useSessionStore } from "../../stores/session";
@@ -187,11 +187,14 @@ function MapOverlay() {
 
   return (
     <div className="fixed inset-y-0 left-16 right-0 z-40 flex flex-col border-l border-app-border bg-app-panel">
-      <div className="flex h-[52px] shrink-0 items-center gap-2 border-b border-app-border pl-4 pr-2.5">
+      <div
+        data-drag-region
+        className="flex h-[52px] shrink-0 items-center gap-2 border-b border-app-border pl-2.5 pr-[calc(var(--wc-width)+10px)]"
+      >
+        {/* Back, on the left: an X here would sit right beside the window's close. */}
+        <IconButton label="返回会话" icon={<ArrowLeft size={18} />} onClick={() => setMapOpen(false)} />
         <span className="text-base font-semibold">地图</span>
         {!loading && <span className="text-xs text-app-muted">{media.length.toLocaleString()} 个有位置的文件</span>}
-        <div className="flex-1" />
-        <IconButton label="关闭" icon={<X size={18} />} onClick={() => setMapOpen(false)} />
       </div>
 
       {/* `isolate` traps Leaflet's internal z-indexes (panes z200–700, controls
