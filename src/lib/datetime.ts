@@ -59,3 +59,17 @@ export function formatFullDateTime(ts: number): string {
   const mm = String(d.getMinutes()).padStart(2, "0");
   return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 ${WEEKDAYS[d.getDay()]} ${hh}:${mm}`;
 }
+
+/** 会话列表右上角的时间：今天 HH:MM / 昨天 / 一周内周X / 今年 M/D / 更早 YYYY/M/D。 */
+export function formatListTime(ts: number): string {
+  const diff = dayDiff(ts);
+  if (diff <= 0) return formatMessageTime(ts);
+  if (diff === 1) return "昨天";
+  const d = new Date(ts);
+  if (diff < 7) return WEEKDAYS[d.getDay()];
+  if (d.getFullYear() === new Date().getFullYear()) return `${d.getMonth() + 1}/${d.getDate()}`;
+  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+/** 消息流里两条消息隔了多久才插一条时间（同一天内）。 */
+export const TIME_GAP_MS = 5 * 60_000;

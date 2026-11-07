@@ -7,6 +7,8 @@ import { useLibrariesStore } from "../../stores/libraries";
 import { useSessionStore } from "../../stores/session";
 import { useThumbUrl } from "../../stores/thumbs";
 import { toast } from "../../stores/toast";
+import { Button } from "../ui/Button";
+import { Segmented } from "../ui/Segmented";
 import { cn } from "../../lib/cn";
 import { isHeicExt } from "../../lib/heic";
 import { formatDuration, isImageMedia } from "../../lib/media";
@@ -75,49 +77,38 @@ export function MediaGrid({ convId }: MediaGridProps) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex border-b border-app-border px-3 pt-2">
-        {(["all", "image", "video", "other"] as const).map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => setTab(t)}
-            className={cn(
-              "px-3 py-2 text-sm",
-              tab === t
-                ? "border-b-2 border-app-accent text-app-fg"
-                : "text-app-muted hover:text-app-fg",
-            )}
-          >
-            {t === "all" ? "全部" : t === "image" ? "图片" : t === "video" ? "视频" : "其他"}
-          </button>
-        ))}
+      <div className="px-4 pb-3">
+        <Segmented
+          className="w-full"
+          value={tab}
+          onChange={setTab}
+          options={[
+            { value: "all", label: "全部" },
+            { value: "image", label: "照片" },
+            { value: "video", label: "视频" },
+            { value: "other", label: "文件" },
+          ]}
+        />
       </div>
-      <div className="flex-1 overflow-y-auto p-3">
+      <div className="flex-1 overflow-y-auto px-4 pb-4">
         {loading && media.length === 0 ? (
           <div className="flex justify-center py-12 text-app-muted">
             <Loader2 size={20} className="animate-spin" />
           </div>
         ) : items.length === 0 ? (
-          <div className="py-12 text-center text-sm text-app-muted">
-            暂无内容
-          </div>
+          <div className="py-12 text-center text-xs text-app-muted">没有内容</div>
         ) : (
           <>
-            <div className="grid grid-cols-3 gap-1.5">
+            <div className="grid grid-cols-3 gap-1">
               {items.map((m) => (
                 <GridItem key={m.id} message={m} onOpen={() => openItem(m, open)} />
               ))}
             </div>
             {hasMore && (
               <div className="pt-3 text-center">
-                <button
-                  type="button"
-                  onClick={() => void loadOlder(convId)}
-                  disabled={loadingOlder}
-                  className="rounded-md border border-app-border px-3 py-1.5 text-xs text-app-muted hover:bg-app-subtle disabled:opacity-60"
-                >
-                  {loadingOlder ? "加载中…" : "加载更早"}
-                </button>
+                <Button size="sm" variant="ghost" onClick={() => void loadOlder(convId)} loading={loadingOlder}>
+                  加载更多
+                </Button>
               </div>
             )}
           </>
@@ -153,8 +144,8 @@ function GridItem({
       type="button"
       onClick={onOpen}
       disabled={missing}
-      title={offline ? "所在的盘没有连接" : missing ? "文件不在原位置" : undefined}
-      className="group relative aspect-square overflow-hidden rounded-lg bg-app-subtle"
+      data-tip={offline ? "离线" : missing ? "缺失" : undefined}
+      className="relative aspect-square overflow-hidden rounded-md bg-app-subtle"
     >
       {src && !failed ? (
         <img
@@ -165,7 +156,7 @@ function GridItem({
           draggable={false}
           onError={() => setFailed(true)}
           className={cn(
-            "h-full w-full object-cover transition-transform duration-300 group-hover:scale-105",
+            "h-full w-full object-cover transition-opacity duration-fast hover:opacity-90",
             (offline || missing) && "opacity-60 grayscale",
           )}
         />
@@ -175,7 +166,7 @@ function GridItem({
         </span>
       )}
       {media.kind === "video" && src && !failed && (
-        <span className="absolute bottom-1 left-1 flex items-center gap-0.5 rounded bg-black/55 px-1 py-px text-[10px] font-medium text-white">
+        <span className="absolute bottom-1 left-1 flex items-center gap-0.5 rounded bg-black/50 px-1 text-2xs font-medium text-white">
           <Play size={8} fill="currentColor" />
           {media.durationMs ? formatDuration(media.durationMs) : ""}
         </span>

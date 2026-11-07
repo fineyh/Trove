@@ -1,21 +1,23 @@
 import { ArrowRightLeft, ImagePlus, MoreHorizontal, Pencil, Pin, PinOff, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { useConversationsStore } from "../../stores/conversations";
 import { useLibrariesStore } from "../../stores/libraries";
-import { ConvAvatar } from "../ui/ConvAvatar";
 import { useSessionStore } from "../../stores/session";
 import { toast } from "../../stores/toast";
+import { Button, IconButton } from "../ui/Button";
 import { ContextMenu } from "../ui/ContextMenu";
+import { ConvAvatar } from "../ui/ConvAvatar";
+import { TextField } from "../ui/Field";
+import { Modal, useEscapeLayer } from "../ui/Modal";
 import { MediaGrid } from "./MediaGrid";
 
+/** Conversation info, docked to the right of the chat. */
 export function ProfileDrawer() {
   const open = useSessionStore((s) => s.profileDrawerOpen);
   const setOpen = useSessionStore((s) => s.setProfileDrawerOpen);
   const activeId = useSessionStore((s) => s.activeConversationId);
-  const conv = useConversationsStore((s) =>
-    activeId ? s.list.find((c) => c.id === activeId) ?? null : null,
-  );
+  const conv = useConversationsStore((s) => (activeId ? (s.list.find((c) => c.id === activeId) ?? null) : null));
   const rename = useConversationsStore((s) => s.rename);
   const togglePinned = useConversationsStore((s) => s.togglePinned);
   const setAvatar = useConversationsStore((s) => s.setAvatar);
@@ -24,58 +26,56 @@ export function ProfileDrawer() {
 
   const moreBtnRef = useRef<HTMLButtonElement>(null);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
-  const [renaming, setRenaming] = useState(false);
-  const [draftName, setDraftName] = useState("");
+  const [renaming, setRenaming] = useState<string | null>(null);
   const [renameBusy, setRenameBusy] = useState(false);
+
+  useEscapeLayer(open && conv !== null && renaming === null, () => setOpen(false));
 
   if (!open || !conv) return null;
 
-  const close = () => setOpen(false);
-
   const openMenu = () => {
     const rect = moreBtnRef.current?.getBoundingClientRect();
-    if (rect) setMenu({ x: rect.right, y: rect.bottom + 4 });
+    if (rect) setMenu({ x: rect.left, y: rect.bottom + 4 });
   };
 
-  const startRename = () => {
-    setMenu(null);
-    setDraftName(conv.name);
-    setRenaming(true);
+  const submitRename = async () => {
+    const next = (renaming ?? "").trim();
+    if (!next || next === conv.name) {
+      setRenaming(null);
+      return;
+    }
+    setRenameBusy(true);
+    try {
+      await rename(conv.id, next);
+      setRenaming(null);
+    } catch (e) {
+      toast.error("重命名失败", e);
+    } finally {
+      setRenameBusy(false);
+    }
   };
 
   return (
     <>
-      <div className="fixed inset-0 z-30 bg-black/30" onClick={close} />
-      <aside className="fixed right-0 top-0 z-40 flex h-full w-96 animate-pop-in flex-col border-l border-app-border bg-app-panel shadow-2xl">
-        <header className="flex items-center justify-between gap-3 border-b border-app-border px-4 py-3">
-          <ConvAvatar conv={conv} size={40} />
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-semibold">{conv.name}</div>
-            <div className="text-xs text-app-muted">
-              {conv.messageCount} 条消息 ·{" "}
-              {conv.kind === "folder_watch" ? "路径会话" : "手动会话"}
-            </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-1">
-            <button
-              ref={moreBtnRef}
-              type="button"
-              onClick={openMenu}
-              title="更多"
-              className="flex h-8 w-8 items-center justify-center rounded text-app-muted hover:bg-app-subtle"
-            >
-              <MoreHorizontal size={16} />
-            </button>
-            <button
-              type="button"
-              onClick={close}
-              className="flex h-8 w-8 items-center justify-center rounded text-app-muted hover:bg-app-subtle"
-            >
-              <X size={16} />
-            </button>
-          </div>
+      <aside className="flex h-full w-[320px] shrink-0 animate-slide-in-right flex-col border-l border-app-border bg-app-panel">
+        <header className="flex h-[52px] shrink-0 items-center gap-1 pl-4 pr-2.5">
+          <span className="flex-1 text-sm font-semibold">会话信息</span>
+          <IconButton ref={moreBtnRef} label="更多" size="sm" icon={<MoreHorizontal size={16} />} onClick={openMenu} />
+          <IconButton label="关闭" size="sm" icon={<X size={16} />} onClick={() => setOpen(false)} />
         </header>
-        <div className="flex-1 overflow-hidden">
+
+        <div className="flex flex-col items-center gap-2 px-4 pb-5 pt-3 text-center">
+          <ConvAvatar conv={conv} size={64} />
+          <div className="mt-1 flex max-w-full flex-col">
+            <span className="truncate text-base font-semibold">{conv.name}</span>
+            <span className="text-xs text-app-muted">
+              {conv.kind === "folder_watch" ? "同步文件夹 · " : ""}
+              {conv.messageCount.toLocaleString()} 条
+            </span>
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1">
           <MediaGrid convId={conv.id} />
         </div>
       </aside>
@@ -84,23 +84,19 @@ export function ProfileDrawer() {
         open={menu !== null}
         x={menu?.x ?? 0}
         y={menu?.y ?? 0}
+        onClose={() => setMenu(null)}
         items={[
           {
-            label: conv.pinned ? "取消置顶" : "置顶会话",
-            icon: conv.pinned ? <PinOff size={14} /> : <Pin size={14} />,
+            label: "重命名",
+            icon: <Pencil size={15} />,
             onClick: () => {
-              void togglePinned(conv.id, !conv.pinned);
               setMenu(null);
+              setRenaming(conv.name);
             },
           },
           {
-            label: "修改会话名",
-            icon: <Pencil size={14} />,
-            onClick: startRename,
-          },
-          {
             label: "更换头像…",
-            icon: <ImagePlus size={14} />,
+            icon: <ImagePlus size={15} />,
             onClick: () => {
               setMenu(null);
               void openFileDialog({
@@ -112,8 +108,17 @@ export function ProfileDrawer() {
             },
           },
           {
+            label: conv.pinned ? "取消置顶" : "置顶",
+            icon: conv.pinned ? <PinOff size={15} /> : <Pin size={15} />,
+            onClick: () => {
+              setMenu(null);
+              void togglePinned(conv.id, !conv.pinned).catch((e) => toast.error("置顶失败", e));
+            },
+          },
+          "separator",
+          {
             label: "移到其他库…",
-            icon: <ArrowRightLeft size={14} />,
+            icon: <ArrowRightLeft size={15} />,
             disabled: libraryCount < 2,
             onClick: () => {
               setMenu(null);
@@ -121,124 +126,45 @@ export function ProfileDrawer() {
             },
           },
         ]}
-        onClose={() => setMenu(null)}
       />
 
-      {renaming && (
-        <RenameDialog
-          initialName={conv.name}
-          value={draftName}
-          busy={renameBusy}
-          onChange={setDraftName}
-          onCancel={() => {
-            if (!renameBusy) setRenaming(false);
-          }}
-          onConfirm={async () => {
-            const next = draftName.trim();
-            if (next.length === 0 || next === conv.name) {
-              setRenaming(false);
-              return;
-            }
-            setRenameBusy(true);
-            try {
-              await rename(conv.id, next);
-              setRenaming(false);
-            } catch (e) {
-              toast.error("修改会话名失败", e);
-            } finally {
-              setRenameBusy(false);
-            }
-          }}
-        />
-      )}
-    </>
-  );
-}
-
-interface RenameDialogProps {
-  initialName: string;
-  value: string;
-  busy: boolean;
-  onChange: (v: string) => void;
-  onConfirm: () => void;
-  onCancel: () => void;
-}
-
-function RenameDialog({
-  initialName,
-  value,
-  busy,
-  onChange,
-  onConfirm,
-  onCancel,
-}: RenameDialogProps) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !busy) onCancel();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [busy, onCancel]);
-
-  const trimmed = value.trim();
-  const canSubmit = !busy && trimmed.length > 0 && trimmed !== initialName;
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-      onClick={() => {
-        if (!busy) onCancel();
-      }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="flex w-full max-w-sm flex-col gap-4 rounded-lg border border-app-border bg-app-panel p-5 shadow-xl"
+      <Modal
+        open={renaming !== null}
+        onClose={() => setRenaming(null)}
+        busy={renameBusy}
+        width="sm"
+        title="重命名"
+        footer={
+          <>
+            <Button onClick={() => setRenaming(null)} disabled={renameBusy}>
+              取消
+            </Button>
+            <Button
+              variant="primary"
+              onClick={() => void submitRename()}
+              loading={renameBusy}
+              disabled={!renaming?.trim() || renaming.trim() === conv.name}
+            >
+              保存
+            </Button>
+          </>
+        }
       >
-        <div className="flex items-center justify-between">
-          <div className="text-base font-semibold">修改会话名</div>
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={busy}
-            className="flex h-7 w-7 items-center justify-center rounded text-app-muted hover:bg-app-subtle disabled:opacity-40"
-          >
-            <X size={16} />
-          </button>
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-app-muted">名称</label>
-          <input
-            type="text"
-            value={value}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void submitRename();
+          }}
+        >
+          <TextField
+            value={renaming ?? ""}
             autoFocus
-            onChange={(e) => onChange(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && canSubmit) onConfirm();
-            }}
-            className="rounded-md border border-app-border bg-app-subtle px-3 py-2 text-sm outline-none focus:border-app-accent/60 focus:bg-app-panel"
+            maxLength={60}
+            onFocus={(e) => e.currentTarget.select()}
+            onChange={(e) => setRenaming(e.target.value)}
           />
-        </div>
-
-        <div className="flex justify-end gap-2 pt-1">
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={busy}
-            className="rounded-md border border-app-border px-3 py-1.5 text-sm hover:bg-app-subtle disabled:opacity-40"
-          >
-            取消
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={!canSubmit}
-            className="rounded-md bg-app-accent px-3 py-1.5 text-sm text-white hover:opacity-90 disabled:opacity-40"
-          >
-            {busy ? "保存中..." : "保存"}
-          </button>
-        </div>
-      </div>
-    </div>
+        </form>
+      </Modal>
+    </>
   );
 }

@@ -10,7 +10,6 @@ import {
   Play,
   Trash2,
   UserSquare2,
-  Wrench,
 } from "lucide-react";
 import type { Message } from "../../types";
 import * as ipc from "../../ipc/client";
@@ -20,19 +19,25 @@ import { useConversationsStore } from "../../stores/conversations";
 import { useLibrariesStore } from "../../stores/libraries";
 import { useThumbUrl } from "../../stores/thumbs";
 import { toast } from "../../stores/toast";
-import { ContextMenu, type ContextMenuItem } from "../ui/ContextMenu";
+import { ContextMenu, type ContextMenuEntry } from "../ui/ContextMenu";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { openPlayerWindow } from "../../lib/playerWindow";
-import { formatFullDateTime, formatMessageTime } from "../../lib/datetime";
 import { formatBytes, formatDuration, isImageMedia, kindLabel } from "../../lib/media";
 import { cn } from "../../lib/cn";
 
-interface MessageBubbleProps {
-  message: Message;
+/** Longest side of a single preview, CSS px. Matches the stored thumbnail. */
+const PREVIEW_MAX = 320;
+const PREVIEW_MIN = 120;
+
+/** Fixed-height tile inside an album row; width follows the aspect ratio. */
+export interface TileSize {
+  height: number;
 }
 
-/** Longest side of a chat preview, CSS px. Matches the stored thumbnail. */
-const PREVIEW_MAX = 320;
+interface MessageBubbleProps {
+  message: Message;
+  tile?: TileSize;
+}
 
 function formatPlayCount(n: number): string {
   if (n < 1000) return n.toString();
@@ -40,12 +45,19 @@ function formatPlayCount(n: number): string {
   return `${(n / 1_000_000).toFixed(1)}M`;
 }
 
-/** Box size for a preview, from known dimensions; square-ish fallback. */
-function previewBox(w: number | null, h: number | null): React.CSSProperties {
+/** Box for a preview from known dimensions; 4:3 when unknown. */
+function previewBox(w: number | null, h: number | null, tile?: TileSize): React.CSSProperties {
+  if (tile) {
+    const ratio = w && h ? w / h : 4 / 3;
+    return { height: tile.height, width: Math.round(Math.min(Math.max(tile.height * ratio, 96), tile.height * 2)) };
+  }
   if (!w || !h) return { width: 240, aspectRatio: "4 / 3" };
   const s = Math.min(1, PREVIEW_MAX / Math.max(w, h));
-  return { width: Math.max(120, Math.round(w * s)), aspectRatio: `${w} / ${h}` };
+  return { width: Math.max(PREVIEW_MIN, Math.round(w * s)), aspectRatio: `${w} / ${h}` };
 }
+
+/** Hairline that keeps white photos from melting into the background. */
+const MEDIA_FRAME = "rounded-lg bg-app-subtle ring-1 ring-inset ring-black/[0.06] dark:ring-white/[0.06]";
 
 function useLib(): string | null {
   return useLibrariesStore((s) => s.current);
@@ -57,7 +69,7 @@ function Shimmer() {
   );
 }
 
-function ImageMessage({ message }: MessageBubbleProps) {
+function ImageMessage({ message, tile }: MessageBubbleProps) {
   const lib = useLib();
   const open = useSessionStore((s) => s.openLightbox);
   const media = message.media!;
@@ -72,13 +84,12 @@ function ImageMessage({ message }: MessageBubbleProps) {
     <button
       type="button"
       onClick={() => open(message.id)}
-      className="group relative block overflow-hidden rounded-2xl border border-app-border bg-app-subtle shadow-sm"
-      style={previewBox(media.width, media.height)}
+      className={cn("relative block overflow-hidden", MEDIA_FRAME)}
+      style={previewBox(media.width, media.height, tile)}
     >
       {failed ? (
-        <span className="flex h-full w-full flex-col items-center justify-center gap-1.5 text-xs text-app-muted">
+        <span className="flex h-full w-full items-center justify-center text-app-muted">
           <ImageOff size={20} />
-          无法预览，点开查看
         </span>
       ) : src ? (
         <img
@@ -88,7 +99,7 @@ function ImageMessage({ message }: MessageBubbleProps) {
           decoding="async"
           draggable={false}
           onError={() => setFailed(true)}
-          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+          className="h-full w-full object-cover"
         />
       ) : (
         <Shimmer />
@@ -97,7 +108,7 @@ function ImageMessage({ message }: MessageBubbleProps) {
   );
 }
 
-function VideoMessage({ message }: MessageBubbleProps) {
+function VideoMessage({ message, tile }: MessageBubbleProps) {
   const lib = useLib();
   const ref = useRef<HTMLVideoElement | null>(null);
   const open = useSessionStore((s) => s.openLightbox);
@@ -131,8 +142,8 @@ function VideoMessage({ message }: MessageBubbleProps) {
     <button
       type="button"
       onClick={() => open(message.id)}
-      className="group relative block overflow-hidden rounded-2xl border border-app-border bg-black shadow-sm"
-      style={previewBox(media.width, media.height)}
+      className="relative block overflow-hidden rounded-lg bg-black"
+      style={previewBox(media.width, media.height, tile)}
     >
       {lib && (
         <video
@@ -150,136 +161,149 @@ function VideoMessage({ message }: MessageBubbleProps) {
       )}
       {!playing && (
         <span className="absolute inset-0 flex items-center justify-center">
-          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur-sm transition group-hover:scale-110">
-            <Play size={18} fill="currentColor" className="ml-0.5" />
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-black/40 text-white">
+            <Play size={16} fill="currentColor" className="ml-0.5" />
           </span>
         </span>
       )}
-      <span className="absolute bottom-2 left-2 rounded-full bg-black/55 px-2 py-0.5 text-[11px] font-medium text-white backdrop-blur-sm">
+      <span className="absolute bottom-1.5 left-1.5 flex items-center gap-1.5 rounded-md bg-black/50 px-1.5 text-2xs font-medium leading-[18px] text-white">
         {media.durationMs ? formatDuration(media.durationMs) : "视频"}
+        {message.playCount > 0 && (
+          <span className="flex items-center gap-0.5 opacity-80">
+            <Play size={8} fill="currentColor" />
+            {formatPlayCount(message.playCount)}
+          </span>
+        )}
       </span>
-      {message.playCount > 0 && (
-        <span className="absolute bottom-2 right-2 flex items-center gap-1 rounded-full bg-black/55 px-2 py-0.5 text-[11px] text-white backdrop-blur-sm">
-          <Play size={9} fill="currentColor" />
-          {formatPlayCount(message.playCount)}
-        </span>
-      )}
     </button>
   );
 }
 
-/** Volume not mounted: still shows what it is (thumbnail), just can't open. */
-function OfflineMedia({ message }: MessageBubbleProps) {
+/** A file-like card: icon tile, one title line, one meta line. */
+function Card({
+  icon,
+  title,
+  meta,
+  onClick,
+  tone = "default",
+}: {
+  icon: React.ReactNode;
+  title: React.ReactNode;
+  meta: React.ReactNode;
+  onClick?: () => void;
+  tone?: "default" | "warning" | "danger";
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex w-64 items-center gap-3 rounded-xl border bg-app-panel p-2.5 pr-3.5 text-left transition-colors duration-fast hover:bg-app-hover/[0.03]",
+        tone === "danger" ? "border-dashed border-app-danger/40" : "border-app-border",
+      )}
+    >
+      <span
+        className={cn(
+          "relative flex h-11 w-11 shrink-0 flex-col items-center justify-center overflow-hidden rounded-lg",
+          tone === "warning" && "bg-app-warning/10 text-app-warning",
+          tone === "danger" && "bg-app-danger/10 text-app-danger",
+          tone === "default" && "bg-app-accent/10 text-app-accent",
+        )}
+      >
+        {icon}
+      </span>
+      <span className="flex min-w-0 flex-col">
+        <span className="truncate text-sm font-medium">{title}</span>
+        <span className="truncate text-xs text-app-muted">{meta}</span>
+      </span>
+    </button>
+  );
+}
+
+/** Disk not connected: still shows what it is (thumbnail), just can't open. */
+function OfflineMedia({ message, tile }: MessageBubbleProps) {
   const lib = useLib();
   const media = message.media!;
   const thumb = useThumbUrl(lib, media);
-  const notify = () =>
-    toast.info("文件所在的盘没有连接", "连接那块盘（或打开对应的加密盘）后就能打开。");
+  const notify = () => toast.info("文件所在的磁盘未连接");
 
   if (!thumb) {
-    return (
-      <button
-        type="button"
-        onClick={notify}
-        className="flex w-64 items-center gap-3 rounded-2xl border border-app-border bg-app-panel px-3.5 py-3 text-left shadow-sm"
-      >
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-amber-600">
-          <CloudOff size={18} />
-        </span>
-        <span className="flex min-w-0 flex-col">
-          <span className="text-sm font-medium">{kindLabel(media)} · 离线</span>
-          <span className="text-xs text-app-muted">所在的盘没有连接</span>
-        </span>
-      </button>
-    );
+    return <Card tone="warning" icon={<CloudOff size={18} />} title={message.caption ?? kindLabel(media)} meta="离线 · 磁盘未连接" onClick={notify} />;
   }
   return (
     <button
       type="button"
       onClick={notify}
-      className="relative block overflow-hidden rounded-2xl border border-app-border bg-app-subtle shadow-sm"
-      style={previewBox(media.width, media.height)}
+      className={cn("relative block overflow-hidden", MEDIA_FRAME)}
+      style={previewBox(media.width, media.height, tile)}
     >
-      <img src={thumb} alt="" draggable={false} className="h-full w-full object-cover opacity-70 grayscale-[35%]" />
-      <span className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-[11px] font-medium text-white backdrop-blur-sm">
-        <CloudOff size={11} />
+      <img src={thumb} alt="" draggable={false} className="h-full w-full object-cover opacity-60 grayscale-[40%]" />
+      <span className="absolute left-1.5 top-1.5 flex items-center gap-1 rounded-md bg-black/55 px-1.5 text-2xs font-medium leading-[18px] text-white">
+        <CloudOff size={10} />
         离线
       </span>
     </button>
   );
 }
 
-/** Volume mounted, file gone: never hidden, always points at the fix. */
+/** Disk connected, file gone: never hidden, always points at the fix. */
 function MissingMedia({ message }: MessageBubbleProps) {
   const lib = useLib();
   const media = message.media!;
   const thumb = useThumbUrl(lib, media);
   const openSettings = useSessionStore((s) => s.setSettingsOpen);
   return (
-    <div className="flex w-72 items-center gap-3 rounded-2xl border border-dashed border-red-500/40 bg-red-500/[0.04] p-2.5 pr-3">
-      <span className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-app-subtle text-app-muted">
-        {thumb ? (
-          <img src={thumb} alt="" className="h-full w-full object-cover opacity-50 grayscale" draggable={false} />
-        ) : (
-          <ImageOff size={18} />
-        )}
-      </span>
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="text-sm font-medium">{kindLabel(media)}不在原位置</span>
-        <span className="text-xs text-app-muted">可能被移动、改名或删除了</span>
-      </span>
-      <button
-        type="button"
-        onClick={() => openSettings(true, "storage")}
-        className="flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-app-accent transition hover:bg-app-accent/10"
-      >
-        <Wrench size={12} />
-        修复
-      </button>
-    </div>
+    <Card
+      tone="danger"
+      icon={thumb ? <img src={thumb} alt="" className="h-full w-full object-cover opacity-50 grayscale" draggable={false} /> : <ImageOff size={18} />}
+      title={message.caption ?? kindLabel(media)}
+      meta={<span>缺失 · <span className="text-app-accent">重新链接</span></span>}
+      onClick={() => openSettings(true, "storage")}
+    />
   );
 }
 
 function FileMessage({ message }: MessageBubbleProps) {
   const lib = useLib();
   const media = message.media!;
-  const openFile = () => {
-    if (lib) void ipc.openMedia(lib, media.id).catch((e) => toast.error("打开失败", e));
-  };
   return (
-    <button
-      type="button"
-      onClick={openFile}
-      title="用默认应用打开"
-      className="flex w-64 items-center gap-3 rounded-2xl border border-app-border bg-app-panel px-3.5 py-3 text-left shadow-sm transition hover:bg-app-subtle"
-    >
-      <span className="flex h-10 w-10 shrink-0 flex-col items-center justify-center rounded-xl bg-app-accent/10 text-app-accent">
-        <FileIcon size={16} />
-        {media.ext && <span className="mt-0.5 text-[8px] font-bold uppercase leading-none">{media.ext.slice(0, 4)}</span>}
-      </span>
-      <span className="flex min-w-0 flex-col">
-        <span className="truncate text-sm font-medium">{message.caption ?? "文件"}</span>
-        <span className="text-xs text-app-muted">{formatBytes(media.sizeBytes)}</span>
-      </span>
-    </button>
+    <Card
+      icon={
+        <>
+          <FileIcon size={16} />
+          {media.ext && <span className="mt-0.5 text-[8px] font-bold uppercase leading-none">{media.ext.slice(0, 4)}</span>}
+        </>
+      }
+      title={message.caption ?? "文件"}
+      meta={formatBytes(media.sizeBytes)}
+      onClick={() => lib && void ipc.openMedia(lib, media.id).catch((e) => toast.error("打开失败", e))}
+    />
   );
 }
 
 function TextMessage({ message }: MessageBubbleProps) {
   return (
-    <div className="max-w-md select-text whitespace-pre-wrap break-words rounded-2xl rounded-bl-md bg-app-accent px-3.5 py-2 text-sm leading-relaxed text-white shadow-sm">
+    <div className="selectable max-w-[min(480px,100%)] whitespace-pre-wrap break-words rounded-xl bg-app-accent/10 px-3 py-[7px] text-sm leading-[22px] text-app-fg dark:bg-app-accent/[0.16]">
       {message.caption}
     </div>
   );
 }
 
-export function MessageBubble({ message }: MessageBubbleProps) {
+/** Image or offline-with-thumbnail: can sit in an album row. */
+export function isTileable(m: Message): boolean {
+  const media = m.media;
+  if (!media) return false;
+  if (media.status === "missing") return false;
+  if (media.status === "offline") return media.hasThumb && isImageMedia(media);
+  return isImageMedia(media);
+}
+
+export function MessageBubble({ message, tile }: MessageBubbleProps) {
   const lib = useLib();
   const remove = useMessagesStore((s) => s.remove);
-  // folder_watch ("路径") conversations mirror a live folder — deleting a
-  // message record alone is futile (a rescan/watcher event re-adds the file),
-  // so the chat view disables message deletion for them. Missing-file
-  // cleanup still happens via BrokenManagerDialog (a separate path).
+  // Synced-folder conversations mirror a live folder: deleting a message
+  // record alone is futile (a rescan re-adds the file), so they don't offer
+  // it. Missing files are cleaned up from the missing-files dialog instead.
   const isFolderWatch = useConversationsStore(
     (s) => s.list.find((c) => c.id === message.convId)?.kind === "folder_watch",
   );
@@ -294,15 +318,12 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   const isImage = media != null && isImageMedia(media);
   const isVideo = media?.kind === "video";
 
-  const time = formatMessageTime(message.createdAt);
-  const fullTime = formatFullDateTime(message.createdAt);
-
   let body: React.ReactNode;
   if (!media) body = <TextMessage message={message} />;
-  else if (media.status === "offline") body = <OfflineMedia message={message} />;
+  else if (media.status === "offline") body = <OfflineMedia message={message} tile={tile} />;
   else if (media.status === "missing") body = <MissingMedia message={message} />;
-  else if (isImage) body = <ImageMessage message={message} />;
-  else if (isVideo) body = <VideoMessage message={message} />;
+  else if (isImage) body = <ImageMessage message={message} tile={tile} />;
+  else if (isVideo) body = <VideoMessage message={message} tile={tile} />;
   else body = <FileMessage message={message} />;
 
   const openConfirm = () => {
@@ -317,7 +338,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
       await remove(message.id, message.convId, reachable && deleteFile);
       setConfirmOpen(false);
     } catch (err) {
-      toast.error("删除消息失败", err);
+      toast.error("删除失败", err);
     } finally {
       setBusy(false);
     }
@@ -328,31 +349,39 @@ export function MessageBubble({ message }: MessageBubbleProps) {
     void fn().catch((e) => toast.error(failText, e));
   };
 
-  const menuItems: ContextMenuItem[] = [];
+  const menuItems: ContextMenuEntry[] = [];
+  if (!media && message.caption) {
+    menuItems.push({
+      label: "复制",
+      icon: <Copy size={15} />,
+      onClick: act(() => navigator.clipboard.writeText(message.caption ?? ""), "复制失败"),
+    });
+  }
   if (media && lib) {
     if (reachable && (isVideo || isImage)) {
       menuItems.push({
-        label: isImage ? "在新窗口打开" : "在新窗口播放",
-        icon: <PictureInPicture2 size={14} />,
+        label: "在新窗口打开",
+        icon: <PictureInPicture2 size={15} />,
         onClick: act(() => openPlayerWindow(message), "打开窗口失败"),
       });
     }
     menuItems.push(
       {
         label: "用默认应用打开",
-        icon: <ExternalLink size={14} />,
+        icon: <ExternalLink size={15} />,
         disabled: !reachable,
         onClick: act(() => ipc.openMedia(lib, media.id), "打开失败"),
       },
       {
-        label: "在文件夹中显示",
-        icon: <FolderSearch size={14} />,
+        label: "在资源管理器中显示",
+        icon: <FolderSearch size={15} />,
         disabled: !reachable,
         onClick: act(() => ipc.revealMedia(lib, media.id), "打开文件夹失败"),
       },
+      "separator",
       {
         label: "复制文件路径",
-        icon: <Copy size={14} />,
+        icon: <Copy size={15} />,
         onClick: act(async () => {
           const p = await ipc.mediaPathForCopy(lib, media.id);
           await navigator.clipboard.writeText(p);
@@ -363,7 +392,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
     if (isImage || isVideo) {
       menuItems.push({
         label: "设为会话头像",
-        icon: <UserSquare2 size={14} />,
+        icon: <UserSquare2 size={15} />,
         onClick: act(async () => {
           await setAvatar(message.convId, `media:${media.id}`);
           toast.success("已设为会话头像");
@@ -371,17 +400,18 @@ export function MessageBubble({ message }: MessageBubbleProps) {
       });
     }
   }
-  // folder_watch ("路径") conversations don't offer message deletion.
   if (!isFolderWatch) {
-    menuItems.push({
-      label: "删除消息",
+    menuItems.push("separator", {
+      label: "删除",
       variant: "danger",
-      icon: <Trash2 size={14} />,
+      icon: <Trash2 size={15} />,
       onClick: openConfirm,
     });
   }
 
   const handleContextMenu = (e: React.MouseEvent) => {
+    // Selected text keeps the system copy menu.
+    if (!media && window.getSelection()?.toString()) return;
     e.preventDefault();
     if (menuItems.length === 0) return;
     setMenu({ x: e.clientX, y: e.clientY });
@@ -389,25 +419,11 @@ export function MessageBubble({ message }: MessageBubbleProps) {
 
   return (
     <>
-      <div className={cn("flex flex-col items-start gap-1")} onContextMenu={handleContextMenu}>
+      <div className={cn(tile ? "shrink-0" : "flex")} onContextMenu={handleContextMenu}>
         {body}
-        {media && message.caption && media.kind !== "other" && (
-          <div className="max-w-xs select-text truncate text-xs text-app-fg/70" title={message.caption}>
-            {message.caption}
-          </div>
-        )}
-        <div className="text-[11px] text-app-muted" title={fullTime}>
-          {time}
-        </div>
       </div>
 
-      <ContextMenu
-        open={menu !== null}
-        x={menu?.x ?? 0}
-        y={menu?.y ?? 0}
-        onClose={() => setMenu(null)}
-        items={menuItems}
-      />
+      <ContextMenu open={menu !== null} x={menu?.x ?? 0} y={menu?.y ?? 0} onClose={() => setMenu(null)} items={menuItems} />
 
       <ConfirmDialog
         open={confirmOpen}
@@ -421,22 +437,16 @@ export function MessageBubble({ message }: MessageBubbleProps) {
         }}
         message={
           <div className="flex flex-col gap-3">
-            <p>
-              {reachable
-                ? "默认只删除这条消息，不会动磁盘上的原文件。"
-                : media
-                  ? "原文件当前不可用，将只删除这条消息记录。"
-                  : "确定删除这条消息吗？此操作无法撤销。"}
-            </p>
+            <p>{reachable ? "磁盘上的文件默认保留。" : "只删除这条消息。"}</p>
             {reachable && (
-              <label className="flex cursor-pointer items-center gap-2 text-sm text-app-fg/80">
+              <label className="flex items-center gap-2 text-sm text-app-fg">
                 <input
                   type="checkbox"
                   checked={deleteFile}
                   onChange={(e) => setDeleteFile(e.target.checked)}
-                  className="h-4 w-4 accent-red-600"
+                  className="h-4 w-4 accent-[rgb(var(--danger))]"
                 />
-                同时把原文件移到回收站
+                同时把文件移到回收站
               </label>
             )}
           </div>

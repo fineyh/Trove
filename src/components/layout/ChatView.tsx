@@ -1,4 +1,4 @@
-import { CloudOff, MessagesSquare } from "lucide-react";
+import { CloudOff, FolderSync, MessagesSquare, PanelRight } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { useConversationsStore } from "../../stores/conversations";
 import { EMPTY_MESSAGES, useMessagesStore } from "../../stores/messages";
@@ -6,11 +6,15 @@ import { useSessionStore } from "../../stores/session";
 import { Composer } from "../chat/Composer";
 import { Lightbox } from "../chat/Lightbox";
 import { MessageList } from "../chat/MessageList";
+import { IconButton } from "../ui/Button";
 import { ConvAvatar } from "../ui/ConvAvatar";
+import { EmptyState } from "../ui/EmptyState";
+import { ImportProgressBar } from "../ui/ImportProgressBar";
 
 export function ChatView() {
   const activeId = useSessionStore((s) => s.activeConversationId);
   const setDrawer = useSessionStore((s) => s.setProfileDrawerOpen);
+  const drawerOpen = useSessionStore((s) => s.profileDrawerOpen);
   const lightboxId = useSessionStore((s) => s.lightboxMessageId);
   const conv = useConversationsStore((s) =>
     activeId ? (s.list.find((c) => c.id === activeId) ?? null) : null,
@@ -37,14 +41,8 @@ export function ChatView() {
 
   if (!conv || activeId === null) {
     return (
-      <div className="flex h-full flex-1 items-center justify-center bg-app text-app-muted">
-        <div className="flex flex-col items-center gap-3 text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-app-subtle">
-            <MessagesSquare size={26} />
-          </div>
-          <div className="text-[15px] font-medium text-app-fg/80">选择一个会话开始浏览</div>
-          <div className="text-xs">或者点搜索框右侧的 + 新建一个</div>
-        </div>
+      <div className="flex h-full flex-1 items-center justify-center bg-app-panel">
+        <EmptyState icon={<MessagesSquare size={32} strokeWidth={1.5} />} title="选择一个会话" />
       </div>
     );
   }
@@ -52,30 +50,46 @@ export function ChatView() {
   const isWatch = conv.kind === "folder_watch";
 
   return (
-    <div className="flex h-full min-w-0 flex-1 flex-col">
-      <header className="flex h-[60px] shrink-0 items-center justify-between border-b border-app-border bg-app-panel/80 px-4 backdrop-blur">
+    <div className="flex h-full min-w-0 flex-1 flex-col bg-app-panel">
+      <header className="flex h-[52px] shrink-0 items-center gap-2 border-b border-app-border pl-3 pr-2.5">
         <button
           type="button"
           onClick={() => setDrawer(true)}
-          className="flex min-w-0 items-center gap-3 rounded-xl px-1.5 py-1 transition-colors hover:bg-app-subtle"
+          className="flex min-w-0 items-center gap-2.5 rounded-lg py-1 pl-1 pr-2 transition-colors duration-fast hover:bg-app-hover/[0.04]"
         >
-          <ConvAvatar conv={conv} size={36} />
+          <ConvAvatar conv={conv} size={32} />
           <div className="flex min-w-0 flex-col items-start">
-            <span className="truncate font-medium">{conv.name}</span>
-            <span className="flex items-center gap-1 text-xs text-app-muted">
-              {isWatch ? "路径会话 · 自动同步" : "手动会话"} · {conv.messageCount} 条
-              {conv.sourceOffline && (
-                <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-1.5 py-px text-[10px] font-medium text-amber-600 dark:text-amber-400">
-                  <CloudOff size={10} />
-                  源盘未连接
+            <span className="truncate text-sm font-semibold leading-5">{conv.name}</span>
+            <span className="flex items-center gap-1 text-2xs text-app-muted">
+              {conv.sourceOffline ? (
+                <span className="flex items-center gap-1 text-app-warning">
+                  <CloudOff size={11} />
+                  磁盘未连接
                 </span>
+              ) : (
+                <>
+                  {isWatch && (
+                    <>
+                      <FolderSync size={11} />
+                      同步文件夹 ·
+                    </>
+                  )}
+                  {conv.messageCount.toLocaleString()} 条
+                </>
               )}
             </span>
           </div>
         </button>
+        <div className="flex-1" />
+        <IconButton
+          label="会话信息"
+          icon={<PanelRight size={18} />}
+          active={drawerOpen}
+          onClick={() => setDrawer(!drawerOpen)}
+        />
       </header>
 
-      <main ref={mainRef} className="flex-1 overflow-y-auto bg-app">
+      <main ref={mainRef} className="flex-1 overflow-y-auto">
         <MessageList
           messages={messages}
           loading={loading}
@@ -86,11 +100,7 @@ export function ChatView() {
         />
       </main>
 
-      <Composer
-        convId={activeId}
-        disabled={isWatch}
-        disabledReason={isWatch ? "路径会话的内容来自绑定的文件夹，不支持手动上传" : undefined}
-      />
+      {isWatch ? <ImportProgressBar convId={activeId} /> : <Composer convId={activeId} />}
 
       {lightboxId !== null && <Lightbox convId={activeId} />}
     </div>

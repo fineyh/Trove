@@ -6,8 +6,9 @@ import {
 } from "react";
 import { Loader2 } from "lucide-react";
 import type { Message } from "../../types";
-import { MessageBubble } from "./MessageBubble";
-import { formatDayDivider, isSameDay } from "../../lib/datetime";
+import { MessageBubble, isTileable } from "./MessageBubble";
+import { TIME_GAP_MS, formatDayDivider, formatMessageTime, isSameDay } from "../../lib/datetime";
+import { EmptyState } from "../ui/EmptyState";
 
 /** 吸顶线距容器顶部的距离，对齐 `sticky top-2`（0.5rem = 8px）。 */
 const STICKY_OFFSET = 8;
@@ -16,14 +17,61 @@ const IDLE_FADE_MS = 1500;
 /** 距顶部多少像素内开始拉取更早的一页。 */
 const LOAD_OLDER_AT_PX = 300;
 
+/** The day's label, with the first message's time. While pinned to the top
+ *  it stands for the whole day, so the time is hidden then (styles.css). */
 function DayDivider({ ts }: { ts: number }) {
   return (
-    <div className="day-divider sticky top-2 z-10 flex justify-center py-1 transition-opacity duration-300">
-      <span className="rounded-full bg-app-subtle/80 px-3 py-0.5 text-[11px] text-app-muted backdrop-blur">
+    <div className="day-divider sticky top-2 z-10 flex justify-center py-2 transition-opacity duration-300">
+      <span className="rounded-full bg-app-panel/90 px-2.5 text-2xs font-medium leading-[22px] text-app-secondary shadow-sm ring-1 ring-app-border backdrop-blur">
         {formatDayDivider(ts)}
+        <span className="day-divider-time"> {formatMessageTime(ts)}</span>
       </span>
     </div>
   );
+}
+
+function TimeLabel({ ts }: { ts: number }) {
+  return <div className="pb-1.5 pt-3 text-center text-2xs text-app-muted">{formatMessageTime(ts)}</div>;
+}
+
+/** Height of a tile in an album row. */
+const TILE_H = 150;
+
+type Block =
+  | { kind: "time"; ts: number; key: string }
+  | { kind: "one"; m: Message; key: string }
+  | { kind: "album"; ms: Message[]; key: string };
+
+/**
+ * One day's messages → what to draw: a time label whenever the gap to the
+ * previous message exceeds TIME_GAP_MS (and before the first one), and runs of
+ * consecutive photos folded into one album row.
+ */
+function toBlocks(items: Message[]): Block[] {
+  const out: Block[] = [];
+  let run: Message[] = [];
+  const flush = () => {
+    if (run.length === 1) out.push({ kind: "one", m: run[0], key: `m${run[0].id}` });
+    else if (run.length > 1) out.push({ kind: "album", ms: run, key: `a${run[0].id}` });
+    run = [];
+  };
+  let prev: Message | null = null;
+  for (const m of items) {
+    // The first message's time is in the day divider.
+    if (prev && Math.abs(m.createdAt - prev.createdAt) > TIME_GAP_MS) {
+      flush();
+      out.push({ kind: "time", ts: m.createdAt, key: `t${m.id}` });
+    }
+    if (isTileable(m)) {
+      run.push(m);
+    } else {
+      flush();
+      out.push({ kind: "one", m, key: `m${m.id}` });
+    }
+    prev = m;
+  }
+  flush();
+  return out;
 }
 
 interface MessageListProps {
@@ -166,18 +214,10 @@ export function MessageList({
   }, [scrollContainerRef, messages.length]);
 
   if (loading && messages.length === 0) {
-    return (
-      <div className="flex h-full items-center justify-center text-sm text-app-muted">
-        加载中...
-      </div>
-    );
+    return <div className="flex h-full items-center justify-center" />;
   }
   if (messages.length === 0) {
-    return (
-      <div className="flex h-full items-center justify-center text-sm text-app-muted">
-        还没有消息，开始上传或输入吧
-      </div>
-    );
+    return <EmptyState className="h-full" title="还没有内容" />;
   }
 
   // 按自然日把消息分组，使 sticky 日期头的粘附区间 = 整组高度，
@@ -193,19 +233,16 @@ export function MessageList({
   }
 
   return (
-    <div ref={innerRef} className="flex flex-col gap-3 px-4 py-4">
+    <div ref={innerRef} className="flex flex-col px-5 pb-4 pt-2">
       {hasMore && (
-        <div className="flex justify-center py-1">
+        <div className="flex h-8 items-center justify-center">
           {loadingOlder ? (
-            <span className="flex items-center gap-1.5 text-xs text-app-muted">
-              <Loader2 size={12} className="animate-spin" />
-              加载更早的消息
-            </span>
+            <Loader2 size={14} className="animate-spin text-app-muted" />
           ) : (
             <button
               type="button"
               onClick={onLoadOlder}
-              className="rounded-full border border-app-border px-3 py-0.5 text-[11px] text-app-muted hover:bg-app-subtle hover:text-app-fg"
+              className="rounded-full px-3 text-2xs leading-6 text-app-muted transition-colors duration-fast hover:bg-app-hover/5 hover:text-app-fg"
             >
               加载更早的消息
             </button>
@@ -213,15 +250,23 @@ export function MessageList({
         </div>
       )}
       {groups.map((g) => (
-        <div
-          key={g.items[0].id}
-          data-day-group
-          className="flex flex-col gap-3"
-        >
+        <div key={g.items[0].id} data-day-group className="flex flex-col">
           <DayDivider ts={g.dayTs} />
-          {g.items.map((m) => (
-            <MessageBubble key={m.id} message={m} />
-          ))}
+          {toBlocks(g.items).map((b) =>
+            b.kind === "time" ? (
+              <TimeLabel key={b.key} ts={b.ts} />
+            ) : b.kind === "album" ? (
+              <div key={b.key} className="flex max-w-[640px] flex-wrap gap-1 py-[3px]">
+                {b.ms.map((m) => (
+                  <MessageBubble key={m.id} message={m} tile={{ height: TILE_H }} />
+                ))}
+              </div>
+            ) : (
+              <div key={b.key} className="py-[3px]">
+                <MessageBubble message={b.m} />
+              </div>
+            ),
+          )}
         </div>
       ))}
       <div ref={bottomRef} />

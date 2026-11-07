@@ -145,6 +145,9 @@ textarea:focus-visible {
 [data-scrolling="false"] .day-divider[data-stuck="true"] {
   opacity: 0;
 }
+.day-divider[data-stuck="true"] .day-divider-time {
+  display: none;
+}
 
 /* 视频控制条的竖向音量滑块（RotatableVideo）。原生 range 在 WebView2 上太丑，
    这里自绘 track + thumb；writing-mode 让滑块竖直、向上为增大。 */

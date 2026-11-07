@@ -22,30 +22,22 @@ import type { Conversation, SearchHit } from "../../types";
 import { cn } from "../../lib/cn";
 import { toast } from "../../stores/toast";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
+import { formatListTime } from "../../lib/datetime";
 import { ContextMenu } from "../ui/ContextMenu";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { ConvAvatar } from "../ui/ConvAvatar";
+import { Button, IconButton } from "../ui/Button";
+import { EmptyState } from "../ui/EmptyState";
 
-function formatTimeAgo(ts: number): string {
-  const diff = Date.now() - ts;
-  const m = Math.floor(diff / 60_000);
-  if (m < 1) return "刚刚";
-  if (m < 60) return `${m} 分钟前`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h} 小时前`;
-  const d = Math.floor(h / 24);
-  if (d < 30) return `${d} 天前`;
-  return new Date(ts).toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" });
-}
 
 function PreviewIcon({ kind }: { kind: Conversation["previewKind"] }) {
   switch (kind) {
     case "image":
-      return <Image size={13} className="shrink-0 text-app-muted" />;
+      return <Image size={13} className="shrink-0" />;
     case "video":
-      return <Video size={13} className="shrink-0 text-app-muted" />;
-    case "text":
-      return <FileText size={13} className="shrink-0 text-app-muted" />;
+      return <Video size={13} className="shrink-0" />;
+    case "other":
+      return <FileText size={13} className="shrink-0" />;
     default:
       return null;
   }
@@ -63,32 +55,33 @@ function ConversationRow({ c, onContextMenu }: ConversationRowProps) {
   return (
     <button
       type="button"
-      onClick={() => setActive(active ? null : c.id)}
+      onClick={() => setActive(c.id)}
       onContextMenu={(e) => onContextMenu(e, c)}
+      aria-current={active}
       className={cn(
-        "mx-2 flex w-[calc(100%-1rem)] items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition-colors",
-        active ? "bg-app-accent/10" : "hover:bg-app-subtle",
+        "flex h-16 w-full items-center gap-3 rounded-xl px-2.5 text-left transition-colors duration-fast",
+        active ? "bg-app-accent/10" : "hover:bg-app-hover/[0.04]",
       )}
     >
-      <ConvAvatar conv={c} size={44} />
+      <ConvAvatar conv={c} size={42} />
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <div className="flex items-center justify-between gap-2">
-          <span className={cn("truncate font-medium", active && "text-app-accent")}>{c.name}</span>
-          <span className="shrink-0 text-[11px] text-app-muted">{formatTimeAgo(c.updatedAt)}</span>
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="truncate text-sm font-medium">{c.name}</span>
+          <span className="shrink-0 text-2xs text-app-muted">{formatListTime(c.updatedAt)}</span>
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 text-xs text-app-muted">
           {c.sourceOffline ? (
-            <>
-              <CloudOff size={13} className="shrink-0 text-amber-500" />
-              <span className="truncate text-xs text-amber-600 dark:text-amber-400">源文件夹所在的盘未连接</span>
-            </>
+            <span className="flex min-w-0 items-center gap-1 text-app-warning">
+              <CloudOff size={13} className="shrink-0" />
+              <span className="truncate">磁盘未连接</span>
+            </span>
           ) : (
             <>
               <PreviewIcon kind={c.previewKind} />
-              <span className="truncate text-xs text-app-muted">{c.preview ?? "暂无消息"}</span>
+              <span className="truncate">{c.preview ?? "没有内容"}</span>
             </>
           )}
-          {c.pinned && <Pin size={11} className="ml-auto shrink-0 text-app-muted" />}
+          {c.pinned && <Pin size={12} className="ml-auto shrink-0 -rotate-45" />}
         </div>
       </div>
     </button>
@@ -101,25 +94,16 @@ function MessageHitRow({ hit }: { hit: SearchHit }) {
     <button
       type="button"
       onClick={() => setActive(hit.convId)}
-      className="mx-2 flex w-[calc(100%-1rem)] items-start gap-3 rounded-xl px-2.5 py-2 text-left hover:bg-app-subtle"
+      className="flex w-full flex-col rounded-xl px-2.5 py-2 text-left transition-colors duration-fast hover:bg-app-hover/[0.04]"
     >
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-app-accent/10 text-app-accent">
-        <MessageSquare size={16} />
-      </div>
-      <div className="flex min-w-0 flex-1 flex-col">
-        <div className="truncate text-xs text-app-muted">{hit.convName}</div>
-        <div className="truncate text-sm">{hit.snippet}</div>
-      </div>
+      <span className="truncate text-xs text-app-muted">{hit.convName}</span>
+      <span className="truncate text-sm">{hit.snippet}</span>
     </button>
   );
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="px-4 pb-1 pt-3 text-[11px] font-medium uppercase tracking-wider text-app-muted">
-      {children}
-    </div>
-  );
+  return <div className="px-2.5 pb-1 pt-3 text-xs font-medium text-app-muted">{children}</div>;
 }
 
 /** Which library this list belongs to, with its quick actions. */
@@ -127,34 +111,24 @@ function LibraryHeader() {
   const lib = useCurrentLibrary();
   const setLibraryDialog = useSessionStore((s) => s.setLibraryDialog);
   const lock = useLibrariesStore((s) => s.lock);
-  const count = useConversationsStore((s) => s.list.length);
   if (!lib) return null;
   return (
-    <div className="flex items-center gap-2 px-4 pb-1 pt-3.5">
-      <div className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate text-[15px] font-semibold leading-5">{lib.name}</span>
-        <span className="text-[11px] text-app-muted">
-          {count} 个会话{lib.encrypted ? " · 加密库" : ""}
-        </span>
-      </div>
+    <div className="flex h-[52px] shrink-0 items-center gap-1 pl-4 pr-2.5">
+      <span className="min-w-0 flex-1 truncate text-base font-semibold">{lib.name}</span>
       {lib.encrypted && lib.unlocked && (
-        <button
-          type="button"
-          title="锁定这个库"
-          onClick={() => void lock(lib.id).catch((e) => toast.error("上锁失败", e))}
-          className="flex h-8 w-8 items-center justify-center rounded-lg text-app-muted transition-colors hover:bg-app-subtle hover:text-app-fg"
-        >
-          <Lock size={15} />
-        </button>
+        <IconButton
+          label="锁定这个库"
+          size="sm"
+          icon={<Lock size={15} />}
+          onClick={() => void lock(lib.id).catch((e) => toast.error("锁定失败", e))}
+        />
       )}
-      <button
-        type="button"
-        title="库设置"
+      <IconButton
+        label="库设置"
+        size="sm"
+        icon={<Settings2 size={15} />}
         onClick={() => setLibraryDialog({ mode: "settings", id: lib.id })}
-        className="flex h-8 w-8 items-center justify-center rounded-lg text-app-muted transition-colors hover:bg-app-subtle hover:text-app-fg"
-      >
-        <Settings2 size={15} />
-      </button>
+      />
     </div>
   );
 }
@@ -243,53 +217,56 @@ export function ChatList() {
   };
 
   return (
-    <div className="flex h-full w-80 shrink-0 flex-col border-r border-app-border bg-app-panel">
+    <div className="flex h-full w-[300px] shrink-0 flex-col border-x border-app-border bg-app-panel">
       <LibraryHeader />
-      <div className="flex items-center gap-2 px-3 pb-2 pt-1.5">
+      <div className="flex items-center gap-2 px-3 pb-2">
         <div className="relative flex flex-1 items-center">
-          <Search size={14} className="absolute left-3 text-app-muted" aria-hidden />
+          <Search size={14} className="pointer-events-none absolute left-2.5 text-app-muted" aria-hidden />
           <input
             type="text"
-            placeholder="搜索会话和消息"
+            placeholder="搜索"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="h-9 w-full rounded-lg border border-transparent bg-app-subtle pl-8 pr-3 text-sm outline-none transition placeholder:text-app-muted/80 focus:border-app-accent/40 focus:bg-app-panel focus:ring-4 focus:ring-app-accent/10"
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setSearch("");
+            }}
+            className="h-8 w-full rounded-lg bg-app-subtle pl-8 pr-2.5 text-sm outline-none transition-colors duration-fast placeholder:text-app-muted focus:bg-app-panel focus:ring-2 focus:ring-app-accent/25"
           />
         </div>
-        <button
-          type="button"
-          title="新建会话"
+        <IconButton
+          label="新建会话"
+          icon={<Plus size={18} />}
           onClick={() => setNewConvOpen(true)}
-          className="flex h-9 w-9 items-center justify-center rounded-lg bg-app-accent text-white shadow-sm transition hover:brightness-110"
-        >
-          <Plus size={18} />
-        </button>
+          className="bg-app-subtle"
+        />
       </div>
 
-      <div className="flex-1 overflow-y-auto pb-2">
+      <div className="flex-1 overflow-y-auto px-2 pb-2">
         {!showingSearch && list.length === 0 && (
-          <div className="flex flex-col items-center gap-2 px-6 py-12 text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-app-subtle text-app-muted">
-              <MessageSquare size={22} />
-            </div>
-            <div className="text-sm font-medium">这个库还是空的</div>
-            <div className="text-xs leading-5 text-app-muted">点右上角的 + 新建会话，导入图片、视频或绑定一个文件夹。</div>
-          </div>
+          <EmptyState
+            className="py-16"
+            icon={<MessageSquare size={28} strokeWidth={1.5} />}
+            title="还没有会话"
+            description="导入照片、视频，或同步一个文件夹"
+            action={
+              <Button size="sm" icon={<Plus size={14} />} onClick={() => setNewConvOpen(true)}>
+                新建会话
+              </Button>
+            }
+          />
         )}
 
         {showingSearch && <SectionLabel>会话</SectionLabel>}
         {filteredConvs.map((c) => (
           <ConversationRow key={c.id} c={c} onContextMenu={handleContextMenu} />
         ))}
-        {showingSearch && filteredConvs.length === 0 && (
-          <div className="px-4 py-1.5 text-xs text-app-muted">没有匹配的会话</div>
-        )}
+        {showingSearch && filteredConvs.length === 0 && <div className="px-2.5 py-1.5 text-xs text-app-muted">无结果</div>}
 
         {showingSearch && (
           <>
             <SectionLabel>消息</SectionLabel>
             {messageHits.length === 0 ? (
-              <div className="px-4 py-1.5 text-xs text-app-muted">没有匹配的消息</div>
+              <div className="px-2.5 py-1.5 text-xs text-app-muted">无结果</div>
             ) : (
               messageHits.map((h) => <MessageHitRow key={`${h.convId}-${h.messageId}`} hit={h} />)
             )}
@@ -303,12 +280,12 @@ export function ChatList() {
         y={menu?.y ?? 0}
         items={[
           {
-            label: menuTarget?.pinned ? "取消置顶" : "置顶会话",
-            icon: menuTarget?.pinned ? <PinOff size={14} /> : <Pin size={14} />,
+            label: menuTarget?.pinned ? "取消置顶" : "置顶",
+            icon: menuTarget?.pinned ? <PinOff size={15} /> : <Pin size={15} />,
             onClick: () => {
               if (menuTarget) {
                 void togglePinned(menuTarget.id, !menuTarget.pinned).catch((e) =>
-                  toast.error("操作失败", e),
+                  toast.error("置顶失败", e),
                 );
               }
               setMenu(null);
@@ -316,16 +293,17 @@ export function ChatList() {
           },
           {
             label: "移到其他库…",
-            icon: <ArrowRightLeft size={14} />,
+            icon: <ArrowRightLeft size={15} />,
             disabled: libraryCount < 2,
             onClick: () => {
               if (menu) setMoving(menu.convId);
               setMenu(null);
             },
           },
+          "separator",
           {
             label: "删除会话",
-            icon: <Trash2 size={14} />,
+            icon: <Trash2 size={15} />,
             variant: "danger",
             onClick: () => {
               if (menu) {
@@ -344,10 +322,10 @@ export function ChatList() {
         message={
           confirmTarget ? (
             <>
-              删除「<span className="font-medium">{confirmTarget.name}</span>」后，会话中的所有消息也会一并删除，此操作无法撤销。磁盘上的原文件不受影响。
+              「<span className="font-medium text-app-fg">{confirmTarget.name}</span>」中的消息会一并删除，磁盘上的文件不受影响。
             </>
           ) : (
-            "此操作无法撤销。"
+            ""
           )
         }
         confirmText="删除"
