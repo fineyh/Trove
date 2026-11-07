@@ -1,4 +1,4 @@
-import { ArrowRight, Check, Lock } from "lucide-react";
+import { Check } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "../../lib/cn";
 import { errText } from "../../lib/errors";
@@ -55,29 +55,22 @@ export function MoveConversationDialog() {
       busy={busy}
       onClose={() => close(null)}
       title="移到其他库"
-      subtitle={`「${conv.name}」的消息和缩略图会搬到目标库，并从这里删除。原文件不动。`}
+      subtitle={`「${conv.name}」及其缩略图会移到目标库，磁盘上的文件不动`}
       footer={
         <>
-          <Button variant="ghost" onClick={() => close(null)} disabled={busy}>
+          <Button onClick={() => close(null)} disabled={busy}>
             取消
           </Button>
-          <Button
-            variant="primary"
-            disabled={!targetLib || busy}
-            onClick={submit}
-            icon={busy ? undefined : <ArrowRight size={14} />}
-          >
-            {busy ? "移动中…" : "移动"}
+          <Button variant="primary" disabled={!targetLib} loading={busy} onClick={submit}>
+            移动
           </Button>
         </>
       }
     >
       {others.length === 0 ? (
-        <Notice>
-          还没有其他库。先在左侧栏点 <b>+</b> 新建一个库。
-        </Notice>
+        <Notice>还没有其他库</Notice>
       ) : (
-        <div className="flex flex-col gap-1.5">
+        <div className="divide-y divide-app-border overflow-hidden rounded-xl border border-app-border">
           {others.map((l) => {
             const locked = l.encrypted && !l.unlocked;
             const selected = target === l.id;
@@ -88,25 +81,19 @@ export function MoveConversationDialog() {
                 disabled={locked}
                 onClick={() => setTarget(l.id)}
                 className={cn(
-                  "flex items-center gap-3 rounded-xl border p-2.5 text-left transition",
-                  selected
-                    ? "border-app-accent bg-app-accent/5"
-                    : "border-app-border hover:bg-app-subtle",
-                  locked && "cursor-not-allowed opacity-50 hover:bg-transparent",
+                  "flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors duration-fast",
+                  selected ? "bg-app-accent/[0.06]" : "hover:bg-app-hover/[0.03]",
+                  locked && "pointer-events-none opacity-50",
                 )}
               >
-                <LibraryAvatar name={l.name} icon={l.icon} color={l.color} size={34} locked={locked} />
+                <LibraryAvatar name={l.name} icon={l.icon} color={l.color} size={32} locked={locked} />
                 <div className="flex min-w-0 flex-1 flex-col">
                   <span className="truncate text-sm font-medium">{l.name}</span>
                   <span className="text-xs text-app-muted">
-                    {locked ? "已锁定，先解锁才能移入" : l.encrypted ? "加密库" : l.isMain ? "主库" : "普通库"}
+                    {locked ? "已锁定" : l.encrypted ? "密码保护" : ""}
                   </span>
                 </div>
-                {selected ? (
-                  <Check size={16} className="text-app-accent" />
-                ) : (
-                  locked && <Lock size={14} className="text-app-muted" />
-                )}
+                {selected && <Check size={16} className="text-app-accent" />}
               </button>
             );
           })}

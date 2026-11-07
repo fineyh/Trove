@@ -46,7 +46,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       const volumes = await ipc.listVolumes(lib);
       if (stillOn(lib)) set({ volumes });
     } catch (e) {
-      if (stillOn(lib)) toast.error("读取卷列表失败", e);
+      if (stillOn(lib)) toast.error("读取磁盘列表失败", e);
     }
   },
   loadStats: async () => {

@@ -1,4 +1,4 @@
-import { Folder, FolderInput, MessageSquare, X } from "lucide-react";
+import { FolderInput, FolderSync, MessageSquarePlus } from "lucide-react";
 import { useState } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useConversationsStore } from "../../stores/conversations";
@@ -7,17 +7,25 @@ import { isTauri } from "../../hooks/useIsTauri";
 import { cn } from "../../lib/cn";
 import { errText } from "../../lib/errors";
 import { ImportProgressBar } from "../ui/ImportProgressBar";
+import { Button } from "../ui/Button";
+import { TextField, inputClass } from "../ui/Field";
+import { Modal } from "../ui/Modal";
+import { Notice } from "../ui/Notice";
 
 type Mode = "manual" | "folder_bulk" | "folder_watch";
+
+const MODES: { value: Mode; icon: React.ReactNode; title: string; desc: string }[] = [
+  { value: "manual", icon: <MessageSquarePlus size={18} />, title: "空会话", desc: "之后再添加照片、视频和文字" },
+  { value: "folder_bulk", icon: <FolderInput size={18} />, title: "导入文件夹", desc: "一次导入文件夹里的照片和视频" },
+  { value: "folder_watch", icon: <FolderSync size={18} />, title: "同步文件夹", desc: "随文件夹的增删自动更新" },
+];
 
 export function NewConversationDialog() {
   const open = useSessionStore((s) => s.newConversationOpen);
   const setOpen = useSessionStore((s) => s.setNewConversationOpen);
   const setActive = useSessionStore((s) => s.setActiveConversation);
   const createManual = useConversationsStore((s) => s.createManual);
-  const createManualFromFolder = useConversationsStore(
-    (s) => s.createManualFromFolder,
-  );
+  const createManualFromFolder = useConversationsStore((s) => s.createManualFromFolder);
   const createFolderWatch = useConversationsStore((s) => s.createFolderWatch);
 
   const [mode, setMode] = useState<Mode>("manual");
@@ -26,18 +34,12 @@ export function NewConversationDialog() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  if (!open) return null;
-
-  const reset = () => {
+  const close = () => {
     setMode("manual");
     setName("");
     setSourcePath("");
     setError(null);
     setBusy(false);
-  };
-
-  const close = () => {
-    reset();
     setOpen(false);
   };
 
@@ -54,8 +56,7 @@ export function NewConversationDialog() {
   };
 
   const needsFolder = mode === "folder_bulk" || mode === "folder_watch";
-  const canSubmit =
-    !busy && name.trim().length > 0 && (!needsFolder || sourcePath.length > 0);
+  const canSubmit = !busy && name.trim().length > 0 && (!needsFolder || sourcePath.length > 0);
 
   const submit = async () => {
     if (!canSubmit) return;
@@ -67,159 +68,94 @@ export function NewConversationDialog() {
       if (mode === "folder_watch") {
         id = await createFolderWatch(trimmedName, sourcePath);
       } else if (mode === "folder_bulk") {
-        const result = await createManualFromFolder(sourcePath, trimmedName);
-        id = result.convId;
+        id = (await createManualFromFolder(sourcePath, trimmedName)).convId;
       } else {
         id = await createManual(trimmedName);
       }
       setActive(id);
       close();
     } catch (e: unknown) {
-      console.error("create_conversation failed", e);
       setError(errText(e));
       setBusy(false);
     }
   };
 
   return (
-    <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-black/40"
-      onClick={close}
+    <Modal
+      open={open}
+      onClose={close}
+      title="新建会话"
+      footer={
+        <>
+          <Button onClick={close}>取消</Button>
+          <Button variant="primary" disabled={!canSubmit} loading={busy} onClick={submit}>
+            创建
+          </Button>
+        </>
+      }
     >
-      <div
-        className="flex w-full max-w-md flex-col gap-4 rounded-lg border border-app-border bg-app-panel p-5 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
+      <form
+        className="flex flex-col gap-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void submit();
+        }}
       >
-        <div className="flex items-center justify-between">
-          <div className="text-base font-semibold">新建会话</div>
-          <button
-            type="button"
-            onClick={close}
-            className="flex h-7 w-7 items-center justify-center rounded text-app-muted hover:bg-app-subtle"
-          >
-            <X size={16} />
-          </button>
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <ModeRow
-            active={mode === "manual"}
-            onClick={() => setMode("manual")}
-            icon={<MessageSquare size={18} />}
-            title="手动会话"
-            desc="空会话，自己上传文件"
-          />
-          <ModeRow
-            active={mode === "folder_bulk"}
-            onClick={() => setMode("folder_bulk")}
-            icon={<FolderInput size={18} />}
-            title="从文件夹批量创建"
-            desc="一次性导入文件夹里的全部媒体（之后仍可继续上传）"
-          />
-          <ModeRow
-            active={mode === "folder_watch"}
-            onClick={() => setMode("folder_watch")}
-            icon={<Folder size={18} />}
-            title="路径会话"
-            desc="绑定文件夹自动同步，新增/删除即时生效"
-          />
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-app-muted">名称</label>
-          <input
-            type="text"
-            value={name}
-            autoFocus
-            onChange={(e) => setName(e.target.value)}
-            placeholder="例如：我的旅行"
-            className="rounded-md border border-app-border bg-app-subtle px-3 py-2 text-sm outline-none focus:border-app-accent/60 focus:bg-app-panel"
-          />
+        <div role="radiogroup" className="divide-y divide-app-border overflow-hidden rounded-xl border border-app-border">
+          {MODES.map((m) => {
+            const on = m.value === mode;
+            return (
+              <button
+                key={m.value}
+                type="button"
+                role="radio"
+                aria-checked={on}
+                onClick={() => setMode(m.value)}
+                className={cn(
+                  "flex w-full items-center gap-3 px-3.5 py-2.5 text-left transition-colors duration-fast",
+                  on ? "bg-app-accent/[0.06]" : "hover:bg-app-hover/[0.03]",
+                )}
+              >
+                <span className={cn("shrink-0", on ? "text-app-accent" : "text-app-secondary")}>{m.icon}</span>
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="text-sm font-medium">{m.title}</span>
+                  <span className="text-xs text-app-muted">{m.desc}</span>
+                </span>
+                <span
+                  className={cn(
+                    "h-4 w-4 shrink-0 rounded-full border transition-colors duration-fast",
+                    on ? "border-[5px] border-app-accent" : "border-app-fg/25",
+                  )}
+                />
+              </button>
+            );
+          })}
         </div>
 
         {needsFolder && (
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-app-muted">文件夹路径</label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-app-secondary">文件夹</span>
             <div className="flex gap-2">
               <input
                 type="text"
                 value={sourcePath}
                 onChange={(e) => setSourcePath(e.target.value)}
-                placeholder="选择或粘贴路径"
-                className="flex-1 rounded-md border border-app-border bg-app-subtle px-3 py-2 text-sm outline-none focus:border-app-accent/60 focus:bg-app-panel"
+                placeholder="D:\Photos\2024"
+                className={inputClass}
               />
-              <button
-                type="button"
-                onClick={pickFolder}
-                className="rounded-md border border-app-border px-3 text-sm hover:bg-app-subtle"
-              >
-                浏览...
-              </button>
+              <Button onClick={pickFolder}>选择…</Button>
             </div>
-            <div className="text-xs text-app-muted">
-              {mode === "folder_bulk"
-                ? "导入文件夹里的所有图片和视频，文件保留在原位置。"
-                : "文件夹内的媒体会自动出现在对话里，路径会话不支持手动上传。"}
-            </div>
-          </div>
+          </label>
         )}
 
-        {error && <div className="text-xs text-red-500">{error}</div>}
+        <TextField label="名称" value={name} autoFocus maxLength={60} onChange={(e) => setName(e.target.value)} />
 
-        {/* 批量导入跑在后台线程上，这里能实时显示进度、也能中途取消 */}
-        <div className="-mx-5 -mb-1 empty:hidden">
+        {error && <Notice tone="danger">{error}</Notice>}
+        <div className="-mx-5 empty:hidden">
           <ImportProgressBar />
         </div>
-
-        <div className="flex justify-end gap-2 pt-1">
-          <button
-            type="button"
-            onClick={close}
-            className="rounded-md border border-app-border px-3 py-1.5 text-sm hover:bg-app-subtle"
-          >
-            取消
-          </button>
-          <button
-            type="button"
-            disabled={!canSubmit}
-            onClick={submit}
-            className="rounded-md bg-app-accent px-3 py-1.5 text-sm text-white hover:opacity-90 disabled:opacity-40"
-          >
-            {busy ? "创建中..." : "创建"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-interface ModeRowProps {
-  active: boolean;
-  onClick: () => void;
-  icon: React.ReactNode;
-  title: string;
-  desc: string;
-}
-
-function ModeRow({ active, onClick, icon, title, desc }: ModeRowProps) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "flex items-start gap-3 rounded-md border p-3 text-left transition",
-        active
-          ? "border-app-accent bg-app-accent/5"
-          : "border-app-border hover:bg-app-subtle",
-      )}
-    >
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-app-accent/10 text-app-accent">
-        {icon}
-      </div>
-      <div className="flex min-w-0 flex-col">
-        <div className="text-sm font-medium">{title}</div>
-        <div className="text-xs text-app-muted">{desc}</div>
-      </div>
-    </button>
+        <button type="submit" hidden />
+      </form>
+    </Modal>
   );
 }

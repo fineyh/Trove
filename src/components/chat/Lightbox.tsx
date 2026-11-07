@@ -17,6 +17,7 @@ import { isImageMedia } from "../../lib/media";
 import { useDisplayableImageUrl } from "../../lib/useDisplayableImageUrl";
 import { useViewerTransform } from "../../lib/useViewerTransform";
 import { RotatableVideo } from "../ui/RotatableVideo";
+import { useEscapeLayer } from "../ui/Modal";
 
 /** Things this viewer can show: reachable images and videos. */
 function viewable(m: Message): boolean {
@@ -105,14 +106,16 @@ export function Lightbox({ convId }: LightboxProps) {
     mediaHandlers,
   } = useViewerTransform(current?.id);
 
+  // Topmost layer while open: Esc closes the viewer, not the info panel
+  // behind it. While fullscreen, Esc only leaves fullscreen.
+  useEscapeLayer(activeId !== null, () => {
+    if (!document.fullscreenElement) close();
+  });
+
   useEffect(() => {
     if (activeId === null) return;
     const onKey = (e: KeyboardEvent) => {
-      // While fullscreen, let Esc exit fullscreen instead of closing the viewer.
-      if (e.key === "Escape") {
-        if (document.fullscreenElement) return;
-        close();
-      } else if (e.key === "ArrowLeft") goPrev();
+      if (e.key === "ArrowLeft") goPrev();
       else if (e.key === "ArrowRight") goNext();
       else if (e.key === "+" || e.key === "=") zoomIn();
       else if (e.key === "-" || e.key === "_") zoomOut();
@@ -167,10 +170,10 @@ export function Lightbox({ convId }: LightboxProps) {
               e.stopPropagation();
               resetView();
             }}
-            className="flex h-10 items-center rounded-full bg-white/10 px-3 text-xs font-medium text-white hover:bg-white/20"
-            title="恢复适应窗口 (0)"
+            className="flex h-9 items-center rounded-full bg-white/10 px-3 text-xs font-medium tabular-nums text-white transition-colors duration-fast hover:bg-white/20"
+            data-tip="适应窗口  0"
           >
-            {Math.round(scale * 100)}% · 重置
+            {Math.round(scale * 100)}%
           </button>
         )}
         <button
@@ -179,8 +182,8 @@ export function Lightbox({ convId }: LightboxProps) {
             e.stopPropagation();
             rotateLeft();
           }}
-          className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
-          title="向左旋转"
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white transition-colors duration-fast hover:bg-white/20"
+          data-tip="向左旋转"
         >
           <RotateCcw size={18} />
         </button>
@@ -190,8 +193,8 @@ export function Lightbox({ convId }: LightboxProps) {
             e.stopPropagation();
             rotateRight();
           }}
-          className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
-          title="向右旋转"
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white transition-colors duration-fast hover:bg-white/20"
+          data-tip="向右旋转"
         >
           <RotateCw size={18} />
         </button>
@@ -201,8 +204,8 @@ export function Lightbox({ convId }: LightboxProps) {
             e.stopPropagation();
             close();
           }}
-          className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
-          title="关闭 (Esc)"
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white transition-colors duration-fast hover:bg-white/20"
+          data-tip="关闭  Esc"
         >
           <X size={20} />
         </button>
@@ -215,8 +218,8 @@ export function Lightbox({ convId }: LightboxProps) {
             e.stopPropagation();
             goPrev();
           }}
-          className="absolute left-4 top-1/2 z-10 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
-          title="上一个 (←)"
+          className="absolute left-4 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white transition-colors duration-fast hover:bg-white/20"
+          data-tip="上一个  ←"
         >
           {loadingOlder && idx === 0 ? (
             <Loader2 size={20} className="animate-spin" />
@@ -232,8 +235,8 @@ export function Lightbox({ convId }: LightboxProps) {
             e.stopPropagation();
             goNext();
           }}
-          className="absolute right-4 top-1/2 z-10 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
-          title="下一个 (→)"
+          className="absolute right-4 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white transition-colors duration-fast hover:bg-white/20"
+          data-tip="下一个  →"
         >
           <ChevronRight size={24} />
         </button>
@@ -246,7 +249,7 @@ export function Lightbox({ convId }: LightboxProps) {
         {isImage ? (
           image.status === "error" ? (
             <div className="rounded-lg border border-dashed border-white/30 px-6 py-8 text-sm text-white/70">
-              此格式无法预览
+              无法预览这个格式
             </div>
           ) : image.status === "loading" || !image.url ? (
             <Loader2 size={28} className="animate-spin text-white/70" />

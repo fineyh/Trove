@@ -12,23 +12,24 @@ import type { LibraryInfo, UnlockMethod } from "../types";
 
 export const EMPTY_LIBRARIES: readonly LibraryInfo[] = Object.freeze([]);
 
-/** Library accent colors. Keys are stored; values are Tailwind-free CSS. */
+/** Library tile colors. Keys are stored; tuned to sit beside the indigo accent. */
 export const LIBRARY_COLORS: Record<string, { bg: string; fg: string }> = {
-  blue: { bg: "#3b82f6", fg: "#ffffff" },
-  violet: { bg: "#8b5cf6", fg: "#ffffff" },
-  pink: { bg: "#ec4899", fg: "#ffffff" },
-  red: { bg: "#ef4444", fg: "#ffffff" },
-  orange: { bg: "#f97316", fg: "#ffffff" },
-  amber: { bg: "#f59e0b", fg: "#ffffff" },
-  green: { bg: "#10b981", fg: "#ffffff" },
-  teal: { bg: "#14b8a6", fg: "#ffffff" },
-  slate: { bg: "#64748b", fg: "#ffffff" },
+  indigo: { bg: "#4F6BED", fg: "#ffffff" },
+  blue: { bg: "#2F86DE", fg: "#ffffff" },
+  teal: { bg: "#139484", fg: "#ffffff" },
+  green: { bg: "#3D9A50", fg: "#ffffff" },
+  amber: { bg: "#D48C1A", fg: "#ffffff" },
+  orange: { bg: "#E26A2C", fg: "#ffffff" },
+  red: { bg: "#DB4B4B", fg: "#ffffff" },
+  pink: { bg: "#D9488F", fg: "#ffffff" },
+  violet: { bg: "#8B5CDB", fg: "#ffffff" },
+  slate: { bg: "#5E6878", fg: "#ffffff" },
 };
 
-export const DEFAULT_LIBRARY_COLOR = "blue";
+export const DEFAULT_LIBRARY_COLOR = "indigo";
 
 export function libraryColor(key: string | null | undefined) {
-  return LIBRARY_COLORS[key ?? ""] ?? LIBRARY_COLORS[DEFAULT_LIBRARY_COLOR];
+  return LIBRARY_COLORS[key ?? ""] ?? LIBRARY_COLORS.blue;
 }
 
 interface LibrariesState {

@@ -5,6 +5,8 @@ import "leaflet/dist/leaflet.css";
 import "leaflet.markercluster/dist/MarkerCluster.css";
 import "leaflet.markercluster/dist/MarkerCluster.Default.css";
 import { CloudOff, ImageOff, Loader2, MapPin, Play, X } from "lucide-react";
+import { IconButton } from "../ui/Button";
+import { EmptyState } from "../ui/EmptyState";
 import { useSessionStore } from "../../stores/session";
 import { useMessagesStore } from "../../stores/messages";
 import { currentLib, stillOn, useCurrentLibrary } from "../../stores/libraries";
@@ -71,7 +73,6 @@ function MapOverlay() {
   const setMapOpen = useSessionStore((s) => s.setMapOpen);
   const setActiveConversation = useSessionStore((s) => s.setActiveConversation);
   const openLightbox = useSessionStore((s) => s.openLightbox);
-  const lib = useCurrentLibrary();
   const tilesOn = useSettingsStore((s) => s.settings.mapTiles === "online");
 
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -185,26 +186,12 @@ function MapOverlay() {
   };
 
   return (
-    <div className="fixed inset-y-0 left-[68px] right-0 z-40 flex flex-col bg-app">
-      <div className="flex items-center justify-between border-b border-app-border bg-app-panel px-4 py-2">
-        <div className="flex items-center gap-2 text-app-fg">
-          <MapPin size={18} />
-          <span className="font-medium">地图</span>
-          {lib && <span className="text-sm text-app-muted">· {lib.name}</span>}
-          {!loading && (
-            <span className="text-sm text-app-muted">
-              {media.length} 张带位置的照片
-            </span>
-          )}
-        </div>
-        <button
-          type="button"
-          onClick={() => setMapOpen(false)}
-          className="flex h-8 w-8 items-center justify-center rounded text-app-muted hover:bg-app-subtle"
-          aria-label="关闭"
-        >
-          <X size={18} />
-        </button>
+    <div className="fixed inset-y-0 left-16 right-0 z-40 flex flex-col border-l border-app-border bg-app-panel">
+      <div className="flex h-[52px] shrink-0 items-center gap-2 border-b border-app-border pl-4 pr-2.5">
+        <span className="text-base font-semibold">地图</span>
+        {!loading && <span className="text-xs text-app-muted">{media.length.toLocaleString()} 个有位置的文件</span>}
+        <div className="flex-1" />
+        <IconButton label="关闭" icon={<X size={18} />} onClick={() => setMapOpen(false)} />
       </div>
 
       {/* `isolate` traps Leaflet's internal z-indexes (panes z200–700, controls
@@ -220,22 +207,17 @@ function MapOverlay() {
         )}
 
         {!loading && media.length === 0 && (
-          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 text-app-muted">
-            <MapPin size={32} />
-            <p className="text-sm">还没有带 GPS 位置的照片或视频</p>
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <EmptyState icon={<MapPin size={32} strokeWidth={1.5} />} title="没有带位置信息的照片或视频" />
           </div>
         )}
 
-        <div className="pointer-events-none absolute bottom-3 left-3 z-[1000] flex items-center gap-1.5 rounded-lg bg-app-panel/90 px-2.5 py-1.5 text-xs text-app-muted shadow backdrop-blur">
-          {tilesOn ? (
-            "底图来自 OpenStreetMap · 需联网"
-          ) : (
-            <>
-              <CloudOff size={12} />
-              在线底图已关闭，可在「设置 → 通用」里打开
-            </>
-          )}
-        </div>
+        {!tilesOn && (
+          <div className="pointer-events-none absolute bottom-3 left-3 z-[1000] flex items-center gap-1.5 rounded-lg bg-app-panel/90 px-2.5 py-1 text-xs text-app-muted shadow-md ring-1 ring-app-border backdrop-blur">
+            <CloudOff size={12} />
+            在线底图已关闭
+          </div>
+        )}
 
         {selected && (
           <MapSidePanel
@@ -269,21 +251,12 @@ function MapSidePanel({
   onOpen: (index: number) => void;
 }) {
   return (
-    <div className="absolute right-0 top-0 z-[1000] flex h-full w-[340px] flex-col border-l border-app-border bg-app-panel shadow-xl">
-      <div className="flex items-center justify-between border-b border-app-border px-3 py-2">
-        <span className="text-sm font-medium text-app-fg">
-          此地点 · {items.length} 张
-        </span>
-        <button
-          type="button"
-          onClick={onClose}
-          className="flex h-7 w-7 items-center justify-center rounded text-app-muted hover:bg-app-subtle"
-          aria-label="关闭"
-        >
-          <X size={16} />
-        </button>
+    <div className="absolute right-0 top-0 z-[1000] flex h-full w-[320px] animate-slide-in-right flex-col border-l border-app-border bg-app-panel">
+      <div className="flex h-12 shrink-0 items-center gap-1 pl-4 pr-2.5">
+        <span className="flex-1 text-sm font-semibold">这里的 {items.length.toLocaleString()} 个文件</span>
+        <IconButton label="关闭" size="sm" icon={<X size={16} />} onClick={onClose} />
       </div>
-      <div className="grid flex-1 grid-cols-3 content-start gap-1.5 overflow-y-auto p-3">
+      <div className="grid flex-1 grid-cols-3 content-start gap-1 overflow-y-auto px-4 pb-4">
         {items.map((m, i) => (
           <MapThumb key={m.mediaId} item={m} onClick={() => onOpen(i)} />
         ))}
@@ -314,8 +287,8 @@ function MapThumb({
       type="button"
       onClick={onClick}
       disabled={!reachable && !src}
-      title={item.status === "offline" ? "所在的盘没有连接" : item.status === "missing" ? "文件不在原位置" : undefined}
-      className="group relative aspect-square overflow-hidden rounded-lg bg-app-subtle"
+      data-tip={item.status === "offline" ? "离线" : item.status === "missing" ? "缺失" : undefined}
+      className="relative aspect-square overflow-hidden rounded-md bg-app-subtle"
     >
       {src ? (
         <img
@@ -323,7 +296,7 @@ function MapThumb({
           alt=""
           loading="lazy"
           draggable={false}
-          className={"h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" + (reachable ? "" : " opacity-60 grayscale")}
+          className={"h-full w-full object-cover transition-opacity duration-fast hover:opacity-90" + (reachable ? "" : " opacity-60 grayscale")}
         />
       ) : (
         <span className="flex h-full w-full items-center justify-center text-app-muted">

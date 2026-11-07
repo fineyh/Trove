@@ -1,4 +1,4 @@
-import { Check, Copy, LifeBuoy } from "lucide-react";
+import { Check, Copy } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useSessionStore } from "../../stores/session";
 import { toast } from "../../stores/toast";
@@ -41,23 +41,18 @@ export function RecoveryCodeDialog() {
       busy={!saved}
       onClose={() => close(null)}
       width="md"
-      icon={
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/15 text-amber-600">
-          <LifeBuoy size={18} />
-        </div>
-      }
       title="保存恢复密钥"
-      subtitle={`忘记「${recovery.target}」的密码时，用它解锁。它只显示这一次。`}
+      subtitle={`忘记「${recovery.target}」的密码时用它解锁，只显示这一次`}
       footer={
         <>
-          <label className="mr-auto flex cursor-pointer items-center gap-2 text-sm">
+          <label className="mr-auto flex items-center gap-2 text-sm">
             <input
               type="checkbox"
               checked={saved}
               onChange={(e) => setSaved(e.target.checked)}
               className="h-4 w-4 accent-[rgb(var(--accent))]"
             />
-            我已妥善保存
+            已保存在安全的地方
           </label>
           <Button variant="primary" disabled={!saved} onClick={() => close(null)}>
             完成
@@ -66,12 +61,9 @@ export function RecoveryCodeDialog() {
       }
     >
       <div className="flex flex-col gap-4">
-        <div className="grid grid-cols-4 gap-2 rounded-xl border border-app-border bg-app-subtle/50 p-3 font-mono text-[15px] tracking-wider">
+        <div className="selectable grid grid-cols-4 gap-2 rounded-xl bg-app-subtle p-3 font-mono text-base tracking-wider">
           {groups.map((g, i) => (
-            <span
-              key={i}
-              className="select-text rounded-md bg-app-panel py-1.5 text-center shadow-sm"
-            >
+            <span key={i} className="rounded-md bg-app-panel py-1.5 text-center">
               {g}
             </span>
           ))}
@@ -79,16 +71,13 @@ export function RecoveryCodeDialog() {
         <Button
           variant="secondary"
           onClick={copy}
-          icon={copied ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+          size="sm"
+          icon={copied ? <Check size={14} className="text-app-success" /> : <Copy size={14} />}
           className="self-start"
         >
-          {copied ? "已复制" : "复制到剪贴板"}
+          {copied ? "已复制" : "复制"}
         </Button>
-        <ul className="flex list-disc flex-col gap-1 pl-4 text-xs leading-5 text-app-muted">
-          <li>写在纸上，或存进密码管理器；不要和数据放在同一个地方。</li>
-          <li>Trove 不保存它的明文，丢了只能用密码重新生成一个。</li>
-          <li>大小写和 0 / O 不敏感，输入时可以不带横线。</li>
-        </ul>
+        <p className="text-xs text-app-muted">抄在纸上或存进密码管理器，不要和数据放在一起。输入时不区分大小写。</p>
       </div>
     </Modal>
   );

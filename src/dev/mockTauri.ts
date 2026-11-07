@@ -21,8 +21,8 @@ function install() {
   const settings: Record<string, string> = { offline_content: "show", map_tiles: "online", idle_lock_minutes: "15" };
 
   const libraries = [
-    { id: "main", name: "我的收藏", icon: null, color: "blue", isMain: true, encrypted: false, unlocked: true, unlockedBy: "app", hasRecovery: false, keyfilePath: null },
-    { id: "trip", name: "旅行", icon: "✈️", color: "teal", isMain: false, encrypted: false, unlocked: true, unlockedBy: "app", hasRecovery: false, keyfilePath: null },
+    { id: "main", name: "我的收藏", icon: null, color: "indigo", isMain: true, encrypted: false, unlocked: true, unlockedBy: "app", hasRecovery: false, keyfilePath: null },
+    { id: "trip", name: "旅行", icon: "lucide:plane", color: "teal", isMain: false, encrypted: false, unlocked: true, unlockedBy: "app", hasRecovery: false, keyfilePath: null },
     { id: "vault", name: "私密", icon: null, color: "pink", isMain: false, encrypted: true, unlocked: false, unlockedBy: null, hasRecovery: true, keyfilePath: null },
   ];
 

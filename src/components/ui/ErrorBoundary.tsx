@@ -1,5 +1,6 @@
 import { AlertTriangle, Copy, RefreshCw, RotateCcw } from "lucide-react";
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { Button } from "./Button";
 import { errText } from "../../lib/errors";
 
 interface Props {
@@ -51,54 +52,31 @@ export class ErrorBoundary extends Component<Props, State> {
     if (!error) return this.props.children;
 
     return (
-      <div className="flex h-screen w-screen items-center justify-center p-6">
-        <div className="flex w-full max-w-lg flex-col gap-4 rounded-2xl border border-app-border bg-app-panel p-6 shadow-2xl">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-500/10 text-red-500">
-              <AlertTriangle size={20} />
+      <div className="flex h-screen w-screen items-center justify-center bg-app p-6">
+        <div className="flex w-full max-w-[480px] flex-col gap-4 rounded-2xl bg-app-panel p-6 shadow-xl ring-1 ring-black/5 dark:ring-white/10">
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-2 text-base font-semibold">
+              <AlertTriangle size={18} className="text-app-danger" />
+              界面出错了
             </div>
-            <div className="flex flex-col">
-              <div className="text-base font-semibold">界面出错了</div>
-              <div className="text-xs text-app-muted">
-                你的数据没有受影响，重试或重新加载即可。
-              </div>
-            </div>
+            <div className="text-sm text-app-secondary">数据没有受影响。</div>
           </div>
 
-          <div className="max-h-48 select-text overflow-auto rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-500">
-            <div className="font-medium">{errText(error, "未知渲染错误")}</div>
-            {stack && (
-              <pre className="mt-1.5 whitespace-pre-wrap break-words font-mono text-[11px] text-app-muted">
-                {stack.trim()}
-              </pre>
-            )}
+          <div className="selectable max-h-48 overflow-auto rounded-lg bg-app-subtle px-3 py-2 text-xs">
+            <div className="font-medium text-app-danger">{errText(error, "未知错误")}</div>
+            {stack && <pre className="mt-1.5 whitespace-pre-wrap break-words font-mono text-2xs text-app-muted">{stack.trim()}</pre>}
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={this.reset}
-              className="flex items-center gap-1.5 rounded-md bg-app-accent px-3 py-2 text-sm text-white hover:opacity-90"
-            >
-              <RotateCcw size={14} />
-              重试
-            </button>
-            <button
-              type="button"
-              onClick={this.reload}
-              className="flex items-center gap-1.5 rounded-md border border-app-border px-3 py-2 text-sm hover:bg-app-subtle"
-            >
-              <RefreshCw size={14} />
-              重新加载
-            </button>
-            <button
-              type="button"
-              onClick={this.copy}
-              className="ml-auto flex items-center gap-1.5 rounded-md border border-app-border px-3 py-2 text-sm text-app-muted hover:bg-app-subtle hover:text-app-fg"
-            >
-              <Copy size={14} />
+            <Button variant="ghost" icon={<Copy size={14} />} onClick={this.copy} className="mr-auto text-app-secondary">
               {copied ? "已复制" : "复制错误信息"}
-            </button>
+            </Button>
+            <Button icon={<RefreshCw size={14} />} onClick={this.reload}>
+              重新加载
+            </Button>
+            <Button variant="primary" icon={<RotateCcw size={14} />} onClick={this.reset}>
+              重试
+            </Button>
           </div>
         </div>
       </div>
