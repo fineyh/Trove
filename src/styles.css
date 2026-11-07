@@ -166,7 +166,7 @@ input[type="range"].trove-volume::-webkit-slider-runnable-track {
   height: 100%;
   margin: 0 auto;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.25);
+  background: rgb(var(--fg) / 0.2);
 }
 input[type="range"].trove-volume::-webkit-slider-thumb {
   -webkit-appearance: none;
@@ -175,5 +175,5 @@ input[type="range"].trove-volume::-webkit-slider-thumb {
   height: 12px;
   margin-left: -4px;
   border-radius: 50%;
-  background: #fff;
+  background: rgb(var(--fg));
 }

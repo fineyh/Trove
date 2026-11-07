@@ -1,5 +1,5 @@
-// React hook wrapping the HEIC decode primitives in `heic.ts`. Kept separate so
-// the React-free `heic.ts` can be imported by the lean player bundle.
+// React hook wrapping the HEIC decode primitives in `heic.ts`, which stays
+// React-free (the thumbnail worker path uses it directly).
 
 import { useEffect, useState } from "react";
 import { decodeHeicToUrl, isHeicExt } from "./heic";

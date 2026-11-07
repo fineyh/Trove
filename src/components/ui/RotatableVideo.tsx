@@ -12,6 +12,8 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
+import { cn } from "../../lib/cn";
+import { useEscapeLayer } from "./Modal";
 
 interface RotatableVideoProps {
   src: string;
@@ -21,6 +23,8 @@ interface RotatableVideoProps {
    *  caps at a quarter turn so a rotated clip still fills the screen. */
   rotation?: number;
   autoPlay?: boolean;
+  /** The clip's pixel size, once known (the player window sizes itself to it). */
+  onNaturalSize?: (width: number, height: number) => void;
 }
 
 const RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
@@ -39,31 +43,39 @@ function formatTime(seconds: number): string {
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
-function formatRate(rate: number): string {
-  return Number.isInteger(rate) ? `${rate}.0×` : `${rate}×`;
-}
+const formatRate = (rate: number) => `${rate}×`;
 
 const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
 
+/** Icon button on the bar. Colors are tokens under the bar's `dark` scope. */
+const BAR_BUTTON =
+  "flex h-8 shrink-0 items-center justify-center rounded-lg text-app-fg transition-colors duration-fast hover:bg-app-hover/10 active:bg-app-hover/15";
+const POPOVER =
+  "rounded-xl bg-app-panel shadow-lg ring-1 ring-app-border animate-menu-in";
+
 /**
- * Fullscreen video with view-only rotation and a custom control bar. The native
- * `controls` bar is part of the `<video>` element's box, so rotating the
- * element rotates the progress bar too — which is wrong. Instead we hide native
- * controls, apply the rotation `style` to the frame only, and render our own
- * bar anchored to the bottom of the viewport so it stays upright regardless of
- * frame rotation.
+ * Video with view-only rotation and a custom control bar, used by the Lightbox,
+ * the map viewer and the player window. The native `controls` bar is part of
+ * the `<video>` element's box, so rotating the element rotates the progress
+ * bar too — which is wrong. Instead we hide native controls, apply the
+ * rotation `style` to the frame only, and render our own bar anchored to the
+ * bottom of the viewport so it stays upright regardless of frame rotation.
  *
- * The bar carries a full player toolset: play/pause, ±10s skip, a scrubbable
- * progress bar with buffered range and hover time bubble, current/total time, a
- * playback-rate menu, and a hover-to-reveal volume slider. It auto-hides (along
- * with the cursor) after the mouse goes idle during playback.
+ * The bar carries play/pause, ±10s skip, a scrubbable progress bar with
+ * buffered range and hover time, current/total time, a playback-rate menu and a
+ * hover-to-reveal volume slider. It auto-hides (with the cursor) after the
+ * mouse goes idle during playback.
+ *
+ * The whole component sits in a `dark` scope: it is always drawn over black,
+ * whatever the app theme, so the tokens resolve to their dark values here.
  */
 export function RotatableVideo(
-  { src, style, rotation = 0, autoPlay }: RotatableVideoProps,
+  { src, style, rotation = 0, autoPlay, onNaturalSize }: RotatableVideoProps,
 ) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
+  const rateRef = useRef<HTMLDivElement>(null);
 
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(false);
@@ -144,12 +156,24 @@ export function RotatableVideo(
     setRateOpen(false);
   }, []);
 
+  // Rate menu: Esc closes the menu (not the viewer behind it), and so does a
+  // press anywhere else. A full-screen backdrop can't do the latter here: the
+  // bar's `backdrop-filter` makes it the containing block of `fixed`
+  // descendants, so the backdrop would only cover the bar.
+  useEscapeLayer(rateOpen, () => setRateOpen(false));
+  useEffect(() => {
+    if (!rateOpen) return;
+    const onDown = (e: PointerEvent) => {
+      if (!rateRef.current?.contains(e.target as Node)) setRateOpen(false);
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    return () => document.removeEventListener("pointerdown", onDown, true);
+  }, [rateOpen]);
+
   // True "video fullscreen": fullscreen only the stage (frame + control bar),
   // not the whole document. The picture then fills the screen and the viewer's
-  // surrounding chrome (close / rotate / pager, which live outside the stage)
-  // naturally drops away — the standard player behavior. Fullscreening
-  // `documentElement` instead just maximized the app window while the frame
-  // stayed capped at 90vw/85vh, which felt like "software fullscreen".
+  // surrounding chrome (close / rotate / pager, or the player's title bar,
+  // which live outside the stage) naturally drops away.
   const toggleFullscreen = useCallback(() => {
     if (document.fullscreenElement) {
       void document.exitFullscreen().catch(() => {});
@@ -285,8 +309,8 @@ export function RotatableVideo(
   // element, so a clip smaller than the monitor stayed at its native resolution.
   // Set an explicit width/height instead (swapped at a quarter turn) and let the
   // `object-contain` class scale the picture up with letterboxing. Keep only the
-  // rotation transform/transition from the viewer's style; drop its 90vw/85vh
-  // caps so nothing fights the fill size.
+  // rotation transform/transition from the viewer's style; drop its size caps
+  // so nothing fights the fill size.
   const normalized = ((rotation % 360) + 360) % 360;
   const quarterTurned = normalized === 90 || normalized === 270;
   const videoStyle: CSSProperties | undefined = fullscreen
@@ -303,23 +327,18 @@ export function RotatableVideo(
   return (
     <div
       ref={stageRef}
-      className="flex items-center justify-center"
-      style={
-        fullscreen
-          ? {
-              width: "100vw",
-              height: "100vh",
-              background: "#000",
-              overflow: "hidden",
-            }
-          : undefined
-      }
+      className={cn(
+        // shrink-0: a quarter-turned frame is taller or wider than its stage
+        // on purpose; flex must not squeeze it back.
+        "dark flex shrink-0 items-center justify-center",
+        fullscreen && "h-screen w-screen overflow-hidden bg-black",
+      )}
     >
       <video
         ref={videoRef}
         src={src}
         autoPlay={autoPlay}
-        className="object-contain"
+        className="shrink-0 object-contain"
         style={videoStyle}
         onClick={togglePlay}
         onPlay={() => setPlaying(true)}
@@ -329,8 +348,10 @@ export function RotatableVideo(
         onPlaying={() => setWaiting(false)}
         onCanPlay={() => setWaiting(false)}
         onLoadedMetadata={(e) => {
-          setDuration(e.currentTarget.duration);
+          const v = e.currentTarget;
+          setDuration(v.duration);
           applyMediaPrefs();
+          if (v.videoWidth && v.videoHeight) onNaturalSize?.(v.videoWidth, v.videoHeight);
         }}
         onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
         onProgress={(e) => {
@@ -341,14 +362,15 @@ export function RotatableVideo(
 
       {waiting && (
         <div className="pointer-events-none fixed inset-0 z-10 flex items-center justify-center">
-          <Loader2 size={44} className="animate-spin text-white/80" />
+          <Loader2 size={28} className="animate-spin text-app-fg/70" />
         </div>
       )}
 
       <div
-        className={`fixed inset-x-0 bottom-6 z-20 flex justify-center px-4 transition-opacity duration-300 ${
-          chromeVisible ? "opacity-100" : "pointer-events-none opacity-0"
-        }`}
+        className={cn(
+          "fixed inset-x-0 bottom-5 z-20 flex justify-center px-4 transition-opacity duration-slow",
+          chromeVisible ? "opacity-100" : "pointer-events-none opacity-0",
+        )}
         onClick={(e) => e.stopPropagation()}
         onPointerEnter={() => {
           hoveringBarRef.current = true;
@@ -357,40 +379,49 @@ export function RotatableVideo(
           hoveringBarRef.current = false;
         }}
       >
-        <div className="flex w-full max-w-3xl items-center gap-2 rounded-full bg-black/60 px-4 py-2.5 backdrop-blur">
+        <div className="flex w-full max-w-3xl items-center gap-1 rounded-xl bg-app/80 p-1.5 shadow-lg ring-1 ring-app-border backdrop-blur-md">
           <button
             type="button"
             onClick={togglePlay}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white hover:bg-white/15"
-            title={playing ? "暂停 (空格)" : "播放 (空格)"}
+            className={cn(BAR_BUTTON, "w-8")}
+            aria-label={playing ? "暂停" : "播放"}
+            data-tip={playing ? "暂停  空格" : "播放  空格"}
+            data-tip-side="top"
           >
-            {playing ? <Pause size={18} /> : <Play size={18} />}
+            {playing ? (
+              <Pause size={16} fill="currentColor" strokeWidth={0} />
+            ) : (
+              <Play size={16} fill="currentColor" strokeWidth={0} />
+            )}
           </button>
-
           <button
             type="button"
             onClick={() => skip(-SKIP_SECONDS)}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white hover:bg-white/15"
-            title="后退 10 秒"
+            className={cn(BAR_BUTTON, "w-8")}
+            aria-label="后退 10 秒"
+            data-tip="后退 10 秒"
+            data-tip-side="top"
           >
             <Rewind size={16} />
           </button>
           <button
             type="button"
             onClick={() => skip(SKIP_SECONDS)}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white hover:bg-white/15"
-            title="快进 10 秒"
+            className={cn(BAR_BUTTON, "w-8")}
+            aria-label="快进 10 秒"
+            data-tip="快进 10 秒"
+            data-tip-side="top"
           >
             <FastForward size={16} />
           </button>
 
-          <span className="shrink-0 text-xs tabular-nums text-white/80">
+          <span className="min-w-[2.5rem] shrink-0 pl-1 text-right text-xs tabular-nums text-app-secondary">
             {formatTime(currentTime)}
           </span>
 
           <div
             ref={trackRef}
-            className="group relative flex h-4 flex-1 cursor-pointer items-center touch-none"
+            className="group relative mx-2 flex h-6 flex-1 touch-none items-center"
             onPointerDown={onTrackPointerDown}
             onPointerMove={onTrackPointerMove}
             onPointerUp={onTrackPointerUp}
@@ -398,23 +429,26 @@ export function RotatableVideo(
               if (!seeking) setHoverRatio(null);
             }}
           >
-            <div className="relative h-1 w-full rounded-full bg-white/25 transition-[height] group-hover:h-1.5">
+            <div className="relative h-1 w-full rounded-full bg-app-fg/20 transition-[height] duration-fast group-hover:h-1.5">
               <div
-                className="absolute inset-y-0 left-0 rounded-full bg-white/35"
+                className="absolute inset-y-0 left-0 rounded-full bg-app-fg/25"
                 style={{ width: `${bufferedPct}%` }}
               />
               <div
-                className="absolute inset-y-0 left-0 rounded-full bg-white"
+                className="absolute inset-y-0 left-0 rounded-full bg-app-fg"
                 style={{ width: `${playedPct}%` }}
               />
               <div
-                className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white opacity-0 shadow transition-opacity group-hover:opacity-100"
+                className={cn(
+                  "absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-app-fg shadow transition-opacity duration-fast",
+                  seeking ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+                )}
                 style={{ left: `${playedPct}%` }}
               />
             </div>
             {hoverRatio !== null && duration > 0 && (
               <div
-                className="pointer-events-none absolute bottom-5 -translate-x-1/2 rounded bg-black/80 px-1.5 py-0.5 text-[11px] tabular-nums text-white"
+                className="pointer-events-none absolute bottom-full mb-1.5 -translate-x-1/2 rounded-md bg-app-panel px-1.5 py-0.5 text-2xs tabular-nums text-app-fg shadow-md ring-1 ring-app-border"
                 style={{ left: `${hoverRatio * 100}%` }}
               >
                 {formatTime(hoverRatio * duration)}
@@ -422,43 +456,42 @@ export function RotatableVideo(
             )}
           </div>
 
-          <span className="shrink-0 text-xs tabular-nums text-white/80">
+          <span className="min-w-[2.5rem] shrink-0 pr-1 text-xs tabular-nums text-app-secondary">
             {formatTime(duration)}
           </span>
 
-          <div className="relative shrink-0">
+          <div ref={rateRef} className="relative shrink-0">
             <button
               type="button"
               onClick={() => setRateOpen((o) => !o)}
-              className="flex h-9 min-w-[3rem] items-center justify-center rounded-full px-2 text-xs tabular-nums text-white hover:bg-white/15"
-              title="播放速度"
+              className={cn(BAR_BUTTON, "min-w-[2.75rem] px-2 text-xs font-medium tabular-nums")}
+              aria-label="播放速度"
+              data-tip={rateOpen ? undefined : "播放速度"}
+              data-tip-side="top"
             >
               {formatRate(rate)}
             </button>
             {rateOpen && (
-              <>
-                <div
-                  className="fixed inset-0 z-10"
-                  onPointerDown={(e) => {
-                    e.stopPropagation();
-                    setRateOpen(false);
-                  }}
-                />
-                <div className="absolute bottom-full left-1/2 z-20 mb-2 flex -translate-x-1/2 flex-col overflow-hidden rounded-xl bg-neutral-900/95 py-1 shadow-lg ring-1 ring-white/10">
-                  {RATES.map((r) => (
-                    <button
-                      key={r}
-                      type="button"
-                      onClick={() => changeRate(r)}
-                      className={`px-4 py-1.5 text-center text-xs tabular-nums hover:bg-white/10 ${
-                        r === rate ? "text-white" : "text-white/70"
-                      }`}
-                    >
-                      {formatRate(r)}
-                    </button>
-                  ))}
-                </div>
-              </>
+              <div
+                className={cn(
+                  POPOVER,
+                  "absolute bottom-full left-1/2 z-20 mb-2 flex w-20 -translate-x-1/2 flex-col p-1",
+                )}
+              >
+                {RATES.map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => changeRate(r)}
+                    className={cn(
+                      "h-7 rounded-lg text-xs tabular-nums transition-colors duration-fast hover:bg-app-hover/10",
+                      r === rate ? "font-medium text-app-accent" : "text-app-fg",
+                    )}
+                  >
+                    {formatRate(r)}
+                  </button>
+                ))}
+              </div>
             )}
           </div>
 
@@ -466,13 +499,17 @@ export function RotatableVideo(
             <button
               type="button"
               onClick={toggleMute}
-              className="flex h-9 w-9 items-center justify-center rounded-full text-white hover:bg-white/15"
-              title={muted ? "取消静音 (M)" : "静音 (M)"}
+              className={cn(BAR_BUTTON, "w-8")}
+              aria-label={muted ? "取消静音" : "静音"}
+              data-tip={muted ? "取消静音  M" : "静音  M"}
+              data-tip-side="top"
             >
-              <VolumeIcon size={18} />
+              <VolumeIcon size={16} />
             </button>
-            <div className="absolute bottom-full left-1/2 hidden -translate-x-1/2 justify-center pb-2 group-hover/vol:flex">
-              <div className="flex items-center rounded-full bg-neutral-900/95 px-2.5 py-3 shadow-lg ring-1 ring-white/10">
+            {/* The padding bridges the gap so the pointer can travel from the
+                button up to the slider without the popover closing. */}
+            <div className="absolute bottom-full left-1/2 hidden -translate-x-1/2 pb-2 group-hover/vol:flex">
+              <div className={cn(POPOVER, "flex items-center px-2 py-3")}>
                 <input
                   type="range"
                   min={0}
@@ -481,7 +518,7 @@ export function RotatableVideo(
                   value={muted ? 0 : volume}
                   onChange={onVolumeInput}
                   className="trove-volume"
-                  title="音量"
+                  aria-label="音量"
                 />
               </div>
             </div>
@@ -490,10 +527,12 @@ export function RotatableVideo(
           <button
             type="button"
             onClick={toggleFullscreen}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white hover:bg-white/15"
-            title={fullscreen ? "退出全屏 (F)" : "全屏 (F)"}
+            className={cn(BAR_BUTTON, "w-8")}
+            aria-label={fullscreen ? "退出全屏" : "全屏"}
+            data-tip={fullscreen ? "退出全屏  F" : "全屏  F"}
+            data-tip-side="top"
           >
-            {fullscreen ? <Minimize size={18} /> : <Maximize size={18} />}
+            {fullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
           </button>
         </div>
       </div>

@@ -8,12 +8,10 @@ import { currentLib } from "../stores/libraries";
 import { useMessagesStore } from "../stores/messages";
 import { isHeicExt } from "./heic";
 import { isImageMedia } from "./media";
+import { PLAYER_TITLEBAR_HEIGHT } from "../player/layout";
 
 /** Label prefix for every media (video/image) popup window. */
 export const PLAYER_LABEL_PREFIX = "player-";
-
-/** Custom title-bar height (logical px) — must match `player.html` CSS. */
-export const PLAYER_TITLEBAR_HEIGHT = 32;
 
 // Fallback popup size used only until the player reads the media's real
 // dimensions (video `loadedmetadata` / image `load`) and resizes itself to

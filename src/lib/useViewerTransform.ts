@@ -1,5 +1,5 @@
-// Temporary, view-only transform for the fullscreen viewers (Lightbox /
-// MapPhotoViewer): rotation + zoom + pan. The original file is never touched —
+// Temporary, view-only transform for the viewers (Lightbox / MapPhotoViewer /
+// the player window): rotation + zoom + pan. The original file is never touched —
 // we only transform the element with CSS.
 //
 // Rotation and zoom/pan live in ONE hook on purpose. They are not independent:
@@ -78,12 +78,23 @@ export interface ViewerTransform {
   };
 }
 
+export interface ViewerTransformOptions {
+  /** Size the media box to exactly this (CSS lengths), swapped at a quarter
+   *  turn, and let `object-fit: contain` scale the picture up or down inside
+   *  it. Used by the player window, whose picture follows the window size.
+   *  Omitted: the overlay viewers' 90vw × 85vh caps, which only shrink. */
+  fill?: { width: string; height: string };
+}
+
 /**
  * @param resetKey whatever identifies the media on screen (message id, index,
  *   …). Rotation, zoom and pan all snap back whenever it changes, in a layout
  *   effect so the newly shown picture never paints a stale transform.
  */
-export function useViewerTransform(resetKey: unknown): ViewerTransform {
+export function useViewerTransform(
+  resetKey: unknown,
+  options?: ViewerTransformOptions,
+): ViewerTransform {
   const [rotation, setRotation] = useState(0);
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
@@ -135,18 +146,20 @@ export function useViewerTransform(resetKey: unknown): ViewerTransform {
   scaleRef.current = scale;
 
   /** How far the picture may be dragged: only as far as there is overflow,
-   *  so at fit size it cannot be dragged at all. Uses the element's layout
-   *  box (`clientWidth/Height`), which the CSS transform never touches. */
+   *  so at fit size it cannot be dragged at all. Uses the picture's layout
+   *  size, which the CSS transform never touches, against the stage. */
   const clampOffset = useCallback(
     (x: number, y: number, s: number, rot: number) => {
       const el = mediaRef.current;
       if (!el) return { x: 0, y: 0 };
+      const box = pictureBox(el);
       const quarter = isQuarterTurn(rot);
       // On screen the extents swap at a quarter turn.
-      const shownW = (quarter ? el.clientHeight : el.clientWidth) * s;
-      const shownH = (quarter ? el.clientWidth : el.clientHeight) * s;
-      const maxX = Math.max(0, (shownW - window.innerWidth) / 2);
-      const maxY = Math.max(0, (shownH - window.innerHeight) / 2);
+      const shownW = (quarter ? box.h : box.w) * s;
+      const shownH = (quarter ? box.w : box.h) * s;
+      const stage = stageRef.current;
+      const maxX = Math.max(0, (shownW - (stage?.clientWidth || window.innerWidth)) / 2);
+      const maxY = Math.max(0, (shownH - (stage?.clientHeight || window.innerHeight)) / 2);
       return { x: clamp(x, -maxX, maxX), y: clamp(y, -maxY, maxY) };
     },
     [],
@@ -248,10 +261,11 @@ export function useViewerTransform(resetKey: unknown): ViewerTransform {
   /** Scale at which one image pixel covers one CSS pixel. */
   const oneToOneScale = useCallback((): number => {
     const el = mediaRef.current;
-    if (!el || !el.naturalWidth || !el.clientWidth) {
+    const shownW = el ? pictureBox(el).w : 0;
+    if (!el || !el.naturalWidth || !shownW) {
       return FALLBACK_DOUBLE_CLICK_SCALE;
     }
-    return clamp(el.naturalWidth / el.clientWidth, MIN_SCALE, MAX_SCALE);
+    return clamp(el.naturalWidth / shownW, MIN_SCALE, MAX_SCALE);
   }, []);
 
   const onDoubleClick = useCallback(
@@ -291,10 +305,18 @@ export function useViewerTransform(resetKey: unknown): ViewerTransform {
   // max-size constraints too — this keeps the rotated media fully inside the
   // viewport with pure CSS, no need to read the media's pixel dimensions.
   const quarterTurned = isQuarterTurn(rotation);
-  const fit: CSSProperties = {
-    maxWidth: quarterTurned ? "85vh" : "90vw",
-    maxHeight: quarterTurned ? "90vw" : "85vh",
-  };
+  const fill = options?.fill;
+  const fit: CSSProperties = fill
+    ? {
+        width: quarterTurned ? fill.height : fill.width,
+        height: quarterTurned ? fill.width : fill.height,
+        maxWidth: "none",
+        maxHeight: "none",
+      }
+    : {
+        maxWidth: quarterTurned ? "85vh" : "90vw",
+        maxHeight: quarterTurned ? "90vw" : "85vh",
+      };
   const transition = instant ? "none" : "transform 150ms ease";
   const zoomed = scale > MIN_SCALE;
 
@@ -326,6 +348,18 @@ export function useViewerTransform(resetKey: unknown): ViewerTransform {
     },
     mediaHandlers: { onPointerDown, onDoubleClick },
   };
+}
+
+/** Size of the picture itself inside an `object-fit: contain` box. With the
+ *  overlay viewers' caps the box hugs the picture, so this is the box; in
+ *  `fill` mode the box is the whole stage and the picture is letterboxed. */
+function pictureBox(el: HTMLImageElement): { w: number; h: number } {
+  const w = el.clientWidth;
+  const h = el.clientHeight;
+  if (!el.naturalWidth || !el.naturalHeight || !w || !h) return { w, h };
+  const ratio = el.naturalWidth / el.naturalHeight;
+  const shownW = Math.min(w, h * ratio);
+  return { w: shownW, h: shownW / ratio };
 }
 
 function isQuarterTurn(rotation: number): boolean {
