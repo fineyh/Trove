@@ -55,7 +55,7 @@ function ConversationRow({ c, onContextMenu }: ConversationRowProps) {
   return (
     <button
       type="button"
-      onClick={() => setActive(c.id)}
+      onClick={() => setActive(active ? null : c.id)}
       onContextMenu={(e) => onContextMenu(e, c)}
       aria-current={active}
       className={cn(
