@@ -53,7 +53,7 @@ function useLib(): string | null {
 
 function Shimmer() {
   return (
-    <div className="h-full w-full animate-shimmer bg-[linear-gradient(90deg,rgb(var(--color-app-subtle))_0%,rgb(var(--color-border)/0.6)_50%,rgb(var(--color-app-subtle))_100%)] bg-[length:200%_100%]" />
+    <div className="h-full w-full animate-shimmer bg-[linear-gradient(90deg,rgb(var(--fill))_0%,rgb(var(--line)/0.6)_50%,rgb(var(--fill))_100%)] bg-[length:200%_100%]" />
   );
 }
 

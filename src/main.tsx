@@ -1,12 +1,19 @@
+// Must stay first: fakes the Tauri runtime before any store loads (dev, ?mock only).
+import "./dev/mockTauri";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import { ErrorBoundary } from "./components/ui/ErrorBoundary";
 import { Toaster } from "./components/ui/Toaster";
+import { TooltipLayer } from "./components/ui/Tooltip";
+import { installNativeShell } from "./lib/nativeShell";
+import { initTheme } from "./stores/theme";
 import { installGlobalErrorHandlers } from "./lib/globalErrors";
 import "./styles.css";
 
 installGlobalErrorHandlers();
+installNativeShell();
+initTheme();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
@@ -16,5 +23,6 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       <App />
     </ErrorBoundary>
     <Toaster />
+    <TooltipLayer />
   </React.StrictMode>,
 );

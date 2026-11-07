@@ -56,8 +56,8 @@ function groupByLocation(media: GeotaggedMedia[]): LocationGroup[] {
 function markerIcon(count: number): L.DivIcon {
   const html =
     count > 1
-      ? `<div style="display:flex;align-items:center;justify-content:center;min-width:30px;height:30px;padding:0 7px;border-radius:15px;background:rgb(var(--color-accent));color:#fff;font-size:12px;font-weight:600;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35)">${count}</div>`
-      : `<div style="width:18px;height:18px;border-radius:50%;background:rgb(var(--color-accent));border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35)"></div>`;
+      ? `<div style="display:flex;align-items:center;justify-content:center;min-width:30px;height:30px;padding:0 7px;border-radius:15px;background:rgb(var(--accent));color:rgb(var(--on-accent));font-size:12px;font-weight:600;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35)">${count}</div>`
+      : `<div style="width:18px;height:18px;border-radius:50%;background:rgb(var(--accent));border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35)"></div>`;
   const size = count > 1 ? 30 : 18;
   return L.divIcon({
     html,

@@ -67,3 +67,51 @@ pub fn get_setting(key: String) -> AppResult<Option<String>> {
         Ok(v)
     })
 }
+
+// ─── UI preferences ─────────────────────────────────────────────────────────
+//
+// Look-and-feel only (theme). Kept outside the libraries in a plain
+// `ui.json` so the lock / unlock screens can use it before anything is
+// decrypted. Nothing here is private.
+
+const UI_FILE: &str = "ui.json";
+
+fn ui_path() -> std::path::PathBuf {
+    crate::services::session::data_dir().join(UI_FILE)
+}
+
+fn read_ui() -> serde_json::Map<String, serde_json::Value> {
+    std::fs::read(ui_path())
+        .ok()
+        .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
+        .and_then(|v| v.as_object().cloned())
+        .unwrap_or_default()
+}
+
+#[tauri::command]
+pub fn get_ui_prefs() -> HashMap<String, String> {
+    read_ui()
+        .into_iter()
+        .filter_map(|(k, v)| v.as_str().map(|s| (k, s.to_string())))
+        .collect()
+}
+
+#[tauri::command]
+pub fn set_ui_pref(key: String, value: String) -> AppResult<()> {
+    let ok = match key.as_str() {
+        "theme" => matches!(value.as_str(), "system" | "light" | "dark"),
+        _ => false,
+    };
+    if !ok {
+        return Err(AppError::InvalidArg(format!("bad ui pref {key}={value}")));
+    }
+    let mut map = read_ui();
+    map.insert(key, serde_json::Value::String(value));
+    let bytes = serde_json::to_vec_pretty(&serde_json::Value::Object(map))
+        .map_err(|e| AppError::Other(anyhow::anyhow!(e)))?;
+    let path = ui_path();
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, bytes)?;
+    std::fs::rename(&tmp, &path)?;
+    Ok(())
+}

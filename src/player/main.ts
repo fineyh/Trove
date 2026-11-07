@@ -13,6 +13,9 @@ import {
   currentMonitor,
   getCurrentWindow,
 } from "@tauri-apps/api/window";
+import { installNativeShell } from "../lib/nativeShell";
+
+installNativeShell();
 
 /** Must match `--titlebar-h` in player.html and PLAYER_TITLEBAR_HEIGHT. */
 const TITLEBAR_HEIGHT = 32;

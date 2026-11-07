@@ -10,94 +10,114 @@ export interface ContextMenuItem {
   onClick: () => void;
 }
 
+/** A menu entry, or a divider between groups. */
+export type ContextMenuEntry = ContextMenuItem | "separator";
+
 interface ContextMenuProps {
   open: boolean;
   x: number;
   y: number;
-  items: ContextMenuItem[];
+  items: ContextMenuEntry[];
   onClose: () => void;
 }
 
-const MARGIN = 4;
+const MARGIN = 6;
 
 export function ContextMenu({ open, x, y, items, onClose }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState({ left: x, top: y });
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
 
   useLayoutEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setPos(null);
+      return;
+    }
     const el = menuRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
     let left = x;
     let top = y;
-    if (left + rect.width + MARGIN > vw) left = Math.max(MARGIN, vw - rect.width - MARGIN);
-    if (top + rect.height + MARGIN > vh) top = Math.max(MARGIN, vh - rect.height - MARGIN);
+    if (left + rect.width + MARGIN > window.innerWidth) left = Math.max(MARGIN, x - rect.width);
+    if (top + rect.height + MARGIN > window.innerHeight) top = Math.max(MARGIN, window.innerHeight - rect.height - MARGIN);
     setPos({ left, top });
   }, [open, x, y]);
 
   useEffect(() => {
     if (!open) return;
-    const onMouseDown = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+    const onDown = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) onClose();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopImmediatePropagation();
         onClose();
       }
     };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    const onScroll = () => onClose();
-    const onResize = () => onClose();
-    window.addEventListener("mousedown", onMouseDown, true);
-    window.addEventListener("contextmenu", onMouseDown, true);
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("scroll", onScroll, true);
-    window.addEventListener("resize", onResize);
+    window.addEventListener("mousedown", onDown, true);
+    window.addEventListener("contextmenu", onDown, true);
+    window.addEventListener("keydown", onKey, true);
+    window.addEventListener("scroll", onClose, true);
+    window.addEventListener("resize", onClose);
+    window.addEventListener("blur", onClose);
     return () => {
-      window.removeEventListener("mousedown", onMouseDown, true);
-      window.removeEventListener("contextmenu", onMouseDown, true);
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("scroll", onScroll, true);
-      window.removeEventListener("resize", onResize);
+      window.removeEventListener("mousedown", onDown, true);
+      window.removeEventListener("contextmenu", onDown, true);
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("scroll", onClose, true);
+      window.removeEventListener("resize", onClose);
+      window.removeEventListener("blur", onClose);
     };
   }, [open, onClose]);
 
   if (!open) return null;
 
+  // Drop leading / trailing / doubled separators left by conditional items.
+  const entries = items.filter(
+    (it, i, arr) => it !== "separator" || (i > 0 && i < arr.length - 1 && arr[i - 1] !== "separator"),
+  );
+
   return createPortal(
     <div
       ref={menuRef}
-      style={{ position: "fixed", left: pos.left, top: pos.top }}
-      className="z-50 min-w-[10rem] overflow-hidden rounded-md border border-app-border bg-app-panel py-1 shadow-lg"
       role="menu"
+      style={{ position: "fixed", left: pos?.left ?? x, top: pos?.top ?? y, visibility: pos ? "visible" : "hidden" }}
+      className="z-[70] min-w-[180px] animate-menu-in rounded-xl bg-app-panel p-1 shadow-lg ring-1 ring-black/[0.06] dark:ring-white/10"
+      onContextMenu={(e) => e.preventDefault()}
     >
-      {items.map((item, idx) => {
-        const danger = item.variant === "danger";
-        return (
+      {entries.map((item, idx) =>
+        item === "separator" ? (
+          <div key={`sep-${idx}`} role="separator" className="mx-2 my-1 h-px bg-app-border" />
+        ) : (
           <button
             key={idx}
             type="button"
             role="menuitem"
             disabled={item.disabled}
             onClick={() => {
-              if (item.disabled) return;
-              item.onClick();
+              if (!item.disabled) item.onClick();
             }}
             className={cn(
-              "flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors",
-              "disabled:opacity-40 disabled:cursor-not-allowed",
-              danger
-                ? "text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40"
-                : "text-app-fg hover:bg-app-subtle",
+              "flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-sm transition-colors duration-fast",
+              "disabled:pointer-events-none disabled:opacity-40",
+              item.variant === "danger"
+                ? "text-app-danger hover:bg-app-danger/10"
+                : "text-app-fg hover:bg-app-hover/[0.06]",
             )}
           >
-            {item.icon && <span className="flex h-4 w-4 items-center justify-center">{item.icon}</span>}
-            <span>{item.label}</span>
+            {item.icon && (
+              <span
+                className={cn(
+                  "flex h-4 w-4 shrink-0 items-center justify-center",
+                  item.variant === "danger" ? "" : "text-app-secondary",
+                )}
+              >
+                {item.icon}
+              </span>
+            )}
+            <span className="truncate">{item.label}</span>
           </button>
-        );
-      })}
+        ),
+      )}
     </div>,
     document.body,
   );

@@ -55,7 +55,7 @@ export function RecoveryCodeDialog() {
               type="checkbox"
               checked={saved}
               onChange={(e) => setSaved(e.target.checked)}
-              className="h-4 w-4 accent-[rgb(var(--color-accent))]"
+              className="h-4 w-4 accent-[rgb(var(--accent))]"
             />
             我已妥善保存
           </label>

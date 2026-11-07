@@ -2,24 +2,43 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ─── Design tokens (notes/design.md) ──────────────────────────────────────
+   RGB triplets so Tailwind can apply alpha: bg-app-accent/10.
+   Neutrals lean slightly cool, toward the indigo accent. */
 :root {
-  --color-app: 246 247 249;
-  --color-app-fg: 22 24 28;
-  --color-app-subtle: 234 236 240;
-  --color-panel: 255 255 255;
-  --color-border: 222 225 231;
-  --color-accent: 0 122 255;
-  --color-muted: 130 134 142;
+  --bg: 245 246 248; /* window canvas */
+  --panel: 255 255 255; /* sidebars, cards, dialogs */
+  --fill: 238 240 243; /* inputs, segmented track, quiet fills */
+  --hover: 22 24 29; /* used at low alpha for hover / selected washes */
+  --line: 227 229 234;
+  --fg: 22 24 29;
+  --fg-2: 92 97 107; /* secondary text */
+  --fg-3: 138 143 152; /* metadata, placeholders */
+  --accent: 79 107 237; /* indigo #4F6BED */
+  --on-accent: 255 255 255;
+  --danger: 222 61 67;
+  --warning: 194 120 10;
+  --success: 36 150 98;
+  --shadow: 15 18 30;
+  color-scheme: light;
 }
 
 .dark {
-  --color-app: 16 18 22;
-  --color-app-fg: 232 234 238;
-  --color-app-subtle: 24 26 31;
-  --color-panel: 22 24 30;
-  --color-border: 38 41 48;
-  --color-accent: 10 132 255;
-  --color-muted: 142 146 154;
+  --bg: 18 19 23;
+  --panel: 27 29 34;
+  --fill: 36 38 44;
+  --hover: 255 255 255;
+  --line: 44 47 54;
+  --fg: 232 234 238;
+  --fg-2: 164 168 177;
+  --fg-3: 120 125 135;
+  --accent: 129 147 255; /* #8193FF */
+  --on-accent: 14 19 48;
+  --danger: 242 92 97;
+  --warning: 229 162 58;
+  --success: 63 181 125;
+  --shadow: 0 0 0;
+  color-scheme: dark;
 }
 
 html,
@@ -29,36 +48,93 @@ body,
   width: 100%;
   margin: 0;
   padding: 0;
-  background-color: rgb(var(--color-app));
-  color: rgb(var(--color-app-fg));
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
-    "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
-  font-size: 14px;
-  -webkit-font-smoothing: antialiased;
-  -webkit-user-select: none;
-  user-select: none;
   overflow: hidden;
 }
 
+body {
+  background-color: rgb(var(--bg));
+  color: rgb(var(--fg));
+  font-family: "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont,
+    "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  font-size: 13px;
+  line-height: 20px;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-variant-numeric: tabular-nums;
+  /* A desktop app, not a page: nothing is selectable unless it opts in. */
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+}
+
 input,
-textarea {
+textarea,
+.selectable {
   -webkit-user-select: text;
   user-select: text;
 }
 
+/* Native apps use the arrow over buttons; the hand is for links. */
+button,
+[role="button"],
+summary,
+label {
+  cursor: default;
+}
+a[href] {
+  cursor: pointer;
+}
+
+img,
+video {
+  -webkit-user-drag: none;
+}
+
+/* Focus rings for keyboard users only. */
+:focus {
+  outline: none;
+}
+:focus-visible {
+  outline: 2px solid rgb(var(--accent) / 0.7);
+  outline-offset: 2px;
+}
+input:focus-visible,
+textarea:focus-visible {
+  outline: none;
+}
+
+::selection {
+  background: rgb(var(--accent) / 0.25);
+}
+
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgb(var(--color-border));
-  border-radius: 4px;
+  background: rgb(var(--fg-3) / 0.35);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgb(var(--color-muted) / 0.6);
+  background: rgb(var(--fg-3) / 0.6);
+  border: 3px solid transparent;
+  background-clip: padding-box;
 }
-::-webkit-scrollbar-track {
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
   background: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
 }
 
 /* 悬浮日期头：吸顶（data-stuck）且滚动已停止（容器 data-scrolling="false"）时淡出，
@@ -79,7 +155,6 @@ input[type="range"].trove-volume {
   height: 84px;
   margin: 0;
   background: transparent;
-  cursor: pointer;
   writing-mode: vertical-lr;
   direction: rtl;
 }

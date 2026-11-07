@@ -467,6 +467,22 @@ export async function saveSetting<K extends keyof AppSettings>(
   }
 }
 
+// ─── UI preferences (outside the libraries, readable while locked) ─────────
+
+export type ThemePref = "system" | "light" | "dark";
+
+export async function getUiPrefs(): Promise<{ theme: ThemePref }> {
+  if (!isTauri()) return { theme: "system" };
+  const raw = await invoke<Record<string, string>>("get_ui_prefs");
+  const t = raw["theme"];
+  return { theme: t === "light" || t === "dark" ? t : "system" };
+}
+
+export function setUiPref(key: "theme", value: ThemePref): Promise<void> {
+  if (!isTauri()) return Promise.resolve();
+  return invoke("set_ui_pref", { key, value });
+}
+
 // ─── Repair / volumes / storage (per library) ───────────────────────────────
 
 export async function listBrokenPointers(lib: string): Promise<BrokenGroup[]> {
