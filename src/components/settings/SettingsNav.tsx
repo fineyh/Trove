@@ -8,24 +8,24 @@ interface SettingsNavProps {
 
 export function SettingsNav({ active, onSelect }: SettingsNavProps) {
   return (
-    <nav className="flex h-full w-44 shrink-0 flex-col gap-0.5 border-r border-app-border bg-app-subtle/40 p-2">
+    <nav className="flex h-full w-[200px] shrink-0 flex-col gap-0.5 border-r border-app-border bg-app-panel p-3">
+      <div className="px-2.5 pb-3 pt-1 text-base font-semibold">设置</div>
       {NAV_ITEMS.map((item) => {
         const Icon = item.icon;
-        const isActive = item.key === active;
+        const on = item.key === active;
         return (
           <button
             key={item.key}
             type="button"
             onClick={() => onSelect(item.key)}
+            aria-current={on ? "page" : undefined}
             className={cn(
-              "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors",
-              isActive
-                ? "bg-app-panel text-app-fg shadow-sm"
-                : "text-app-fg/70 hover:bg-app-panel/60 hover:text-app-fg",
+              "flex h-8 items-center gap-2.5 rounded-lg px-2.5 text-sm transition-colors duration-fast",
+              on ? "bg-app-hover/[0.07] font-medium text-app-fg" : "text-app-secondary hover:bg-app-hover/[0.04] hover:text-app-fg",
             )}
           >
-            <Icon size={15} className="shrink-0" />
-            <span>{item.label}</span>
+            <Icon size={16} className={cn("shrink-0", on ? "text-app-accent" : "")} />
+            {item.label}
           </button>
         );
       })}

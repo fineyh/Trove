@@ -1,15 +1,18 @@
-import { Archive, Download, Info, ShieldCheck, Upload } from "lucide-react";
 import { useState } from "react";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import * as ipc from "../../../ipc/client";
 import { useSecurityStore } from "../../../stores/security";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
-import { Button, Notice, Switch, TextField } from "../../ui/Modal";
+import { Button } from "../../ui/Button";
+import { TextField } from "../../ui/Field";
+import { Notice } from "../../ui/Notice";
+import { Switch } from "../../ui/Switch";
 import { isTauri } from "../../../hooks/useIsTauri";
 import { errText } from "../../../lib/errors";
 import { formatBytes } from "../../../lib/media";
 import type { BackupExportResult } from "../../../types";
 import { MIN_PASSWORD } from "../../library/LibraryDialogs";
+import { Group, Page, Row } from "../SettingsKit";
 
 export function BackupPane() {
   const appPassword = useSecurityStore((s) => s.status?.appPassword === true);
@@ -27,15 +30,12 @@ export function BackupPane() {
   const handleExport = async () => {
     setError(null);
     setExported(null);
-    if (!isTauri()) {
-      setError("仅在桌面应用内可用");
-      return;
-    }
+    if (!isTauri()) return;
     try {
       const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
       const dest = await saveDialog({
         defaultPath: `trove-${stamp}.trovebackup`,
-        filters: [{ name: "Trove Backup", extensions: ["trovebackup"] }],
+        filters: [{ name: "Trove 备份", extensions: ["trovebackup"] }],
       });
       if (!dest) return;
       setBusy("export");
@@ -52,15 +52,12 @@ export function BackupPane() {
 
   const handlePickImport = async () => {
     setError(null);
-    if (!isTauri()) {
-      setError("仅在桌面应用内可用");
-      return;
-    }
+    if (!isTauri()) return;
     try {
       const src = await openDialog({
         multiple: false,
         directory: false,
-        filters: [{ name: "Trove Backup", extensions: ["trovebackup"] }],
+        filters: [{ name: "Trove 备份", extensions: ["trovebackup"] }],
       });
       if (typeof src === "string") setPendingImportPath(src);
     } catch (e: unknown) {
@@ -85,123 +82,78 @@ export function BackupPane() {
   };
 
   return (
-    <div className="flex flex-col gap-6">
-      <h2 className="text-lg font-semibold">备份</h2>
-
-      <Notice icon={<Info size={14} />}>
-        备份只包含<b>目录和元数据</b>：所有库（会话、说明、缩略图）和钥匙环。
-        <b>不含照片和视频原文件</b>，它们仍在原来的位置，需要另外备份。
-      </Notice>
-
-      <section className="flex flex-col gap-3">
-        <div className="flex items-center gap-2 text-sm font-medium">
-          <Download size={14} />
-          导出
-        </div>
-        <div className="text-xs leading-5 text-app-muted">
-          库文件本身就是加密的。没设启动密码时，拿到备份文件就能用 Trove 打开它，和拷走数据目录一样；
-          设过密码的库仍然需要它自己的密码。
-        </div>
-
+    <Page title="备份与恢复">
+      <Group title="备份" footer="包含所有库、会话和缩略图，不含照片和视频原文件。">
         {appPassword ? (
-          <div className="flex items-center gap-2 text-xs text-emerald-600 dark:text-emerald-400">
-            <ShieldCheck size={14} />
-            已设置启动密码：恢复这份备份时需要输入它。
-          </div>
+          <Row label="备份密码" description="与应用密码相同" />
         ) : (
-          <div className="flex flex-col gap-3 rounded-xl border border-app-border p-3.5">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex flex-col">
-                <span className="text-sm font-medium">为这份备份设密码</span>
-                <span className="text-xs text-app-muted">恢复时要输入它。只作用于这一份备份文件。</span>
-              </div>
-              <Switch checked={withPassword} onChange={setWithPassword} label="为备份设密码" />
-            </div>
-            {withPassword && (
-              <div className="grid grid-cols-2 gap-3">
-                <TextField
-                  type="password"
-                  label="备份密码"
-                  value={pw}
-                  onChange={(e) => setPw(e.target.value)}
-                  error={pw.length > 0 && pw.length < MIN_PASSWORD ? `至少 ${MIN_PASSWORD} 个字符` : undefined}
-                />
-                <TextField
-                  type="password"
-                  label="再输入一次"
-                  value={pw2}
-                  onChange={(e) => setPw2(e.target.value)}
-                  error={pw2.length > 0 && pw !== pw2 ? "两次输入不一致" : undefined}
-                />
-              </div>
-            )}
-          </div>
+          <Row
+            label="备份密码"
+            description="恢复时需要输入"
+            expanded={
+              withPassword ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <TextField
+                    type="password"
+                    label="密码"
+                    value={pw}
+                    autoFocus
+                    onChange={(e) => setPw(e.target.value)}
+                    error={pw.length > 0 && pw.length < MIN_PASSWORD ? `至少 ${MIN_PASSWORD} 个字符` : undefined}
+                  />
+                  <TextField
+                    type="password"
+                    label="确认密码"
+                    value={pw2}
+                    onChange={(e) => setPw2(e.target.value)}
+                    error={pw2.length > 0 && pw !== pw2 ? "两次输入不一致" : undefined}
+                  />
+                </div>
+              ) : undefined
+            }
+          >
+            <Switch checked={withPassword} onChange={setWithPassword} label="备份密码" />
+          </Row>
         )}
-
-        <Button
-          variant="primary"
-          icon={<Download size={14} />}
-          onClick={handleExport}
-          disabled={busy !== null || !pwOk}
-          className="self-start"
+        <Row
+          label="导出备份"
+          description={
+            exported
+              ? `已导出 ${formatBytes(exported.bytes)}${exported.passwordProtected ? "，有密码保护" : ""}`
+              : undefined
+          }
         >
-          {busy === "export" ? "导出中…" : "选择导出位置…"}
-        </Button>
-        {exported && (
-          <Notice tone="success">
-            已导出到 <span className="select-text break-all font-mono">{exported.destPath}</span>（
-            {formatBytes(exported.bytes)}
-            {exported.passwordProtected ? " · 有密码保护" : ""}）
-          </Notice>
-        )}
-      </section>
+          <Button variant="primary" size="sm" onClick={handleExport} disabled={busy !== null || !pwOk} loading={busy === "export"}>
+            导出…
+          </Button>
+        </Row>
+      </Group>
 
-      <section className="flex flex-col gap-3 border-t border-app-border pt-5">
-        <div className="flex items-center gap-2 text-sm font-medium">
-          <Upload size={14} />
-          导入
-        </div>
-        <div className="text-xs leading-5 text-app-muted">
-          用备份替换当前数据。当前数据不会被删除，而是移到
-          <code className="mx-1 rounded bg-app-subtle px-1">&lt;数据目录&gt;/backups/&lt;时间戳&gt;/</code>
-          ，导入后应用会自动重启。
-        </div>
-        <Button
-          icon={<Archive size={14} />}
-          onClick={handlePickImport}
-          disabled={busy !== null}
-          className="self-start"
-        >
-          选择 .trovebackup 文件…
-        </Button>
-      </section>
+      <Group title="恢复">
+        <Row label="从备份恢复" description="当前数据会先移到数据目录的 backups 文件夹">
+          <Button size="sm" onClick={handlePickImport} disabled={busy !== null}>
+            选择文件…
+          </Button>
+        </Row>
+      </Group>
 
       {error && <Notice tone="danger">{error}</Notice>}
 
       <ConfirmDialog
         open={pendingImportPath !== null}
         variant="danger"
-        title="导入备份"
+        title="从备份恢复"
         message={
-          pendingImportPath ? (
-            <div className="flex flex-col gap-2">
-              <div>
-                将用 <span className="break-all font-mono">{pendingImportPath}</span> 替换当前数据。
-              </div>
-              <div className="text-xs text-app-muted">
-                当前数据会被移动到 backups/&lt;时间戳&gt;/ 目录，可手动找回。导入完成后应用会立即重启；
-                如果备份设过密码，重启后会要求输入，它会成为启动密码（之后可以在「安全」里修改或去掉）。
-              </div>
-            </div>
-          ) : (
-            ""
-          )
+          <div className="flex flex-col gap-2">
+            <span>当前数据会被替换，Trove 随后重启。</span>
+            <span className="selectable break-all font-mono text-xs text-app-muted">{pendingImportPath}</span>
+          </div>
         }
-        confirmText="导入并重启"
+        confirmText="恢复并重启"
         busy={busy === "import"}
         onConfirm={handleConfirmImport}
         onCancel={() => setPendingImportPath(null)}
       />
-    </div>
+    </Page>
   );
 }

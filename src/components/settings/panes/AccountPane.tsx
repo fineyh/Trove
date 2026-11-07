@@ -1,7 +1,10 @@
-import { LogIn, LogOut, User } from "lucide-react";
+import { UserRound } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useAuthStore } from "../../../stores/auth";
 import { errText } from "../../../lib/errors";
+import { Button } from "../../ui/Button";
+import { Notice } from "../../ui/Notice";
+import { Group, Page, Row } from "../SettingsKit";
 
 export function AccountPane() {
   const status = useAuthStore((s) => s.status);
@@ -10,105 +13,53 @@ export function AccountPane() {
   const refresh = useAuthStore((s) => s.refresh);
   const login = useAuthStore((s) => s.login);
   const doLogout = useAuthStore((s) => s.logout);
-
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
-
-  const handleLogin = async () => {
+  const run = async (fn: () => Promise<void>) => {
     setError(null);
     try {
-      await login();
+      await fn();
     } catch (e: unknown) {
       setError(errText(e));
     }
   };
 
-  const handleLogout = async () => {
-    setError(null);
-    try {
-      await doLogout();
-    } catch (e: unknown) {
-      setError(errText(e));
-    }
-  };
+  const avatar = status.pictureUrl ? (
+    <img src={status.pictureUrl} alt="" className="h-9 w-9 rounded-full" referrerPolicy="no-referrer" />
+  ) : (
+    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-app-subtle text-app-muted">
+      <UserRound size={18} />
+    </div>
+  );
 
   return (
-    <div className="flex flex-col gap-6">
-      <h2 className="text-lg font-semibold">账号</h2>
-
-      <section className="flex flex-col gap-3">
-        <div className="text-sm font-medium">Google 身份</div>
-        <div className="text-xs text-app-muted">
-          仅用于在本地显示头像与邮箱，不会上传任何媒体或元数据。
-          登录凭据保存在主库里，和其他数据一样加密存放。
-        </div>
-
+    <Page title="账号">
+      <Group title="Google 账号" footer="只用于显示头像和邮箱，不上传任何内容。">
         {!ready ? (
-          <div className="rounded-md border border-app-border bg-app-subtle/30 px-3 py-6 text-center text-xs text-app-muted">
-            加载中...
-          </div>
+          <Row label="正在读取…" leading={avatar} />
         ) : status.hasIdentity ? (
-          <div className="flex items-center gap-3 rounded-md border border-app-border bg-app-subtle/30 p-3">
-            {status.pictureUrl ? (
-              <img
-                src={status.pictureUrl}
-                alt=""
-                className="h-10 w-10 rounded-full"
-                referrerPolicy="no-referrer"
-              />
-            ) : (
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-app-accent/15 text-app-accent">
-                <User size={18} />
-              </div>
-            )}
-            <div className="flex min-w-0 flex-1 flex-col">
-              <div className="truncate text-sm font-medium">
-                {status.displayName ?? status.email ?? "Google 用户"}
-              </div>
-              {status.email && (
-                <div className="truncate text-xs text-app-muted">
-                  {status.email}
-                </div>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={handleLogout}
-              disabled={busy}
-              className="flex items-center gap-1.5 rounded-md border border-app-border px-2.5 py-1.5 text-xs hover:bg-app-subtle disabled:opacity-40"
-            >
-              <LogOut size={12} />
-              {busy ? "处理中..." : "登出"}
-            </button>
-          </div>
+          <Row
+            leading={avatar}
+            label={status.displayName ?? status.email ?? "Google 用户"}
+            description={status.displayName ? status.email : undefined}
+          >
+            <Button onClick={() => void run(doLogout)} loading={busy}>
+              退出登录
+            </Button>
+          </Row>
         ) : (
-          <div className="flex flex-col gap-2 rounded-md border border-dashed border-app-border bg-app-subtle/30 p-4">
-            <div className="flex items-center gap-2 text-sm text-app-muted">
-              <User size={14} />
-              尚未登录
-            </div>
-            <button
-              type="button"
-              onClick={handleLogin}
-              disabled={busy}
-              className="mt-1 flex items-center justify-center gap-1.5 self-start rounded-md bg-app-accent px-3 py-1.5 text-xs text-white hover:opacity-90 disabled:opacity-40"
-            >
-              <LogIn size={12} />
-              {busy ? "等待浏览器授权..." : "用 Google 登录"}
-            </button>
-          </div>
+          <Row leading={avatar} label="未登录">
+            <Button variant="primary" onClick={() => void run(login)} loading={busy}>
+              {busy ? "等待浏览器授权" : "使用 Google 登录"}
+            </Button>
+          </Row>
         )}
-
-        {error && (
-          <div className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-500">
-            {error}
-          </div>
-        )}
-      </section>
-    </div>
+      </Group>
+      {error && <Notice tone="danger">{error}</Notice>}
+    </Page>
   );
 }

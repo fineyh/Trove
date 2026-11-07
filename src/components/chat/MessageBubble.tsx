@@ -230,7 +230,7 @@ function MissingMedia({ message }: MessageBubbleProps) {
       </span>
       <button
         type="button"
-        onClick={() => openSettings(true, "media")}
+        onClick={() => openSettings(true, "storage")}
         className="flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-app-accent transition hover:bg-app-accent/10"
       >
         <Wrench size={12} />

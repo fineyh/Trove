@@ -28,7 +28,7 @@ export function Segmented<T extends string | number>({
             aria-checked={on}
             onClick={() => onChange(o.value)}
             className={cn(
-              "flex-1 rounded-md px-2.5 font-medium transition-colors duration-fast",
+              "flex-1 whitespace-nowrap rounded-md px-2.5 font-medium transition-colors duration-fast",
               size === "sm" ? "h-6 text-xs" : "h-7 text-sm",
               on
                 ? "bg-app-panel text-app-fg shadow-sm dark:bg-[rgb(var(--line))]"

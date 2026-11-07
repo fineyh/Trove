@@ -1,13 +1,15 @@
 import { X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { useSessionStore } from "../../stores/session";
 import { useSettingsStore } from "../../stores/settings";
+import { IconButton } from "../ui/Button";
+import { useEscapeLayer } from "../ui/Modal";
 import { SettingsNav } from "../settings/SettingsNav";
-import { DEFAULT_SECTION, type SettingsSection } from "../settings/types";
+import { DEFAULT_SECTION, isSection, type SettingsSection } from "../settings/types";
 import { AccountPane } from "../settings/panes/AccountPane";
 import { GeneralPane } from "../settings/panes/GeneralPane";
 import { StoragePane } from "../settings/panes/StoragePane";
-import { MediaPane } from "../settings/panes/MediaPane";
 import { SecurityPane } from "../settings/panes/SecurityPane";
 import { BackupPane } from "../settings/panes/BackupPane";
 import { AboutPane } from "../settings/panes/AboutPane";
@@ -22,38 +24,42 @@ export function SettingsDialog() {
 
   useEffect(() => {
     if (open) {
-      setSection((initial as SettingsSection | null) ?? DEFAULT_SECTION);
+      setSection(isSection(initial) ? initial : DEFAULT_SECTION);
       void load();
     }
   }, [open, initial, load]);
 
+  useEscapeLayer(open, () => setOpen(false));
+
   if (!open) return null;
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-40 flex animate-fade-in items-center justify-center bg-black/40 p-4 backdrop-blur-[2px]"
-      onClick={() => setOpen(false)}
+      className="fixed inset-0 z-40 flex animate-fade-in items-center justify-center bg-black/30 p-6 dark:bg-black/50"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) setOpen(false);
+      }}
     >
       <div
-        className="relative flex h-[80vh] w-full max-w-4xl animate-pop-in overflow-hidden rounded-2xl border border-app-border bg-app-panel shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="设置"
+        className="relative flex h-[min(680px,88vh)] w-full max-w-[880px] animate-pop-in overflow-hidden rounded-2xl bg-app shadow-xl ring-1 ring-black/5 dark:ring-white/10"
       >
         <SettingsNav active={section} onSelect={setSection} />
-
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="min-w-0 flex-1 overflow-y-auto px-8 pt-6">
           <PaneSwitch section={section} />
         </div>
-
-        <button
-          type="button"
+        <IconButton
+          label="关闭"
+          noTip
+          icon={<X size={16} />}
           onClick={() => setOpen(false)}
-          className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded text-app-muted hover:bg-app-subtle"
-          aria-label="关闭"
-        >
-          <X size={16} />
-        </button>
+          className="absolute right-3 top-3"
+        />
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -65,8 +71,6 @@ function PaneSwitch({ section }: { section: SettingsSection }) {
       return <GeneralPane />;
     case "storage":
       return <StoragePane />;
-    case "media":
-      return <MediaPane />;
     case "security":
       return <SecurityPane />;
     case "backup":

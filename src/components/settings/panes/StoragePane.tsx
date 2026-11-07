@@ -1,26 +1,25 @@
-import { Check, Copy, FolderOpen, HardDrive, RefreshCw, Trash2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Copy, FolderOpen, HardDrive, Loader2, RefreshCw, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { useConversationsStore } from "../../../stores/conversations";
 import { useSettingsStore } from "../../../stores/settings";
-import { useCurrentLibrary } from "../../../stores/libraries";
+import { currentLib, useCurrentLibrary } from "../../../stores/libraries";
 import { useThumbsStore } from "../../../stores/thumbs";
-import type { VolumePayload, VolumeStat } from "../../../types";
+import type { RepairScope, VolumePayload, VolumeStat } from "../../../types";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
+import { Button, IconButton } from "../../ui/Button";
+import { Select } from "../../ui/Select";
 import * as ipc from "../../../ipc/client";
 import { cn } from "../../../lib/cn";
+import { formatBytes } from "../../../lib/media";
 import { toast } from "../../../stores/toast";
+import { Group, Page, Row, Stats } from "../SettingsKit";
+import { BrokenManagerDialog } from "./BrokenManagerDialog";
 
-function formatBytes(n: number): string {
-  if (!Number.isFinite(n) || n <= 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB", "TB", "PB"];
-  let i = 0;
-  let v = n;
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
-    i++;
-  }
-  return `${v >= 100 || i === 0 ? Math.round(v) : v.toFixed(v >= 10 ? 1 : 2)} ${units[i]}`;
-}
+const SCOPE_OPTIONS: { value: RepairScope; label: string }[] = [
+  { value: "lastFolderOnly", label: "原文件夹" },
+  { value: "lastFolderRecursive", label: "原文件夹及子文件夹" },
+  { value: "allMountedVolumes", label: "所有磁盘" },
+];
 
 export function StoragePane() {
   const volumes = useSettingsStore((s) => s.volumes);
@@ -28,33 +27,38 @@ export function StoragePane() {
   const loading = useSettingsStore((s) => s.loading);
   const rescan = useSettingsStore((s) => s.rescan);
   const forget = useSettingsStore((s) => s.forget);
+  const repairScope = useSettingsStore((s) => s.settings.repairDefaultScope);
+  const save = useSettingsStore((s) => s.save);
   const refreshConvs = useConversationsStore((s) => s.refresh);
   const lib = useCurrentLibrary();
   const thumbsLeft = useThumbsStore((s) => (lib ? s.remaining[lib.id] : undefined));
 
   const [pendingForget, setPendingForget] = useState<VolumePayload | null>(null);
   const [forgetBusy, setForgetBusy] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const copyTimerRef = useRef<number | null>(null);
+  const [missing, setMissing] = useState<number | null>(null);
+  const [managerOpen, setManagerOpen] = useState(false);
 
-  useEffect(() => {
-    return () => {
-      if (copyTimerRef.current !== null) {
-        window.clearTimeout(copyTimerRef.current);
-      }
-    };
+  const refreshMissing = useCallback(async () => {
+    try {
+      const groups = await ipc.listBrokenPointers(currentLib());
+      setMissing(groups.reduce((n, g) => n + g.items.length, 0));
+    } catch (e) {
+      toast.error("读取缺失的文件失败", e);
+    }
   }, []);
 
-  const sizeByVolume = new Map<number, number>(
-    (stats?.byVolume ?? []).map((v: VolumeStat) => [v.volumeId, v.sizeBytes]),
-  );
+  useEffect(() => {
+    void refreshMissing();
+  }, [refreshMissing]);
+
+  const sizeByVolume = new Map<number, number>((stats?.byVolume ?? []).map((v: VolumeStat) => [v.volumeId, v.sizeBytes]));
 
   const handleRescan = async () => {
     try {
       await rescan();
       await refreshConvs();
     } catch (e) {
-      toast.error("重新扇描卷失败", e);
+      toast.error("扫描磁盘失败", e);
     }
   };
 
@@ -66,223 +70,147 @@ export function StoragePane() {
       await refreshConvs();
       setPendingForget(null);
     } catch (e) {
-      toast.error("移除卷记录失败", e);
+      toast.error("移除磁盘失败", e);
     } finally {
       setForgetBusy(false);
     }
   };
 
-  const handleCopyPath = async () => {
+  const copyPath = async () => {
     if (!stats?.dataDir) return;
     try {
       await navigator.clipboard.writeText(stats.dataDir);
-      setCopied(true);
-      if (copyTimerRef.current !== null) {
-        window.clearTimeout(copyTimerRef.current);
-      }
-      copyTimerRef.current = window.setTimeout(() => {
-        setCopied(false);
-        copyTimerRef.current = null;
-      }, 1500);
+      toast.success("已复制");
     } catch (e) {
-      toast.error("复制路径失败", e);
-    }
-  };
-
-  const handleOpenDir = async () => {
-    if (!stats?.dataDir) return;
-    try {
-      await ipc.openPath(stats.dataDir);
-    } catch (e) {
-      toast.error("打开数据目录失败", e);
+      toast.error("复制失败", e);
     }
   };
 
   return (
-    <div className="flex flex-col gap-6">
-      <h2 className="text-lg font-semibold">存储</h2>
-
-      <section className="flex flex-col gap-2">
-        <div className="text-sm font-medium">数据目录</div>
-        <div className="text-xs text-app-muted">
-          库文件（已加密，缩略图也在里面）和钥匙环都保存在此目录。
-        </div>
-        <div className="mt-1 flex items-center gap-2 rounded-md border border-app-border bg-app-subtle/40 p-2">
-          <div className="flex-1 truncate font-mono text-xs" title={stats?.dataDir}>
-            {stats?.dataDir ?? "加载中..."}
-          </div>
-          <button
-            type="button"
-            onClick={handleCopyPath}
-            disabled={!stats?.dataDir}
-            title={copied ? "已复制" : "复制路径"}
-            className={cn(
-              "flex h-7 items-center gap-1 rounded px-1.5 text-xs transition-colors disabled:opacity-40",
-              copied
-                ? "bg-emerald-500/15 text-emerald-600"
-                : "text-app-muted hover:bg-app-subtle hover:text-app-fg",
-            )}
-          >
-            {copied ? (
-              <>
-                <Check size={13} />
-                <span>已复制</span>
-              </>
-            ) : (
-              <Copy size={13} />
-            )}
-          </button>
-          <button
-            type="button"
-            onClick={handleOpenDir}
-            disabled={!stats?.dataDir}
-            title="在文件管理器中打开"
-            className="flex h-7 w-7 items-center justify-center rounded text-app-muted hover:bg-app-subtle hover:text-app-fg disabled:opacity-40"
-          >
-            <FolderOpen size={13} />
-          </button>
-        </div>
-      </section>
-
-      <section className="flex flex-col gap-2">
-        <div className="text-sm font-medium">当前库{lib ? `「${lib.name}」` : ""}</div>
-        <div className="grid grid-cols-3 gap-2">
-          <StatCard label="文件数" value={stats ? stats.totalMedia.toLocaleString() : "—"} />
-          <StatCard label="占用空间" value={stats ? formatBytes(stats.totalBytes) : "—"} />
-          <StatCard label="卷数量" value={volumes.length.toString()} />
-        </div>
-        <div className="flex items-center gap-2 rounded-md border border-app-border bg-app-subtle/30 px-3 py-2 text-xs text-app-muted">
+    <Page title="存储">
+      <Group title={lib ? `当前库 · ${lib.name}` : "当前库"}>
+        <Stats
+          items={[
+            { label: "文件", value: stats ? stats.totalMedia.toLocaleString() : "—" },
+            { label: "大小", value: stats ? formatBytes(stats.totalBytes) : "—" },
+            { label: "磁盘", value: volumes.length },
+          ]}
+        />
+        <Row label="缩略图">
           {thumbsLeft ? (
-            <>
-              <RefreshCw size={12} className="animate-spin text-app-accent" />
-              正在后台生成缩略图，还剩 {thumbsLeft.toLocaleString()} 个
-            </>
+            <span className="flex items-center gap-1.5">
+              <Loader2 size={13} className="animate-spin" />
+              正在生成，剩余 {thumbsLeft.toLocaleString()}
+            </span>
           ) : (
-            <>
-              <Check size={12} className="text-emerald-500" />
-              缩略图已就绪（盘没连接的文件会在连接后补上）
-            </>
+            "已完成"
           )}
-        </div>
-      </section>
+        </Row>
+        <Row label="缺失的文件" onClick={missing ? () => setManagerOpen(true) : undefined}>
+          {missing === null ? "—" : missing === 0 ? "无" : <span className="font-medium text-app-danger">{missing}</span>}
+        </Row>
+        <Row label="自动匹配范围" description="重新链接缺失的文件时，在哪里查找">
+          <Select
+            label="自动匹配范围"
+            value={repairScope}
+            options={SCOPE_OPTIONS}
+            onChange={(v) => void save("repairDefaultScope", v).catch((e) => toast.error("设置没有保存", e))}
+          />
+        </Row>
+      </Group>
 
-      <section className="flex min-h-0 flex-1 flex-col gap-2">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="text-sm font-medium">已识别的卷</div>
-            <div className="text-xs text-app-muted">
-              包括当前在线和曾经使用过的设备
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={handleRescan}
-            disabled={loading}
-            className="flex items-center gap-1.5 rounded-md border border-app-border px-2.5 py-1 text-xs hover:bg-app-subtle disabled:opacity-50"
-          >
-            <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
+      <Group
+        title="磁盘"
+        action={
+          <Button size="sm" variant="ghost" icon={<RefreshCw size={12} className={loading ? "animate-spin" : ""} />} onClick={handleRescan} disabled={loading} className="-mr-2">
             重新扫描
-          </button>
-        </div>
-        <div className="overflow-y-auto rounded-md border border-app-border">
-          {volumes.length === 0 ? (
-            <div className="px-3 py-6 text-center text-sm text-app-muted">
-              {loading ? "加载中..." : "尚无记录"}
-            </div>
-          ) : (
-            <ul className="divide-y divide-app-border">
-              {volumes.map((v) => (
-                <VolumeRow
-                  key={v.id}
-                  volume={v}
-                  sizeBytes={sizeByVolume.get(v.id) ?? 0}
-                  onForget={() => setPendingForget(v)}
-                />
-              ))}
-            </ul>
-          )}
-        </div>
-      </section>
+          </Button>
+        }
+      >
+        {volumes.length === 0 ? (
+          <Row label={<span className="text-app-muted">{loading ? "正在读取…" : "没有记录"}</span>} />
+        ) : (
+          volumes.map((v) => (
+            <VolumeRow key={v.id} volume={v} sizeBytes={sizeByVolume.get(v.id) ?? 0} onForget={() => setPendingForget(v)} />
+          ))
+        )}
+      </Group>
+
+      <Group title="数据位置">
+        <Row label={<span className="selectable block truncate font-mono text-xs">{stats?.dataDir ?? "—"}</span>}>
+          <IconButton label="复制路径" size="sm" icon={<Copy size={14} />} onClick={copyPath} disabled={!stats?.dataDir} />
+          <IconButton
+            label="在资源管理器中打开"
+            size="sm"
+            icon={<FolderOpen size={14} />}
+            disabled={!stats?.dataDir}
+            onClick={() => stats?.dataDir && void ipc.openPath(stats.dataDir).catch((e) => toast.error("打开失败", e))}
+          />
+        </Row>
+      </Group>
 
       <ConfirmDialog
         open={pendingForget !== null}
         variant="danger"
-        title="忘记此卷"
-        message={
-          pendingForget
-            ? `将清除卷「${pendingForget.label || pendingForget.platformId}」的所有媒体记录，无法恢复。确定？`
-            : ""
-        }
-        confirmText="忘记"
+        title="移除磁盘"
+        message={pendingForget ? `「${pendingForget.label || pendingForget.platformId}」上的媒体记录会一并移除，磁盘上的文件不受影响。` : ""}
+        confirmText="移除"
         busy={forgetBusy}
         onConfirm={handleForgetConfirm}
         onCancel={() => setPendingForget(null)}
       />
-    </div>
+
+      {managerOpen && (
+        <BrokenManagerDialog
+          scope={repairScope}
+          onClose={() => {
+            setManagerOpen(false);
+            void refreshMissing();
+          }}
+        />
+      )}
+    </Page>
   );
 }
 
-interface StatCardProps {
-  label: string;
-  value: string;
-}
-
-function StatCard({ label, value }: StatCardProps) {
+function VolumeRow({ volume, sizeBytes, onForget }: { volume: VolumePayload; sizeBytes: number; onForget: () => void }) {
+  const mount = volume.currentMount ?? volume.lastMount;
+  const parts = [
+    mount,
+    `${volume.mediaCount.toLocaleString()} 个文件`,
+    formatBytes(sizeBytes),
+    volume.brokenCount > 0 ? `${volume.brokenCount} 个缺失` : null,
+  ].filter(Boolean);
   return (
-    <div className="flex flex-col gap-1 rounded-md border border-app-border bg-app-subtle/30 p-3">
-      <div className="text-xs text-app-muted">{label}</div>
-      <div className="truncate text-base font-semibold">{value}</div>
-    </div>
-  );
-}
-
-interface VolumeRowProps {
-  volume: VolumePayload;
-  sizeBytes: number;
-  onForget: () => void;
-}
-
-function VolumeRow({ volume, sizeBytes, onForget }: VolumeRowProps) {
-  return (
-    <li className="flex items-center gap-3 px-3 py-2.5">
-      <div
-        className={cn(
-          "flex h-8 w-8 shrink-0 items-center justify-center rounded-md",
-          volume.online
-            ? "bg-emerald-500/10 text-emerald-500"
-            : "bg-app-muted/10 text-app-muted",
-        )}
-      >
-        <HardDrive size={16} />
-      </div>
-      <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex items-center gap-2 truncate text-sm font-medium">
-          {volume.label || volume.platformId}
-          <span
-            className={cn(
-              "rounded-full px-1.5 py-0.5 text-[10px] uppercase tracking-wide",
-              volume.online
-                ? "bg-emerald-500/15 text-emerald-600"
-                : "bg-app-muted/15 text-app-muted",
-            )}
-          >
-            {volume.online ? "在线" : "离线"}
+    <div className="group">
+      <Row
+        leading={
+          <span className="relative flex h-8 w-8 items-center justify-center rounded-lg bg-app-subtle text-app-secondary">
+            <HardDrive size={16} />
+            <span
+              className={cn(
+                "absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-app-panel",
+                volume.online ? "bg-app-success" : "bg-app-muted",
+              )}
+            />
           </span>
-        </div>
-        <div className="truncate text-xs text-app-muted">
-          {volume.currentMount ?? volume.lastMount ?? "未知挂载点"} ·{" "}
-          {volume.mediaCount} 个媒体 · {formatBytes(sizeBytes)}
-          {volume.brokenCount > 0 && ` · ${volume.brokenCount} 失效`}
-        </div>
-      </div>
-      <button
-        type="button"
-        onClick={onForget}
-        title="忘记此卷"
-        className="flex h-7 w-7 items-center justify-center rounded text-app-muted hover:bg-app-subtle hover:text-red-500"
+        }
+        label={
+          <span className="flex items-center gap-2">
+            {volume.label || volume.platformId}
+            {!volume.online && <span className="text-xs text-app-muted">离线</span>}
+          </span>
+        }
+        description={parts.join(" · ")}
       >
-        <Trash2 size={14} />
-      </button>
-    </li>
+        <IconButton
+          label="移除"
+          size="sm"
+          icon={<Trash2 size={14} />}
+          onClick={onForget}
+          className="opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+        />
+      </Row>
+    </div>
   );
 }
