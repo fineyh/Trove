@@ -1,0 +1,19 @@
+<!-- Trove app icon, simplified art for 32 px and below: larger on the canvas, one row of peaks, bigger sun. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="sky" gradientUnits="userSpaceOnUse" x1="0" y1="100" x2="0" y2="620">
+      <stop offset="0" stop-color="#5873F2"/>
+      <stop offset="1" stop-color="#C6D0FF"/>
+    </linearGradient>
+    <path id="bubble" d="M512 104C846 104 940 180 940 448C940 716 846 792 512 792C178 792 84 716 84 448C84 180 178 104 512 104ZM452 776C392 852 296 902 172 914C140 917 128 892 152 873C204 832 214 770 196 660Z"/>
+    <clipPath id="inside"><use href="#bubble"/></clipPath>
+  </defs>
+  <g transform="translate(512 512) scale(1.1) translate(-512 -510)">
+    <g clip-path="url(#inside)">
+      <rect width="1024" height="1024" fill="url(#sky)"/>
+      <circle cx="668" cy="318" r="96" fill="#fff"/>
+      <path d="M-40 720L330 410L540 620L720 500L1064 700V1024H-40Z" fill="#6079EE" stroke="#6079EE" stroke-width="30" stroke-linejoin="round"/>
+      <path d="M0 700C200 664 420 704 600 724C760 742 900 706 1024 690V1024H0Z" fill="#3546C4"/>
+    </g>
+  </g>
+</svg>
