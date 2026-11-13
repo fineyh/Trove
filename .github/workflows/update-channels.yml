@@ -39,7 +39,7 @@ jobs:
           if ! gh release view beta-channel >/dev/null 2>&1; then
             gh release create beta-channel --prerelease \
               --title "Beta channel (updater manifest)" \
-              --notes "Holds beta.json for the in-app updater's beta channel. Not a release — download installers from the versioned releases."
+              --notes "Holds beta.json for the in-app updater's beta channel. Not a release. Download installers from the versioned releases."
           fi
           gh release download "$TAG" --pattern latest.json --dir new
           gh release download beta-channel --pattern beta.json --dir old || true
