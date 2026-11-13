@@ -11,6 +11,31 @@ updater notes**. Before running `npm run release x.y.z`, add a matching
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-13
+### Added
+- Multiple libraries, switched from a bar on the left. Conversations can be moved between them.
+- Thumbnails in the message stream and media grid.
+- Zoom and pan in the photo viewer.
+- Right-click a message to open it with its default app, show it in its folder, copy its path, or set it as the conversation picture.
+- Light and dark themes, and a new look throughout the app.
+- Stable and preview update channels, a daily background check, download progress, and a feedback link.
+- Optional passwords for Trove, libraries, and backups.
+- A log file to attach to bug reports (Settings → About → Log folder).
+
+### Changed
+- Your existing library is upgraded to the new format on first launch.
+- Media on a disconnected drive shows as offline instead of missing.
+- The online map background can be turned off.
+- Launching Trove again brings the open window forward instead of starting a second copy.
+- The Google account page is hidden for now.
+
+### Fixed
+- The viewer and media grid now reach every photo in a conversation, not just the newest ones.
+- Background folder sync no longer jumps you back to the newest messages while you read older ones.
+- The conversation list updates after you send or import something.
+- A startup failure shows an error screen instead of closing silently.
+- Lower memory use when viewing many HEIC photos.
+
 ## [0.4.2] - 2026-08-29
 ### Changed
 - Redesigned the Trove app icon with a new double-eye mark across Windows, macOS, iOS, and Android assets.
