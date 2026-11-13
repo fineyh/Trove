@@ -2,6 +2,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Loader2,
+  MapPin,
   RotateCcw,
   RotateCw,
   X,
@@ -18,6 +19,7 @@ import { useDisplayableImageUrl } from "../../lib/useDisplayableImageUrl";
 import { useViewerTransform } from "../../lib/useViewerTransform";
 import { RotatableVideo } from "../ui/RotatableVideo";
 import { useEscapeLayer } from "../ui/Modal";
+import { useMapEnabled } from "../map/MapView";
 
 /** Things this viewer can show: reachable images and videos. */
 function viewable(m: Message): boolean {
@@ -49,6 +51,8 @@ export function Lightbox({ convId }: LightboxProps) {
   const close = useSessionStore((s) => s.closeLightbox);
   const lib = useLibrariesStore((s) => s.current) ?? "";
   const open = useSessionStore((s) => s.openLightbox);
+  const showOnMap = useSessionStore((s) => s.showOnMap);
+  const mapEnabled = useMapEnabled();
 
   // The clicked item may sit older than the media pages held so far (opened
   // from a chat message the user had scrolled back to); page until it's here.
@@ -176,6 +180,19 @@ export function Lightbox({ convId }: LightboxProps) {
             data-tip="适应窗口  0"
           >
             {Math.round(scale * 100)}%
+          </button>
+        )}
+        {current.media.hasGeo && mapEnabled && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              showOnMap(current.media!.id);
+            }}
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white transition-colors duration-fast hover:bg-white/20"
+            data-tip="在地图上显示"
+          >
+            <MapPin size={18} />
           </button>
         )}
         <button

@@ -6,6 +6,7 @@ import {
   File as FileIcon,
   FolderSearch,
   ImageOff,
+  MapPin,
   PictureInPicture2,
   Play,
   Trash2,
@@ -23,6 +24,7 @@ import { ContextMenu, type ContextMenuEntry } from "../ui/ContextMenu";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { openPlayerWindow } from "../../lib/playerWindow";
 import { formatBytes, formatDuration, isImageMedia, kindLabel } from "../../lib/media";
+import { useMapEnabled } from "../map/MapView";
 import { cn } from "../../lib/cn";
 
 /** Longest side of a single preview, CSS px. Matches the stored thumbnail. */
@@ -308,6 +310,7 @@ export function MessageBubble({ message, tile }: MessageBubbleProps) {
     (s) => s.list.find((c) => c.id === message.convId)?.kind === "folder_watch",
   );
   const setAvatar = useConversationsStore((s) => s.setAvatar);
+  const mapEnabled = useMapEnabled();
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleteFile, setDeleteFile] = useState(false);
@@ -363,6 +366,16 @@ export function MessageBubble({ message, tile }: MessageBubbleProps) {
         label: "在新窗口打开",
         icon: <PictureInPicture2 size={15} />,
         onClick: act(() => openPlayerWindow(message), "打开窗口失败"),
+      });
+    }
+    if (media.hasGeo && mapEnabled) {
+      menuItems.push({
+        label: "在地图上显示",
+        icon: <MapPin size={15} />,
+        onClick: () => {
+          setMenu(null);
+          useSessionStore.getState().showOnMap(media.id);
+        },
       });
     }
     menuItems.push(

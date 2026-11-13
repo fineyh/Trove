@@ -55,11 +55,14 @@ export function GeneralPane() {
             onChange={(on) => void set("offlineContent", on ? "show" : "hide")}
           />
         </Row>
-        <Row label="地图在线底图" description="从 OpenStreetMap 加载，需要联网">
+        <Row label="地图" description="底图从 OpenFreeMap 加载，需要联网">
           <Switch
-            label="地图在线底图"
+            label="地图"
             checked={settings.mapTiles === "online"}
-            onChange={(on) => void set("mapTiles", on ? "online" : "off")}
+            onChange={(on) => {
+              if (!on) useSessionStore.getState().setMapOpen(false);
+              void set("mapTiles", on ? "online" : "off");
+            }}
           />
         </Row>
       </Group>

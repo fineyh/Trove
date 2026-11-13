@@ -9,8 +9,9 @@ use crate::services::{exif, volume_resolver};
 use crate::{db, events, AppError, AppResult};
 use rusqlite::params;
 use serde::Serialize;
+use std::collections::HashSet;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 
 /// One geotagged item shown on the map. Mirrors `MediaPayload`'s camelCase
 /// convention. `available` is false when the source volume's mount is unknown
@@ -114,25 +115,40 @@ pub fn list_geotagged_media(lib: String) -> AppResult<Vec<GeotaggedMedia>> {
     })
 }
 
-static BACKFILL_RUNNING: AtomicBool = AtomicBool::new(false);
+/// Libraries with a backfill in flight. Per library: one library's scan must
+/// not make another's a no-op.
+static BACKFILL_RUNNING: Mutex<Option<HashSet<String>>> = Mutex::new(None);
+
+/// Claim the backfill slot for `lib`; false when it is already running.
+fn backfill_claim(lib: &str) -> bool {
+    let mut guard = BACKFILL_RUNNING.lock().unwrap_or_else(|e| e.into_inner());
+    guard.get_or_insert_with(HashSet::new).insert(lib.to_string())
+}
+
+fn backfill_release(lib: &str) {
+    let mut guard = BACKFILL_RUNNING.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(set) = guard.as_mut() {
+        set.remove(lib);
+    }
+}
 
 const BACKFILL_BATCH: usize = 200;
 
 /// Scan media that was never checked for a geotag (`geo_scanned = 0`) and fill
 /// in lat/lon from the file. Runs on a background thread so the command returns
 /// immediately; emits `geo:backfill-done` when finished. Idempotent — a second
-/// call while one is in flight is a no-op.
+/// call for the same library while one is in flight is a no-op.
 #[tauri::command]
 pub fn backfill_geotags(lib: String) -> AppResult<()> {
     if !db::is_open(&lib) {
         return Ok(());
     }
-    if BACKFILL_RUNNING.swap(true, Ordering::SeqCst) {
-        return Ok(()); // already running
+    if !backfill_claim(&lib) {
+        return Ok(()); // already running for this library
     }
     std::thread::spawn(move || {
         let updated = run_backfill(&lib).unwrap_or(0);
-        BACKFILL_RUNNING.store(false, Ordering::SeqCst);
+        backfill_release(&lib);
         events::emit_geo_backfill_done(&lib, updated);
     });
     Ok(())
@@ -225,4 +241,20 @@ fn run_backfill(lib: &str) -> AppResult<usize> {
     }
 
     Ok(total_updated)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn backfill_slot_is_per_library() {
+        assert!(backfill_claim("geo-test-a"));
+        assert!(!backfill_claim("geo-test-a"), "same library: already running");
+        assert!(backfill_claim("geo-test-b"), "another library is independent");
+        backfill_release("geo-test-a");
+        assert!(backfill_claim("geo-test-a"), "free again after release");
+        backfill_release("geo-test-a");
+        backfill_release("geo-test-b");
+    }
 }

@@ -15,6 +15,7 @@ import { isImageMedia } from "../../lib/media";
 import { useDisplayableImageUrl } from "../../lib/useDisplayableImageUrl";
 import { useViewerTransform } from "../../lib/useViewerTransform";
 import { RotatableVideo } from "../ui/RotatableVideo";
+import { useEscapeLayer } from "../ui/Modal";
 
 interface MapPhotoViewerProps {
   items: GeotaggedMedia[];
@@ -25,7 +26,7 @@ interface MapPhotoViewerProps {
 }
 
 /**
- * Fullscreen viewer for the photos at one map location. Mirrors `Lightbox`'s
+ * Fullscreen viewer for the photos listed beside the map. Mirrors `Lightbox`'s
  * interaction skeleton but is sourced from a cross-conversation
  * `GeotaggedMedia[]` instead of a single conversation's message store.
  */
@@ -62,13 +63,15 @@ export function MapPhotoViewer({
     mediaHandlers,
   } = useViewerTransform(index);
 
+  // Topmost layer while open: Esc closes the viewer, not the selection behind
+  // it. While fullscreen, Esc only leaves fullscreen.
+  useEscapeLayer(true, () => {
+    if (!document.fullscreenElement) onClose();
+  });
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // While fullscreen, let Esc exit fullscreen instead of closing the viewer.
-      if (e.key === "Escape") {
-        if (document.fullscreenElement) return;
-        onClose();
-      } else if (e.key === "ArrowLeft") goPrev();
+      if (e.key === "ArrowLeft") goPrev();
       else if (e.key === "ArrowRight") goNext();
       else if (e.key === "+" || e.key === "=") zoomIn();
       else if (e.key === "-" || e.key === "_") zoomOut();
@@ -76,7 +79,7 @@ export function MapPhotoViewer({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, goPrev, goNext, zoomIn, zoomOut, resetView]);
+  }, [goPrev, goNext, zoomIn, zoomOut, resetView]);
 
   const canPreview = current?.status === "ok";
   // Must run unconditionally (before the early return) — an empty url is a no-op.
@@ -195,7 +198,7 @@ export function MapPhotoViewer({
               <img src={offlineThumb} alt="" className="max-h-[50vh] rounded-xl opacity-80" draggable={false} />
             )}
             <div className="rounded-full bg-white/10 px-4 py-1.5 text-sm text-white/80">
-              {current.status === "offline" ? "所在的盘没有连接，这是缩略图" : "文件不在原位置"}
+              {current.status === "offline" ? "离线 · 磁盘未连接" : "缺失"}
             </div>
           </div>
         ) : isImage ? (

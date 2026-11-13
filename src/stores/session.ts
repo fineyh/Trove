@@ -20,6 +20,8 @@ interface SessionState {
   /** Section the settings dialog opens on. */
   settingsSection: string | null;
   mapOpen: boolean;
+  /** Media the map should fly to once it has loaded ("show on map"). */
+  mapFocus: number | null;
   lightboxMessageId: number | null;
   libraryDialog: LibraryDialog | null;
   recovery: RecoveryReveal | null;
@@ -30,6 +32,9 @@ interface SessionState {
   setNewConversationOpen: (open: boolean) => void;
   setSettingsOpen: (open: boolean, section?: string) => void;
   setMapOpen: (open: boolean) => void;
+  /** Open the map on one media item's position. */
+  showOnMap: (mediaId: number) => void;
+  clearMapFocus: () => void;
   openLightbox: (messageId: number) => void;
   closeLightbox: () => void;
   setLibraryDialog: (d: LibraryDialog | null) => void;
@@ -46,6 +51,7 @@ export const useSessionStore = create<SessionState>((set) => ({
   settingsOpen: false,
   settingsSection: null,
   mapOpen: false,
+  mapFocus: null,
   lightboxMessageId: null,
   libraryDialog: null,
   recovery: null,
@@ -60,7 +66,9 @@ export const useSessionStore = create<SessionState>((set) => ({
   setNewConversationOpen: (open) => set({ newConversationOpen: open }),
   setSettingsOpen: (open, section) =>
     set({ settingsOpen: open, settingsSection: open ? (section ?? null) : null }),
-  setMapOpen: (open) => set({ mapOpen: open }),
+  setMapOpen: (open) => set({ mapOpen: open, mapFocus: null }),
+  showOnMap: (mediaId) => set({ mapOpen: true, mapFocus: mediaId, lightboxMessageId: null }),
+  clearMapFocus: () => set({ mapFocus: null }),
   openLightbox: (messageId) => set({ lightboxMessageId: messageId }),
   closeLightbox: () => set({ lightboxMessageId: null }),
   setLibraryDialog: (d) => set({ libraryDialog: d }),
@@ -71,6 +79,7 @@ export const useSessionStore = create<SessionState>((set) => ({
       activeConversationId: null,
       profileDrawerOpen: false,
       lightboxMessageId: null,
+      mapFocus: null,
       newConversationOpen: false,
       movingConversationId: null,
     }),

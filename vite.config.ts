@@ -18,10 +18,11 @@ export default defineConfig(async () => ({
   },
   envPrefix: ["VITE_", "TAURI_ENV_*"],
   build: {
+    // safari14, not 13: the map engine (MapLibre) uses BigInt literals.
     target:
       process.env.TAURI_ENV_PLATFORM === "windows"
         ? "chrome105"
-        : "safari13",
+        : "safari14",
     minify: !process.env.TAURI_ENV_DEBUG ? "esbuild" : false,
     sourcemap: !!process.env.TAURI_ENV_DEBUG,
     rollupOptions: {

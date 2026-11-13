@@ -35,6 +35,8 @@ export interface MediaPayload {
   ext: string;
   status: MediaStatus;
   hasThumb: boolean;
+  /** Has a GPS position (can be shown on the map). */
+  hasGeo: boolean;
 }
 
 export interface Message {

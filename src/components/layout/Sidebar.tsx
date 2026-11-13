@@ -8,6 +8,7 @@ import { toast } from "../../stores/toast";
 import { useUpdateStore } from "../../stores/update";
 import type { LibraryInfo } from "../../types";
 import { LibraryAvatar } from "../library/LibraryAvatar";
+import { useMapEnabled } from "../map/MapView";
 import { IconButton } from "../ui/Button";
 import { UpdateDot } from "../ui/UpdateDot";
 import { ContextMenu, type ContextMenuEntry } from "../ui/ContextMenu";
@@ -55,6 +56,7 @@ export function Sidebar() {
   const setSettingsOpen = useSessionStore((s) => s.setSettingsOpen);
   const setMapOpen = useSessionStore((s) => s.setMapOpen);
   const mapOpen = useSessionStore((s) => s.mapOpen);
+  const mapEnabled = useMapEnabled();
   const setLibraryDialog = useSessionStore((s) => s.setLibraryDialog);
   const updateReady = useUpdateStore((s) => s.info?.available === true);
   const [menu, setMenu] = useState<{ lib: LibraryInfo; x: number; y: number } | null>(null);
@@ -112,26 +114,31 @@ export function Sidebar() {
         />
       </nav>
 
-      <div className="my-3 h-px w-6 bg-app-border" />
+      {/* With the map off there is only one view, so nothing to switch. */}
+      {mapEnabled && (
+        <>
+          <div className="my-3 h-px w-6 bg-app-border" />
 
-      <div className="flex flex-col items-center gap-1">
-        <IconButton
-          label="会话"
-          tipSide="right"
-          size="lg"
-          icon={<MessageCircle size={20} />}
-          active={!mapOpen}
-          onClick={() => setMapOpen(false)}
-        />
-        <IconButton
-          label="地图"
-          tipSide="right"
-          size="lg"
-          icon={<Map size={20} />}
-          active={mapOpen}
-          onClick={() => setMapOpen(true)}
-        />
-      </div>
+          <div className="flex flex-col items-center gap-1">
+            <IconButton
+              label="会话"
+              tipSide="right"
+              size="lg"
+              icon={<MessageCircle size={20} />}
+              active={!mapOpen}
+              onClick={() => setMapOpen(false)}
+            />
+            <IconButton
+              label="地图"
+              tipSide="right"
+              size="lg"
+              icon={<Map size={20} />}
+              active={mapOpen}
+              onClick={() => setMapOpen(true)}
+            />
+          </div>
+        </>
+      )}
 
       <div className="flex-1" />
 

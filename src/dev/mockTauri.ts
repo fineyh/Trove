@@ -47,16 +47,16 @@ function install() {
   let mid = 1000;
   const img = (w: number, h: number, ago: number, caption: string, status = "ok") => ({
     id: ++mid, convId: 1, caption, playCount: 0, createdAt: now - ago,
-    media: { id: mid, kind: "image", width: w, height: h, durationMs: null, sizeBytes: 3_400_000, ext: "jpg", status, hasThumb: true },
+    media: { id: mid, kind: "image", width: w, height: h, durationMs: null, sizeBytes: 3_400_000, ext: "jpg", status, hasThumb: true, hasGeo: true },
   });
   const vid = (ago: number, caption: string, plays = 0) => ({
     id: ++mid, convId: 1, caption, playCount: plays, createdAt: now - ago,
-    media: { id: mid, kind: "video", width: 1920, height: 1080, durationMs: 42_000, sizeBytes: 48_000_000, ext: "mp4", status: "ok", hasThumb: true },
+    media: { id: mid, kind: "video", width: 1920, height: 1080, durationMs: 42_000, sizeBytes: 48_000_000, ext: "mp4", status: "ok", hasThumb: true, hasGeo: true },
   });
   const text = (ago: number, caption: string) => ({ id: ++mid, convId: 1, caption, playCount: 0, createdAt: now - ago, media: null });
   const file = (ago: number, caption: string) => ({
     id: ++mid, convId: 1, caption, playCount: 0, createdAt: now - ago,
-    media: { id: mid, kind: "other", width: null, height: null, durationMs: null, sizeBytes: 820_000, ext: "pdf", status: "ok", hasThumb: false },
+    media: { id: mid, kind: "other", width: null, height: null, durationMs: null, sizeBytes: 820_000, ext: "pdf", status: "ok", hasThumb: false, hasGeo: false },
   });
   const messages = [
     img(4000, 3000, 3 * D + 3 * H, "IMG_3990"),
@@ -71,6 +71,60 @@ function install() {
     img(4000, 3000, 12 * 60_000, "IMG_4021"),
     text(10 * 60_000, "晚上去鸭川散步，灯笼一路亮到四条"),
   ];
+
+  // Geotagged media per library: a few places, each a scatter of points, so
+  // the map has stacks that split as you zoom. Deterministic (seeded).
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  const scatter = (firstId: number, places: [number, number, number, number, number][]) => {
+    let id = firstId;
+    const out: any[] = [];
+    for (const [lat, lon, n, spreadKm, daysAgo] of places) {
+      for (let i = 0; i < n; i++) {
+        const r = (spreadKm / 111) * Math.sqrt(rnd());
+        const t = rnd() * Math.PI * 2;
+        const roll = rnd();
+        out.push({
+          mediaId: ++id, lat: lat + r * Math.sin(t), lon: lon + (r * Math.cos(t)) / Math.cos((lat * Math.PI) / 180),
+          kind: roll < 0.12 ? "video" : "image", ext: roll < 0.12 ? "mp4" : "jpg",
+          status: roll > 0.97 ? "offline" : "ok", hasThumb: roll < 0.99,
+          convId: 1, messageId: id, createdAt: now - daysAgo * D - Math.floor(rnd() * 3 * D),
+        });
+      }
+    }
+    return out;
+  };
+  const pin = (m: any, lat: number, lon: number) => ({
+    mediaId: m.media.id, lat, lon, kind: m.media.kind, ext: m.media.ext, status: m.media.status,
+    hasThumb: true, convId: 1, messageId: m.id, createdAt: m.createdAt,
+  });
+  const geo: Record<string, any[]> = {
+    main: [
+      // The mock conversation's own photos, so "show on map" has a target.
+      ...messages.filter((m) => m.media && m.media.kind !== "other").map((m, i) => (i < 4 ? pin(m, 34.9671 + i * 0.0004, 135.7727 + i * 0.0003) : pin(m, 35.0037 + i * 0.0006, 135.7722))),
+      ...scatter(2000, [
+        [34.9671, 135.7727, 38, 0.6, 3], // 伏见稻荷
+        [35.0116, 135.7681, 54, 2.5, 2], // 京都市内
+        [35.0394, 135.7292, 17, 0.4, 4], // 金阁寺
+        [34.6851, 135.8048, 22, 1.2, 5], // 奈良
+        [34.6687, 135.5013, 41, 3, 6], // 大阪
+        [35.6764, 139.7631, 63, 9, 200], // 东京
+        [35.3606, 138.7274, 9, 4, 203], // 富士山
+        [30.2431, 120.1503, 72, 3, 420], // 杭州西湖
+        [31.2304, 121.4737, 35, 6, 90], // 上海
+        [39.9163, 116.3972, 28, 5, 700], // 北京
+        [22.2793, 114.1628, 19, 3, 520], // 香港
+      ]),
+    ],
+    trip: scatter(5000, [
+      [48.8584, 2.2945, 46, 3, 300], // 巴黎
+      [45.764, 4.8357, 12, 2, 296],
+      [41.9028, 12.4964, 58, 3, 610], // 罗马
+      [43.7696, 11.2558, 24, 1.5, 606], // 佛罗伦萨
+      [41.3851, 2.1734, 33, 3, 950], // 巴塞罗那
+      [64.1466, -21.9426, 21, 30, 1300], // 冰岛
+    ]),
+  };
 
   const volumes = [
     { id: 1, platformId: "C:", label: "系统", lastMount: "C:\\", currentMount: "C:\\", online: true, mediaCount: 1420, brokenCount: 1 },
@@ -132,7 +186,7 @@ function install() {
       return new Promise(() => {});
     },
     app_environment: () => ({ version: "0.4.2", channel: uiPrefs.update_channel ?? "stable", os: "Windows 10.0.26200", arch: "x86_64", webview: "131.0.2903.70" }),
-    list_geotagged_media: () => [],
+    list_geotagged_media: (a) => geo[a.lib] ?? [],
     thumbs_next: () => [],
     thumbs_remaining: () => 0,
     "plugin:event|listen": (a) => {
