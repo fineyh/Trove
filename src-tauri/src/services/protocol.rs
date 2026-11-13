@@ -12,8 +12,12 @@ use crate::db;
 use crate::services::thumbs;
 use rusqlite::OptionalExtension;
 use std::io::{Read, Seek, SeekFrom};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
+use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::{Arc, Mutex, OnceLock};
 use tauri::http::{header, Request, Response, StatusCode};
+use tauri::UriSchemeResponder;
 
 /// Largest slice served for one ranged request; players ask for more.
 const RANGE_CHUNK: u64 = 4 * 1024 * 1024;
@@ -21,6 +25,41 @@ const RANGE_CHUNK: u64 = 4 * 1024 * 1024;
 const WHOLE_FILE_MAX: u64 = 64 * 1024 * 1024;
 
 type Resp = Response<Vec<u8>>;
+
+/// Requests are served by a fixed set of workers (R4.10). A grid of
+/// thumbnails used to start one thread per image, with no upper bound.
+const WORKERS: usize = 8;
+
+type Job = (Request<Vec<u8>>, UriSchemeResponder);
+
+/// Queue a request for the worker pool. Every request gets a response:
+/// a panic in a handler becomes a 500 instead of a request that never ends.
+pub fn dispatch(req: Request<Vec<u8>>, responder: UriSchemeResponder) {
+    static POOL: OnceLock<Mutex<Sender<Job>>> = OnceLock::new();
+    let tx = POOL.get_or_init(|| {
+        let (tx, rx) = channel::<Job>();
+        let rx = Arc::new(Mutex::new(rx));
+        for i in 0..WORKERS {
+            let rx = rx.clone();
+            std::thread::Builder::new()
+                .name(format!("trove-protocol-{i}"))
+                .spawn(move || worker(rx))
+                .expect("spawn protocol worker");
+        }
+        Mutex::new(tx)
+    });
+    let _ = tx.lock().unwrap_or_else(|e| e.into_inner()).send((req, responder));
+}
+
+fn worker(rx: Arc<Mutex<Receiver<Job>>>) {
+    loop {
+        let job = rx.lock().unwrap_or_else(|e| e.into_inner()).recv();
+        let Ok((req, responder)) = job else { return };
+        let resp = catch_unwind(AssertUnwindSafe(|| handle(req)))
+            .unwrap_or_else(|_| status(StatusCode::INTERNAL_SERVER_ERROR));
+        responder.respond(resp);
+    }
+}
 
 fn status(code: StatusCode) -> Resp {
     base(Response::builder().status(code)).body(Vec::new()).unwrap()
@@ -104,6 +143,10 @@ fn avatar(lib: &str, conv_id: i64, req: &Request<Vec<u8>>) -> Resp {
 }
 
 fn parse_range(h: &str, len: u64) -> Option<(u64, u64)> {
+    // An empty file has no byte to point at: every range is unsatisfiable.
+    if len == 0 {
+        return None;
+    }
     let spec = h.strip_prefix("bytes=")?.split(',').next()?.trim();
     let (a, b) = spec.split_once('-')?;
     let (start, end) = if a.is_empty() {
@@ -171,5 +214,12 @@ mod tests {
         assert_eq!(parse_range("bytes=-10", 100), Some((90, 99)));
         assert_eq!(parse_range("bytes=100-", 100), None);
         assert_eq!(parse_range("items=0-1", 100), None);
+    }
+
+    #[test]
+    fn empty_file() {
+        assert_eq!(parse_range("bytes=0-5", 0), None);
+        assert_eq!(parse_range("bytes=0-", 0), None);
+        assert_eq!(parse_range("bytes=-10", 0), None);
     }
 }

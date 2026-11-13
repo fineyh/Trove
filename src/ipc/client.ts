@@ -244,6 +244,9 @@ export interface ListMessagesArgs {
   convId: number;
   /** Omit for the newest page; pass the oldest held message to go further back. */
   before?: MessageCursor;
+  /** Inclusive lower bound: re-fetch the span already on screen. */
+  from?: MessageCursor;
+  /** Negative = no limit (SQLite). */
   limit?: number;
 }
 

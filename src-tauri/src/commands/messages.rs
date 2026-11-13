@@ -118,6 +118,10 @@ pub struct ListMessagesArgs {
     /// load more, pass the oldest message the UI currently holds.
     #[serde(default)]
     pub before: Option<MessageCursor>,
+    /// Inclusive lower bound. Pass the oldest held message to re-fetch the
+    /// span the UI already shows, after the watcher changed it (todo 2.5).
+    #[serde(default)]
+    pub from: Option<MessageCursor>,
     #[serde(default = "default_limit")]
     pub limit: i64,
 }
@@ -130,7 +134,8 @@ fn default_limit() -> i64 {
 /// (it used to fetch ids, then run one 4-table JOIN per id — todo 4.1).
 ///
 /// Params: `?1` conv_id, `?2`/`?3` the cursor (created_at, id), `?4` limit,
-/// `?5` hide-offline flag. The cursor comparison is a row-value `<` written
+/// `?5` hide-offline flag, `?6`/`?7` the inclusive lower bound (`i64::MIN`
+/// when unbounded). The cursor comparison is a row-value `<` written
 /// out longhand — `?2`/`?3` are `i64::MAX` on the first page, which no real
 /// row can match, so one statement serves every page.
 ///
@@ -141,6 +146,7 @@ fn page_sql(media_only: bool) -> String {
         "SELECT {MESSAGE_COLUMNS} {MESSAGE_FROM}
          WHERE m.conv_id = ?1
            AND (m.created_at < ?2 OR (m.created_at = ?2 AND m.id < ?3))
+           AND (m.created_at > ?6 OR (m.created_at = ?6 AND m.id >= ?7))
            AND (?5 = 0 OR m.media_id IS NULL OR v.online = 1)"
     );
     if media_only {
@@ -154,6 +160,7 @@ fn fetch_page(
     lib: &str,
     conv_id: i64,
     before: Option<&MessageCursor>,
+    from: Option<&MessageCursor>,
     limit: i64,
     media_only: bool,
 ) -> AppResult<Vec<MessagePayload>> {
@@ -161,10 +168,16 @@ fn fetch_page(
     let (cursor_ts, cursor_id) = before
         .map(|c| (c.created_at, c.id))
         .unwrap_or((i64::MAX, i64::MAX));
+    let (from_ts, from_id) = from
+        .map(|c| (c.created_at, c.id))
+        .unwrap_or((i64::MIN, i64::MIN));
     db::with_lib(lib, |conn| {
         let mut stmt = conn.prepare(&page_sql(media_only))?;
         let mut rows: Vec<MessagePayload> = stmt
-            .query_map(params![conv_id, cursor_ts, cursor_id, limit, hide], row_to_message)?
+            .query_map(
+                params![conv_id, cursor_ts, cursor_id, limit, hide, from_ts, from_id],
+                row_to_message,
+            )?
             .collect::<rusqlite::Result<_>>()?;
         rows.reverse();
         Ok(rows)
@@ -174,7 +187,7 @@ fn fetch_page(
 /// One page of a conversation, oldest → newest, cut from the newest end.
 #[tauri::command]
 pub fn list_messages(lib: String, args: ListMessagesArgs) -> AppResult<Vec<MessagePayload>> {
-    fetch_page(&lib, args.conv_id, args.before.as_ref(), args.limit, false)
+    fetch_page(&lib, args.conv_id, args.before.as_ref(), args.from.as_ref(), args.limit, false)
 }
 
 #[derive(Debug, Deserialize)]
@@ -194,7 +207,7 @@ fn default_media_limit() -> i64 {
 /// One page of a conversation's media messages, oldest -> newest.
 #[tauri::command]
 pub fn list_conv_media(lib: String, args: ListConvMediaArgs) -> AppResult<Vec<MessagePayload>> {
-    fetch_page(&lib, args.conv_id, args.before.as_ref(), args.limit, true)
+    fetch_page(&lib, args.conv_id, args.before.as_ref(), None, args.limit, true)
 }
 
 /// Fetch specific messages (e.g. the ones an import just created).
@@ -377,10 +390,22 @@ mod tests {
         cursor: Option<(i64, i64)>,
         limit: i64,
     ) -> Vec<i64> {
+        page_window(conn, hide, media_only, cursor, None, limit)
+    }
+
+    fn page_window(
+        conn: &Connection,
+        hide: bool,
+        media_only: bool,
+        cursor: Option<(i64, i64)>,
+        from: Option<(i64, i64)>,
+        limit: i64,
+    ) -> Vec<i64> {
         let (ts, id) = cursor.unwrap_or((i64::MAX, i64::MAX));
+        let (fts, fid) = from.unwrap_or((i64::MIN, i64::MIN));
         let mut stmt = conn.prepare(&page_sql(media_only)).unwrap();
         let mut ids: Vec<i64> = stmt
-            .query_map(params![1i64, ts, id, limit, hide as i64], |r| r.get(0))
+            .query_map(params![1i64, ts, id, limit, hide as i64, fts, fid], |r| r.get(0))
             .unwrap()
             .collect::<rusqlite::Result<_>>()
             .unwrap();
@@ -450,6 +475,21 @@ mod tests {
     }
 
     #[test]
+    fn from_bound_refetches_the_held_window() {
+        let conn = fixture();
+        // The UI holds 3..7; id 2 shares 3's timestamp but sits below the bound.
+        let from = Some(cursor_of(&conn, 3));
+        assert_eq!(page_window(&conn, false, false, None, from, 100), vec![3, 1, 6, 7]);
+        // A file the watcher adds with an mtime inside the window shows up in place.
+        conn.execute(
+            "INSERT INTO messages (id, conv_id, media_id, created_at) VALUES (30, 1, NULL, 600)",
+            [],
+        )
+        .unwrap();
+        assert_eq!(page_window(&conn, false, false, None, from, 100), vec![3, 1, 30, 6, 7]);
+    }
+
+    #[test]
     fn other_conversations_never_leak_in() {
         assert!(!page(&fixture(), false, None, 10).contains(&99));
     }
@@ -466,7 +506,10 @@ mod tests {
         let conn = fixture();
         let mut stmt = conn.prepare(&page_sql(true)).unwrap();
         let msgs: Vec<_> = stmt
-            .query_map(params![1i64, i64::MAX, i64::MAX, 10i64, 0i64], row_to_message)
+            .query_map(
+                params![1i64, i64::MAX, i64::MAX, 10i64, 0i64, i64::MIN, i64::MIN],
+                row_to_message,
+            )
             .unwrap()
             .collect::<rusqlite::Result<_>>()
             .unwrap();

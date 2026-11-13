@@ -9,6 +9,7 @@ import type { Message } from "../../types";
 import { MessageBubble, isTileable } from "./MessageBubble";
 import { TIME_GAP_MS, formatDayDivider, formatMessageTime, isSameDay } from "../../lib/datetime";
 import { EmptyState } from "../ui/EmptyState";
+import { useMessagesStore } from "../../stores/messages";
 
 /** 吸顶线距容器顶部的距离，对齐 `sticky top-2`（0.5rem = 8px）。 */
 const STICKY_OFFSET = 8;
@@ -16,6 +17,8 @@ const STICKY_OFFSET = 8;
 const IDLE_FADE_MS = 1500;
 /** 距顶部多少像素内开始拉取更早的一页。 */
 const LOAD_OLDER_AT_PX = 300;
+/** 离底部这么近就算「在底部」：后台新增的消息才会把视图带到底。 */
+const AT_BOTTOM_PX = 80;
 
 /** The day's label, with the first message's time. While pinned to the top
  *  it stands for the whole day, so the time is hidden then (styles.css). */
@@ -102,15 +105,21 @@ export function MessageList({
   loadOlderRef.current = onLoadOlder;
   const armedRef = useRef(false);
   armedRef.current = hasMore && !loadingOlder && messages.length > 0;
+  /** 上次滚动停在底部附近。由滚动处理器维护。 */
+  const atBottomRef = useRef(true);
+  const jumpToEnd = useMessagesStore((s) => s.jumpToEnd);
 
-  // 滚动位置的两种处境：
+  // 滚动位置的几种处境：
   //   - 往上翻页插入了更早的消息 → 按插入高度补偿 scrollTop，保持阅读位置
-  //   - 切会话 / 追加新消息 → 贴到底部
+  //   - 切会话 / 自己发消息或导入 → 贴到底部
+  //   - 后台（同步文件夹、磁盘）改了列表 → 原来在底部才贴底；否则不动，
+  //     中间插入 / 删掉的行交给浏览器的滚动锚定（todo 2.5）
   const prevRef = useRef({
     convId: null as number | null,
     firstId: null as number | null,
     len: 0,
     scrollHeight: 0,
+    jump: jumpToEnd,
   });
 
   useLayoutEffect(() => {
@@ -128,7 +137,11 @@ export function MessageList({
     if (container && prepended) {
       // 注意：此时图片还没解码完，高度仍会继续长，所以补偿是近似的。
       container.scrollTop += container.scrollHeight - prev.scrollHeight;
-    } else if (switched || messages.length !== prev.len) {
+    } else if (
+      switched ||
+      jumpToEnd !== prev.jump ||
+      (messages.length !== prev.len && atBottomRef.current)
+    ) {
       bottomRef.current?.scrollIntoView({ block: "end" });
     }
 
@@ -137,6 +150,7 @@ export function MessageList({
       firstId,
       len: messages.length,
       scrollHeight: container?.scrollHeight ?? 0,
+      jump: jumpToEnd,
     };
 
     // 首页没撑满视口时根本滚不动，补一次自动拉取，直到撑满或没有更早的了。
@@ -148,7 +162,7 @@ export function MessageList({
       armedRef.current = false;
       loadOlderRef.current();
     }
-  }, [messages, convId, scrollContainerRef]);
+  }, [messages, convId, jumpToEnd, scrollContainerRef]);
 
   // 悬浮日期头的两个状态都用命令式 + CSS 处理，避免每帧 re-render：
   //   - 容器 data-scrolling：滚动中为 true，停 IDLE_FADE_MS 后转 false
@@ -193,6 +207,9 @@ export function MessageList({
         container.setAttribute("data-scrolling", "false");
       }, IDLE_FADE_MS);
       if (!raf) raf = requestAnimationFrame(updateStuck);
+      atBottomRef.current =
+        container.scrollHeight - container.scrollTop - container.clientHeight <=
+        AT_BOTTOM_PX;
       // 快到顶了就拉上一页；armed 立刻置否，等 props 回来再重新武装，
       // 免得一次滚动连发好几个请求。
       if (armedRef.current && container.scrollTop <= LOAD_OLDER_AT_PX) {

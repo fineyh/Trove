@@ -173,7 +173,9 @@ function useBackendEvents() {
         // so the viewer+grid cache is stale whether or not it is on screen.
         useConvMediaStore.getState().invalidate(payload.convId);
         if (useSessionStore.getState().activeConversationId === payload.convId) {
-          void useMessagesStore.getState().load(payload.convId);
+          // In place: a reload would throw a reader of old messages back to
+          // the newest page (todo 2.5).
+          void useMessagesStore.getState().refresh(payload.convId);
         }
       }),
     );
@@ -186,7 +188,7 @@ function useBackendEvents() {
         const activeId = useSessionStore.getState().activeConversationId;
         if (activeId !== null) {
           useConvMediaStore.getState().invalidate(activeId);
-          void useMessagesStore.getState().load(activeId);
+          void useMessagesStore.getState().refresh(activeId);
         }
         // Files on the returning volume can be thumbnailed now.
         kickThumbs(lib);

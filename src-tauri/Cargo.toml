@@ -54,6 +54,10 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 # Phase 6 — auto-updater
 tauri-plugin-updater = "2"
 
+# 1.2 — one process per data directory (ADR-046)
+[target.'cfg(any(windows, target_os = "macos", target_os = "linux"))'.dependencies]
+tauri-plugin-single-instance = "2"
+
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [
     "Win32_Foundation",

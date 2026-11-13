@@ -23,7 +23,18 @@ fn purge_webview_profile_if_requested(app: &tauri::App) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // Must be the first plugin: a second launch exits here, before it opens
+    // any library or starts a watcher, and wakes the running window (1.2).
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+        if let Some(w) = app.get_webview_window("main") {
+            let _ = w.unminimize();
+            let _ = w.show();
+            let _ = w.set_focus();
+        }
+    }));
+    builder
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
@@ -31,11 +42,10 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         // Media reaches the WebView only through this protocol, by id
-        // (ADR-037). The handler does file I/O, so it runs off the IPC thread.
+        // (ADR-037). The handler does file I/O, so it runs on a small worker
+        // pool off the IPC thread (R4.10).
         .register_asynchronous_uri_scheme_protocol("trove", |_ctx, request, responder| {
-            std::thread::spawn(move || {
-                responder.respond(services::protocol::handle(request));
-            });
+            services::protocol::dispatch(request, responder);
         })
         .setup(|app| {
             let data_dir = app

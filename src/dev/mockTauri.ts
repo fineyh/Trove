@@ -4,6 +4,8 @@
  *
  * Fakes `window.__TAURI_INTERNALS__` with canned libraries, conversations and
  * messages, and swaps `trove://` image URLs for generated placeholders.
+ * `__mock.addMessage()` in the console appends a message the way the folder
+ * watcher would (a `conv:changed` event), to check the list keeps its place.
  * Never active in a build (guarded by import.meta.env.DEV).
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -133,10 +135,24 @@ function install() {
     list_geotagged_media: () => [],
     thumbs_next: () => [],
     thumbs_remaining: () => 0,
-    "plugin:event|listen": () => Math.floor(Math.random() * 1e9),
+    "plugin:event|listen": (a) => {
+      const ids = listeners.get(a.event) ?? [];
+      listeners.set(a.event, [...ids, a.handler]);
+      return a.handler;
+    },
     "plugin:event|unlisten": () => null,
     "plugin:app|version": () => "0.4.2",
     "plugin:window|get_all_windows": () => ["main"],
+  };
+
+  const listeners = new Map<string, number[]>();
+  const emit = (event: string, payload: any) =>
+    (listeners.get(event) ?? []).forEach((id) => callbacks.get(id)?.({ event, id, payload }));
+  (window as any).__mock = {
+    addMessage(convId = 1, caption = `新文件 ${new Date().toLocaleTimeString()}`) {
+      messages.push(text(0 - (Date.now() - now), caption));
+      emit("conv:changed", { lib: "main", convId, added: 1, broken: 0, renamed: 0 });
+    },
   };
 
   let cb = 0;
