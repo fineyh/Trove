@@ -20,7 +20,7 @@ updater notes**. Before running `npm run release x.y.z`, add a matching
 - Light and dark themes, and a new look throughout the app.
 - Stable and preview update channels, a daily background check, download progress, and a feedback link.
 - Optional passwords for Trove, libraries, and backups.
-- A log file to attach to bug reports (Settings → About → Log folder).
+- A log file to attach to bug reports.
 
 ### Changed
 - Your existing library is upgraded to the new format on first launch.
