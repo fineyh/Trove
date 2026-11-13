@@ -7,7 +7,6 @@ import { IconButton } from "../ui/Button";
 import { useEscapeLayer } from "../ui/Modal";
 import { SettingsNav } from "../settings/SettingsNav";
 import { DEFAULT_SECTION, isSection, type SettingsSection } from "../settings/types";
-import { AccountPane } from "../settings/panes/AccountPane";
 import { GeneralPane } from "../settings/panes/GeneralPane";
 import { StoragePane } from "../settings/panes/StoragePane";
 import { SecurityPane } from "../settings/panes/SecurityPane";
@@ -65,8 +64,6 @@ export function SettingsDialog() {
 
 function PaneSwitch({ section }: { section: SettingsSection }) {
   switch (section) {
-    case "account":
-      return <AccountPane />;
     case "general":
       return <GeneralPane />;
     case "storage":

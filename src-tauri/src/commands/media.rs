@@ -93,7 +93,7 @@ pub(crate) fn ingest_batch(
             Ok(None) => {}
             Err(e) => {
                 failed += 1;
-                eprintln!("import failed for {}: {e}", path.display());
+                log::warn!("import failed: {e}");
             }
         }
     }

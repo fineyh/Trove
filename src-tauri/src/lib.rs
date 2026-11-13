@@ -21,6 +21,31 @@ fn purge_webview_profile_if_requested(app: &tauri::App) {
     }
 }
 
+/// Log file in the OS log dir (6.1, ADR-048): a release build has no console,
+/// so this is the only trace a bug report can carry. Small and rotated; the
+/// call sites keep file paths and captions out of it, since the libraries
+/// themselves are encrypted.
+fn log_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
+    use tauri_plugin_log::{RotationStrategy, Target, TargetKind, TimezoneStrategy};
+    let mut targets = vec![Target::new(TargetKind::LogDir { file_name: Some("trove".into()) })];
+    if cfg!(debug_assertions) {
+        targets.push(Target::new(TargetKind::Stdout));
+    }
+    tauri_plugin_log::Builder::new()
+        .clear_targets()
+        .targets(targets)
+        .level(log::LevelFilter::Info)
+        .level_for("tao", log::LevelFilter::Warn)
+        .level_for("wry", log::LevelFilter::Warn)
+        .level_for("notify", log::LevelFilter::Warn)
+        .level_for("reqwest", log::LevelFilter::Warn)
+        .level_for("hyper", log::LevelFilter::Warn)
+        .max_file_size(1_000_000)
+        .rotation_strategy(RotationStrategy::KeepSome(2))
+        .timezone_strategy(TimezoneStrategy::UseLocal)
+        .build()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default();
@@ -35,6 +60,7 @@ pub fn run() {
         }
     }));
     builder
+        .plugin(log_plugin())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
@@ -52,6 +78,7 @@ pub fn run() {
                 .path()
                 .app_data_dir()
                 .expect("failed to resolve app data dir");
+            log::info!("Trove {} starting", app.package_info().version);
             purge_webview_profile_if_requested(app);
             events::init(app.handle().clone());
             // A failed boot must not end the process: a release build has no
@@ -66,7 +93,7 @@ pub fn run() {
                     }
                 }
                 Err(f) => {
-                    eprintln!("boot failed ({:?}): {}", f.kind, f.detail);
+                    log::error!("boot failed ({:?}): {}", f.kind, f.detail);
                     services::session::set_boot_error(f);
                 }
             }
@@ -151,6 +178,7 @@ pub fn run() {
             commands::volumes::forget_volume,
             commands::volumes::get_storage_stats,
             commands::system::open_path,
+            commands::system::open_log_dir,
             commands::system::open_url,
             commands::system::open_media,
             commands::system::reveal_media,

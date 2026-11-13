@@ -179,11 +179,7 @@ fn flush(lib: &str, conv_id: i64, _root: &Path, pending: &mut Pending) {
                 pending.removes.insert(old_path);
             }
             Err(e) => {
-                eprintln!(
-                    "watcher rename {} → {} failed: {e}",
-                    old_path.display(),
-                    new_path.display()
-                );
+                log::warn!("watcher rename failed: {e}");
                 pending.creates.insert(new_path);
                 pending.removes.insert(old_path);
             }
@@ -198,7 +194,7 @@ fn flush(lib: &str, conv_id: i64, _root: &Path, pending: &mut Pending) {
         match media::ingest_one(lib, conv_id, &p, false, true) {
             Ok(Some(_)) => added += 1,
             Ok(None) => {}
-            Err(e) => eprintln!("watcher ingest failed for {}: {e}", p.display()),
+            Err(e) => log::warn!("watcher ingest failed: {e}"),
         }
     }
 
@@ -208,7 +204,7 @@ fn flush(lib: &str, conv_id: i64, _root: &Path, pending: &mut Pending) {
             continue;
         }
         if let Err(e) = media::ingest_one(lib, conv_id, &p, false, true) {
-            eprintln!("watcher modify ingest failed for {}: {e}", p.display());
+            log::warn!("watcher modify ingest failed: {e}");
         }
     }
 
@@ -221,12 +217,12 @@ fn flush(lib: &str, conv_id: i64, _root: &Path, pending: &mut Pending) {
             Ok(false) => match mark_broken(lib, &p) {
                 Ok(true) => broken += 1,
                 Ok(false) => {}
-                Err(e) => eprintln!("watcher mark_broken failed for {}: {e}", p.display()),
+                Err(e) => log::warn!("watcher mark_broken failed: {e}"),
             },
             Err(e) => {
-                eprintln!("watcher try_relocate_removed failed for {}: {e}", p.display());
+                log::warn!("watcher try_relocate_removed failed: {e}");
                 if let Err(e2) = mark_broken(lib, &p) {
-                    eprintln!("watcher mark_broken fallback failed: {e2}");
+                    log::warn!("watcher mark_broken fallback failed: {e2}");
                 }
             }
         }
@@ -299,7 +295,7 @@ fn pair_renames(lib: &str, pending: &mut Pending) -> Vec<(PathBuf, PathBuf)> {
                 by_sig.insert((size, blake3), p.clone());
             }
             Ok(None) => {}
-            Err(e) => eprintln!("pair_renames lookup {} failed: {e}", p.display()),
+            Err(e) => log::warn!("pair_renames lookup failed: {e}"),
         }
     }
     if by_sig.is_empty() {
@@ -328,7 +324,7 @@ fn pair_renames(lib: &str, pending: &mut Pending) -> Vec<(PathBuf, PathBuf)> {
         let new_hash = match hasher::blake3_file(&new_path) {
             Ok(h) => h,
             Err(e) => {
-                eprintln!("pair_renames hash {} failed: {e}", new_path.display());
+                log::warn!("pair_renames hash failed: {e}");
                 continue;
             }
         };
@@ -388,10 +384,7 @@ fn try_relocate_removed(
         let candidate_hash = match hasher::blake3_file(&candidate) {
             Ok(h) => h,
             Err(e) => {
-                eprintln!(
-                    "try_relocate_removed hash {} failed: {e}",
-                    candidate.display()
-                );
+                log::warn!("try_relocate_removed hash failed: {e}");
                 continue;
             }
         };

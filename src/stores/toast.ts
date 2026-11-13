@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { errText, isNoTauriError } from "../lib/errors";
+import { logError } from "../lib/log";
 
 export type ToastKind = "error" | "success" | "info";
 
@@ -120,9 +121,9 @@ export const toast = {
       return;
     }
     if (cause !== undefined) console.error(`${title}:`, cause);
-    useToastStore
-      .getState()
-      .push("error", title, cause === undefined ? undefined : errText(cause));
+    const detail = cause === undefined ? undefined : errText(cause);
+    logError(detail ? `${title}: ${detail}` : title);
+    useToastStore.getState().push("error", title, detail);
   },
   success(title: string, detail?: string) {
     useToastStore.getState().push("success", title, detail);

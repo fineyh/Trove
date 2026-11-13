@@ -212,7 +212,7 @@ fn scan_root(
         let candidate_hash = match hasher::blake3_file(&candidate) {
             Ok(h) => h,
             Err(e) => {
-                eprintln!("repair scan hash {} failed: {e}", candidate.display());
+                log::warn!("repair scan hash failed: {e}");
                 continue;
             }
         };

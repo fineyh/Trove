@@ -551,6 +551,10 @@ export async function openPath(path: string): Promise<void> {
 }
 
 /** Open a web/mail URL in the OS default browser (not the app WebView). */
+export async function openLogDir(): Promise<void> {
+  await invoke("open_log_dir");
+}
+
 export async function openUrl(url: string): Promise<void> {
   await invoke("open_url", { url });
 }

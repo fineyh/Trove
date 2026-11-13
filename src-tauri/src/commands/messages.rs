@@ -321,7 +321,7 @@ pub fn delete_message(lib: String, message_id: i64, delete_file: bool) -> AppRes
                     if let Some(path) = media_abs_path(conn, mid)? {
                         if path.exists() {
                             if let Err(e) = trash::delete(&path) {
-                                eprintln!("trash::delete failed for {}: {e}", path.display());
+                                log::warn!("trash::delete failed: {e}");
                             }
                         }
                     }

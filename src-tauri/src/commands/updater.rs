@@ -74,7 +74,7 @@ pub async fn check_for_update(app: AppHandle) -> AppResult<UpdateInfo> {
     let checked_at = chrono::Utc::now().timestamp_millis();
     // Only successful checks count towards "checked today".
     if let Err(e) = write_ui_pref("update_last_check", &checked_at.to_string()) {
-        eprintln!("[updater] could not record last check: {e}");
+        log::warn!("[updater] could not record last check: {e}");
     }
 
     Ok(match result {

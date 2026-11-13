@@ -432,7 +432,7 @@ impl Keyring {
                 // the next password change.
                 if !bak.exists() {
                     if let Err(e) = std::fs::read(&p).and_then(|b| write_durable(&bak, &b)) {
-                        eprintln!("write {BACKUP_NAME}: {e}");
+                        log::error!("write {BACKUP_NAME}: {e}");
                     }
                 }
                 return Ok(Some((kr, false)));
@@ -467,7 +467,7 @@ impl Keyring {
         let bytes = serde_json::to_vec_pretty(self)?;
         write_durable(&Self::path(data_dir), &bytes).context("write keyring")?;
         if let Err(e) = write_durable(&Self::backup_path(data_dir), &bytes) {
-            eprintln!("write {BACKUP_NAME}: {e}");
+            log::error!("write {BACKUP_NAME}: {e}");
         }
         Ok(())
     }

@@ -40,6 +40,18 @@ pub fn open_path(path: String) -> AppResult<()> {
     Ok(())
 }
 
+/// Open the folder holding Trove's log files (6.1).
+#[tauri::command]
+pub fn open_log_dir(app: tauri::AppHandle) -> AppResult<()> {
+    use tauri::Manager;
+    let dir = app
+        .path()
+        .app_log_dir()
+        .map_err(|e| AppError::Other(anyhow::anyhow!("resolve log dir: {e}")))?;
+    std::fs::create_dir_all(&dir)?;
+    open_path(dir.to_string_lossy().to_string())
+}
+
 /// Open a web/mail URL in the OS default browser. Used by the frontend's
 /// external-link interceptor so clicking a link (e.g. the map's OpenStreetMap
 /// attribution) opens the browser instead of navigating the app's WebView

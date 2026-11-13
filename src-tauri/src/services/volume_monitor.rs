@@ -71,13 +71,13 @@ fn poll_once() {
         for (pid, mount) in &appeared {
             match volume_came_online(&lib, pid, mount) {
                 Ok(c) => changed.extend(c),
-                Err(e) => eprintln!("volume_monitor[{lib}] online {pid}: {e}"),
+                Err(e) => log::warn!("volume_monitor[{lib}] online {pid}: {e}"),
             }
         }
         for pid in &disappeared {
             match volume_went_offline(&lib, pid) {
                 Ok(c) => changed.extend(c),
-                Err(e) => eprintln!("volume_monitor[{lib}] offline {pid}: {e}"),
+                Err(e) => log::warn!("volume_monitor[{lib}] offline {pid}: {e}"),
             }
         }
         for conv_id in changed {
@@ -97,7 +97,7 @@ fn poll_once() {
 /// when a library opens (in the background: it stats every file).
 pub fn scan_library(lib: &str) {
     if let Err(e) = scan_library_inner(lib) {
-        eprintln!("volume_monitor[{lib}]: scan failed: {e}");
+        log::warn!("volume_monitor[{lib}]: scan failed: {e}");
     }
 }
 
@@ -313,6 +313,6 @@ pub fn try_start_watcher(lib: &str, conv_id: i64) {
         return;
     }
     if let Err(e) = file_watcher::start(lib, conv_id, root) {
-        eprintln!("volume_monitor: watcher {lib}#{conv_id}: {e}");
+        log::warn!("volume_monitor: watcher {lib}#{conv_id}: {e}");
     }
 }

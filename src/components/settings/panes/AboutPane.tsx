@@ -203,6 +203,10 @@ export function AboutPane() {
       <Group title="帮助">
         <Row label="更新日志" onClick={() => open(`${REPO}/releases`)} />
         <Row label="反馈问题" onClick={() => open(issueUrl(env))} />
+        <Row
+          label="日志文件夹"
+          onClick={() => ipc.openLogDir().catch((e) => toast.error("打不开日志文件夹", e))}
+        />
         <Row label="版本信息" description={env ? envLine(env) : "—"}>
           <Button size="sm" onClick={() => void copyEnv()} disabled={!env}>
             复制

@@ -158,11 +158,11 @@ fn create_conversation_blocking(lib: &str, args: CreateConversationArgs) -> AppR
         let paths = services::folder_scanner::enumerate_media(&root);
         for p in paths {
             if let Err(e) = super::media::ingest_one(lib, conv_id, &p, false, true) {
-                eprintln!("folder_watch initial scan: {e}");
+                log::warn!("folder_watch initial scan: {e}");
             }
         }
         if let Err(e) = services::file_watcher::start(lib, conv_id, root) {
-            eprintln!("folder_watch start watcher: {e}");
+            log::warn!("folder_watch start watcher: {e}");
         }
         services::thumbs::wake(lib);
     }

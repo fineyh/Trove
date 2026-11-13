@@ -115,7 +115,7 @@ pub fn boot(data_dir: &Path) -> Result<bool, BootFailure> {
     let (keyring, fresh_ak) = match loaded {
         Some((kr, restored)) => {
             if restored {
-                eprintln!("keyring.json was missing or damaged; restored from {}", keyring::BACKUP_NAME);
+                log::warn!("keyring.json was missing or damaged; restored from {}", keyring::BACKUP_NAME);
             }
             (kr, None)
         }
@@ -236,7 +236,7 @@ fn open_app_libraries(ak: SecretKey) -> AppResult<()> {
                 if id == db::main_id() {
                     return Err(e);
                 }
-                eprintln!("open library {id}: {e}");
+                log::warn!("open library {id}: {e}");
             }
         }
     }
@@ -821,7 +821,7 @@ pub fn poll_keyfiles() {
             (Some(p), None) => {
                 if let Ok(bytes) = std::fs::read(&p) {
                     if let Err(e) = unlock_library(&id, &Secret::Keyfile(&bytes)) {
-                        eprintln!("keyfile unlock {id}: {e}");
+                        log::warn!("keyfile unlock {id}: {e}");
                     }
                 }
             }

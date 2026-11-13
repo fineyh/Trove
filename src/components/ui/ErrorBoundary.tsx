@@ -2,6 +2,7 @@ import { AlertTriangle, Copy, RefreshCw, RotateCcw } from "lucide-react";
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { Button } from "./Button";
 import { errText } from "../../lib/errors";
+import { logError } from "../../lib/log";
 
 interface Props {
   children: ReactNode;
@@ -23,8 +24,8 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    // 没有落盘日志，控制台是目前唯一的开发者线索（见 todo「无落盘日志」）
     console.error("ErrorBoundary caught:", error, info.componentStack);
+    logError(`ErrorBoundary: ${errText(error)}${info.componentStack ?? ""}`);
     this.setState({ stack: info.componentStack ?? null });
   }
 

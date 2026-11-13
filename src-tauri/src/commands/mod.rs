@@ -60,12 +60,12 @@ pub(crate) fn spawn_library_tasks(lib: String) {
         let _slot = Slot(lib.clone());
         crate::services::volume_monitor::scan_library(&lib);
         if let Err(e) = conversations::boot_existing_watchers(&lib) {
-            eprintln!("boot watchers [{lib}]: {e}");
+            log::error!("boot watchers [{lib}]: {e}");
         }
         crate::services::thumbs::wake(&lib);
     });
     if let Err(e) = spawned {
-        eprintln!("spawn library tasks: {e}");
+        log::error!("spawn library tasks: {e}");
     }
 }
 
