@@ -31,6 +31,10 @@ use std::path::{Path, PathBuf};
 use zeroize::Zeroizing;
 
 pub const FILE_NAME: &str = "keyring.json";
+/// Identical second copy, rewritten on every save (ADR-045).
+pub const BACKUP_NAME: &str = "keyring.json.bak";
+/// Where a damaged `keyring.json` goes when boot restores from the mirror.
+pub const BROKEN_NAME: &str = "keyring.json.broken";
 const VERSION: u32 = 1;
 /// Owner tag for the application key's own slots.
 const APP_OWNER: &str = "app";
@@ -319,6 +323,58 @@ pub fn random_id() -> String {
     hex::encode(b)
 }
 
+/// `Ok(None)` when the file doesn't exist; an error when it can't be read or
+/// isn't a keyring.
+fn read_file(p: &Path) -> Result<Option<Keyring>> {
+    let raw = match std::fs::read(p) {
+        Ok(r) => r,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(anyhow::Error::new(e).context(format!("无法读取 {}", name(p)))),
+    };
+    let kr = serde_json::from_slice(&raw).with_context(|| format!("{} 格式无效", name(p)))?;
+    Ok(Some(kr))
+}
+
+fn name(p: &Path) -> String {
+    p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()
+}
+
+/// A newer Trove's keyring is not damage: don't fall back to the mirror
+/// (it may be just as new, or older and missing libraries).
+fn check_version(kr: Keyring) -> Result<Keyring> {
+    if kr.version != VERSION {
+        return Err(crate::error::NewerData {
+            what: "keyring",
+            found: kr.version as i64,
+            supported: VERSION as i64,
+        }
+        .into());
+    }
+    Ok(kr)
+}
+
+/// Write `bytes` to `p` so that after a crash `p` holds either the old or
+/// the new content, and the new content is on disk once this returns.
+fn write_durable(p: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut tmp = p.as_os_str().to_owned();
+    tmp.push(".tmp");
+    let tmp = PathBuf::from(tmp);
+    {
+        let mut f = std::fs::File::create(&tmp)?;
+        f.write_all(bytes)?;
+        f.sync_all()?;
+    }
+    std::fs::rename(&tmp, p)?;
+    // The rename itself lives in the directory. NTFS journals it; on Unix the
+    // directory needs its own fsync.
+    #[cfg(unix)]
+    if let Some(dir) = p.parent() {
+        std::fs::File::open(dir)?.sync_all()?;
+    }
+    Ok(())
+}
+
 pub fn new_key_file_bytes() -> Vec<u8> {
     let mut b = vec![0u8; KEY_LEN];
     OsRng.fill_bytes(&mut b);
@@ -348,26 +404,71 @@ impl Keyring {
         data_dir.join(FILE_NAME)
     }
 
-    pub fn load(data_dir: &Path) -> Result<Option<Self>> {
-        let p = Self::path(data_dir);
-        if !p.is_file() {
-            return Ok(None);
-        }
-        let raw = std::fs::read(&p).context("read keyring")?;
-        let kr: Keyring = serde_json::from_slice(&raw).context("parse keyring")?;
-        if kr.version != VERSION {
-            bail!("keyring 版本 v{} 不受支持，请升级 Trove", kr.version);
-        }
-        Ok(Some(kr))
+    /// The mirror copy `save` keeps next to the keyring (ADR-045).
+    pub fn backup_path(data_dir: &Path) -> PathBuf {
+        data_dir.join(BACKUP_NAME)
     }
 
-    /// Write-then-rename so a crash never leaves a half-written keyring —
-    /// losing it would lose every library.
-    pub fn save(&self, data_dir: &Path) -> Result<()> {
+    /// Strict: only `keyring.json`, no fallback. Used on files we didn't
+    /// write ourselves (a backup being imported).
+    pub fn load(data_dir: &Path) -> Result<Option<Self>> {
+        match read_file(&Self::path(data_dir))? {
+            Some(kr) => Ok(Some(check_version(kr)?)),
+            None => Ok(None),
+        }
+    }
+
+    /// Boot's loader: `keyring.json`, or, when it is missing or damaged, the
+    /// mirror copy, which is then written back as the keyring. The damaged
+    /// file is kept as `keyring.json.broken`. Returns whether that happened.
+    pub fn load_or_restore(data_dir: &Path) -> Result<Option<(Self, bool)>> {
         let p = Self::path(data_dir);
-        let tmp = p.with_extension("json.tmp");
-        std::fs::write(&tmp, serde_json::to_vec_pretty(self)?)?;
-        std::fs::rename(&tmp, &p)?;
+        let bak = Self::backup_path(data_dir);
+        let primary = match read_file(&p) {
+            Ok(Some(kr)) => {
+                let kr = check_version(kr)?;
+                // Keyrings written before the mirror existed, and ones just
+                // installed from a backup, get theirs now rather than at
+                // the next password change.
+                if !bak.exists() {
+                    if let Err(e) = std::fs::read(&p).and_then(|b| write_durable(&bak, &b)) {
+                        eprintln!("write {BACKUP_NAME}: {e}");
+                    }
+                }
+                return Ok(Some((kr, false)));
+            }
+            other => other,
+        };
+        match read_file(&bak) {
+            Ok(Some(kr)) => {
+                let kr = check_version(kr)?;
+                if p.exists() {
+                    std::fs::rename(&p, data_dir.join(BROKEN_NAME)).context("move damaged keyring aside")?;
+                }
+                kr.save(data_dir)?;
+                Ok(Some((kr, true)))
+            }
+            Ok(None) => primary.map(|_| None),
+            Err(bak_err) => match primary {
+                Err(e) => Err(anyhow!("{e:#}\n{bak_err:#}")),
+                // No keyring but a mirror we can't read: never treat that as
+                // a first run.
+                Ok(_) => Err(anyhow!("{FILE_NAME} 不存在\n{bak_err:#}")),
+            },
+        }
+    }
+
+    /// Writes `keyring.json` durably (temp file, fsync, rename), then the same
+    /// bytes to `keyring.json.bak`. Once the first rename lands the save has
+    /// happened, so a failing mirror write is only logged: callers roll back
+    /// on error, and rolling back a keyring that's already on disk would
+    /// orphan whatever it now points to.
+    pub fn save(&self, data_dir: &Path) -> Result<()> {
+        let bytes = serde_json::to_vec_pretty(self)?;
+        write_durable(&Self::path(data_dir), &bytes).context("write keyring")?;
+        if let Err(e) = write_durable(&Self::backup_path(data_dir), &bytes) {
+            eprintln!("write {BACKUP_NAME}: {e}");
+        }
         Ok(())
     }
 
@@ -544,5 +645,79 @@ mod tests {
         let got = open_slots("lib1", &kr_lib.slots, &Secret::Keyfile(&bytes), None).unwrap();
         assert_eq!(got.0, dek.0);
         assert!(open_slots("lib1", &kr_lib.slots, &Secret::Keyfile(&[0u8; 32]), None).is_err());
+    }
+
+    fn scratch(name: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("trove-keyring-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    #[test]
+    fn save_writes_the_keyring_and_an_identical_mirror() {
+        let d = scratch("mirror");
+        let (kr, _, _) = Keyring::fresh().unwrap();
+        kr.save(&d).unwrap();
+        let a = std::fs::read(Keyring::path(&d)).unwrap();
+        let b = std::fs::read(Keyring::backup_path(&d)).unwrap();
+        assert_eq!(a, b);
+        assert!(!d.join("keyring.json.tmp").exists());
+        let (back, restored) = Keyring::load_or_restore(&d).unwrap().unwrap();
+        assert_eq!(back.main, kr.main);
+        assert!(!restored);
+
+        // A keyring from before the mirror gets one on the next boot.
+        std::fs::remove_file(Keyring::backup_path(&d)).unwrap();
+        Keyring::load_or_restore(&d).unwrap();
+        assert_eq!(std::fs::read(Keyring::backup_path(&d)).unwrap(), a);
+    }
+
+    #[test]
+    fn a_damaged_keyring_is_restored_from_the_mirror() {
+        let d = scratch("damaged");
+        let (kr, _, _) = Keyring::fresh().unwrap();
+        kr.save(&d).unwrap();
+        std::fs::write(Keyring::path(&d), b"{\"version\":1,\"ma").unwrap();
+
+        assert!(Keyring::load(&d).is_err(), "the strict loader doesn't fall back");
+        let (back, restored) = Keyring::load_or_restore(&d).unwrap().unwrap();
+        assert!(restored);
+        assert_eq!(back.main, kr.main);
+        assert!(d.join(BROKEN_NAME).is_file());
+        // Written back: the next boot reads keyring.json directly.
+        assert!(!Keyring::load_or_restore(&d).unwrap().unwrap().1);
+    }
+
+    #[test]
+    fn a_missing_keyring_is_restored_but_two_bad_copies_are_an_error() {
+        let d = scratch("missing");
+        let (kr, _, _) = Keyring::fresh().unwrap();
+        kr.save(&d).unwrap();
+        std::fs::remove_file(Keyring::path(&d)).unwrap();
+        assert!(Keyring::load_or_restore(&d).unwrap().unwrap().1);
+
+        std::fs::write(Keyring::path(&d), b"garbage").unwrap();
+        std::fs::write(Keyring::backup_path(&d), b"garbage").unwrap();
+        assert!(Keyring::load_or_restore(&d).is_err());
+
+        // A mirror without a keyring is never a first run.
+        std::fs::remove_file(Keyring::path(&d)).unwrap();
+        assert!(Keyring::load_or_restore(&d).is_err());
+
+        let empty = scratch("empty");
+        assert!(Keyring::load_or_restore(&empty).unwrap().is_none());
+    }
+
+    #[test]
+    fn a_newer_keyring_is_not_replaced_by_the_mirror() {
+        let d = scratch("newer");
+        let (kr, _, _) = Keyring::fresh().unwrap();
+        kr.save(&d).unwrap();
+        let mut newer = kr.clone();
+        newer.version = VERSION + 1;
+        std::fs::write(Keyring::path(&d), serde_json::to_vec(&newer).unwrap()).unwrap();
+        assert!(Keyring::load_or_restore(&d).is_err());
+        assert!(!d.join(BROKEN_NAME).exists());
     }
 }

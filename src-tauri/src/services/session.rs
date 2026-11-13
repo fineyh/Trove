@@ -61,34 +61,76 @@ fn save(s: &State) -> AppResult<()> {
 
 // ─── boot ───────────────────────────────────────────────────────────────────
 
+/// What went wrong at startup, for the error screen (ADR-045). The screen
+/// words each kind itself; `detail` is the raw error, shown folded away.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BootErrorKind {
+    /// Library files but no keyring.
+    KeyringMissing,
+    /// Keyring and its mirror both unreadable.
+    KeyringDamaged,
+    /// Keyring or library written by a newer Trove.
+    NewerVersion,
+    /// The main library won't open with its key.
+    LibraryUnreadable,
+    /// The data folder itself can't be read or written.
+    DataDir,
+    Other,
+}
+
+#[derive(Debug, Clone)]
+pub struct BootFailure {
+    pub kind: BootErrorKind,
+    pub detail: String,
+}
+
+impl BootFailure {
+    fn new(kind: BootErrorKind, e: impl Into<AppError>) -> Self {
+        let e = e.into();
+        // Wherever it surfaced, "made by a newer version" has one remedy.
+        let newer = matches!(&e, AppError::Other(a) if a.downcast_ref::<crate::error::NewerData>().is_some());
+        let kind = match (&e, newer) {
+            (_, true) => BootErrorKind::NewerVersion,
+            (AppError::Io(_), _) => BootErrorKind::DataDir,
+            _ => kind,
+        };
+        let detail = match &e {
+            AppError::InvalidArg(s) | AppError::NotFound(s) => s.clone(),
+            AppError::Other(a) => format!("{a:#}"),
+            other => other.to_string(),
+        };
+        Self { kind, detail }
+    }
+}
+
 /// Load the keyring (creating it, or migrating the pre-library `trove.db`,
 /// on first run) and open everything that opens without a password.
 /// Returns true when the app is unlocked after boot.
-pub fn boot(data_dir: &Path) -> AppResult<bool> {
-    db::init(data_dir)?;
+pub fn boot(data_dir: &Path) -> Result<bool, BootFailure> {
+    use BootErrorKind as K;
+    db::init(data_dir).map_err(|e| BootFailure::new(K::DataDir, e))?;
     let mut legacy_problem = None;
-    let (keyring, fresh_ak) = match Keyring::load(data_dir).map_err(AppError::Other)? {
-        Some(kr) => (kr, None),
-        None => {
-            let (kr, ak, dek) = Keyring::fresh().map_err(AppError::Other)?;
-            match migrate_legacy(data_dir, &kr.main, &dek) {
-                Ok(()) => {}
-                Err(e) => legacy_problem = Some(e),
+    let loaded = Keyring::load_or_restore(data_dir).map_err(|e| BootFailure::new(K::KeyringDamaged, e))?;
+    let (keyring, fresh_ak) = match loaded {
+        Some((kr, restored)) => {
+            if restored {
+                eprintln!("keyring.json was missing or damaged; restored from {}", keyring::BACKUP_NAME);
             }
-            // The library file exists (migrated or empty); only now does the
-            // keyring that can open it get written.
-            db::set_main(&kr.main);
-            db::open(&kr.main, &dek)?;
-            db::with_main(|c| {
-                c.execute(
-                    "INSERT OR IGNORE INTO libraries (id, name, sort, created_at) VALUES (?1, ?2, 0, ?3)",
-                    params![kr.main, DEFAULT_MAIN_NAME, now_ms()],
-                )?;
-                Ok(())
-            })?;
-            kr.save(data_dir).map_err(AppError::Other)?;
-            db::close(&kr.main);
-            (kr, Some(ak))
+            (kr, None)
+        }
+        None => {
+            // Library files with no keyring at all: making a fresh one would
+            // look like an empty first run while the real libraries sit
+            // there unopenable. Stop and say so instead.
+            let n = library_file_count(data_dir);
+            if n > 0 {
+                return Err(BootFailure {
+                    kind: K::KeyringMissing,
+                    detail: format!("{} 不存在；libraries 中有 {n} 个库文件", keyring::FILE_NAME),
+                });
+            }
+            first_run(data_dir, &mut legacy_problem).map_err(|e| BootFailure::new(K::Other, e))?
         }
     };
     db::set_main(&keyring.main);
@@ -101,15 +143,37 @@ pub fn boot(data_dir: &Path) -> AppResult<bool> {
             keys: HashMap::new(),
             legacy_problem,
         }))
-        .map_err(|_| AppError::Other(anyhow!("session already initialized")))?;
+        .map_err(|_| BootFailure::new(K::Other, anyhow!("session already initialized")))?;
 
     match ak {
         Some(ak) => {
-            open_app_libraries(ak)?;
+            open_app_libraries(ak).map_err(|e| BootFailure::new(K::LibraryUnreadable, e))?;
             Ok(true)
         }
         None => Ok(false),
     }
+}
+
+/// No keyring and no libraries: create both (migrating an old `trove.db`).
+fn first_run(data_dir: &Path, legacy_problem: &mut Option<String>) -> AppResult<(Keyring, Option<SecretKey>)> {
+    let (kr, ak, dek) = Keyring::fresh().map_err(AppError::Other)?;
+    if let Err(e) = migrate_legacy(data_dir, &kr.main, &dek) {
+        *legacy_problem = Some(e);
+    }
+    // The library file exists (migrated or empty); only now does the
+    // keyring that can open it get written.
+    db::set_main(&kr.main);
+    db::open(&kr.main, &dek)?;
+    db::with_main(|c| {
+        c.execute(
+            "INSERT OR IGNORE INTO libraries (id, name, sort, created_at) VALUES (?1, ?2, 0, ?3)",
+            params![kr.main, DEFAULT_MAIN_NAME, now_ms()],
+        )?;
+        Ok(())
+    })?;
+    kr.save(data_dir).map_err(AppError::Other)?;
+    db::close(&kr.main);
+    Ok((kr, Some(ak)))
 }
 
 /// First run after upgrading: copy the old plaintext `trove.db` into the new
@@ -140,6 +204,16 @@ fn migrate_legacy(data_dir: &Path, main: &str, dek: &SecretKey) -> Result<(), St
         }
     }
     Ok(())
+}
+
+fn library_file_count(data_dir: &Path) -> usize {
+    std::fs::read_dir(data_dir.join("libraries"))
+        .map(|rd| {
+            rd.flatten()
+                .filter(|e| e.path().extension().is_some_and(|x| x == "db"))
+                .count()
+        })
+        .unwrap_or(0)
 }
 
 fn now_ms() -> i64 {
@@ -226,8 +300,24 @@ pub fn status() -> SecurityStatus {
     }
 }
 
+/// Works after a failed boot too (import from backup needs it there).
 pub fn data_dir() -> PathBuf {
-    st().read().data_dir.clone()
+    db::data_dir()
+}
+
+// ─── failed boot ────────────────────────────────────────────────────────────
+
+/// Why `boot` failed. The window still opens and shows only this, with ways
+/// out (open the data folder, restore a backup); nothing else may run, since
+/// the session was never set up.
+static BOOT_ERROR: OnceCell<BootFailure> = OnceCell::new();
+
+pub fn set_boot_error(f: BootFailure) {
+    let _ = BOOT_ERROR.set(f);
+}
+
+pub fn boot_error() -> Option<BootFailure> {
+    BOOT_ERROR.get().cloned()
 }
 
 pub fn is_app_unlocked() -> bool {
@@ -762,4 +852,26 @@ pub fn start_keyfile_watcher() {
             std::thread::sleep(std::time::Duration::from_secs(3));
             poll_keyfiles();
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::NewerData;
+
+    #[test]
+    fn boot_failures_are_classified_and_worded_plainly() {
+        let newer = BootFailure::new(
+            BootErrorKind::LibraryUnreadable,
+            AppError::Other(NewerData { what: "库 schema", found: 7, supported: 6 }.into()),
+        );
+        assert_eq!(newer.kind, BootErrorKind::NewerVersion);
+
+        let io = BootFailure::new(BootErrorKind::KeyringDamaged, std::io::Error::other("denied"));
+        assert_eq!(io.kind, BootErrorKind::DataDir);
+
+        let key = BootFailure::new(BootErrorKind::LibraryUnreadable, AppError::InvalidArg("库文件无法用这把钥匙打开".into()));
+        assert_eq!(key.kind, BootErrorKind::LibraryUnreadable);
+        assert_eq!(key.detail, "库文件无法用这把钥匙打开", "no \"invalid argument:\" prefix");
+    }
 }

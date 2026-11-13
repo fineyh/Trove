@@ -4,6 +4,7 @@ import { Sidebar } from "./components/layout/Sidebar";
 import { ChatList } from "./components/layout/ChatList";
 import { ChatView } from "./components/layout/ChatView";
 import { UnlockScreen } from "./components/layout/UnlockScreen";
+import { BootErrorScreen } from "./components/layout/BootErrorScreen";
 import { NewConversationDialog } from "./components/dialogs/NewConversationDialog";
 import { SettingsDialog } from "./components/dialogs/SettingsDialog";
 import { ProfileDrawer } from "./components/profile/ProfileDrawer";
@@ -40,6 +41,7 @@ import { startThumbWorker, kickThumbs } from "./lib/thumbWorker";
 export default function App() {
   const ready = useSecurityStore((s) => s.ready);
   const unlocked = useSecurityStore((s) => s.status?.appUnlocked === true);
+  const bootFailed = useSecurityStore((s) => s.bootError !== null);
 
   useEffect(() => {
     void useSecurityStore.getState().refresh();
@@ -62,7 +64,7 @@ export default function App() {
 
   return (
     <>
-      {!ready ? <BlankScreen /> : unlocked ? <Shell /> : <UnlockScreen />}
+      {!ready ? <BlankScreen /> : bootFailed ? <BootErrorScreen /> : unlocked ? <Shell /> : <UnlockScreen />}
       <WindowControls />
     </>
   );

@@ -1,5 +1,4 @@
 use crate::{AppError, AppResult};
-use anyhow::anyhow;
 use rusqlite::Connection;
 
 /// 全新建库用的完整 schema。注意它自带一对外层 `BEGIN; ... COMMIT;`
@@ -146,10 +145,9 @@ pub fn run(conn: &Connection) -> AppResult<()> {
     // 放在这一层（而不是 db/mod.rs）的理由：`user_version` 的读取和解释本来就
     // 全在这个文件里，mod.rs 的 `open_*` 已经 `?`-传播 AppResult，不需要改动。
     if version > SCHEMA_LATEST {
-        return Err(AppError::Other(anyhow!(
-            "这个数据库由更新版本的 Trove 创建（数据库 schema 版本 v{version}，\
-             当前 Trove 最高支持 v{SCHEMA_LATEST}）。请升级 Trove 后再打开。"
-        )));
+        return Err(AppError::Other(
+            crate::error::NewerData { what: "库 schema", found: version, supported: SCHEMA_LATEST }.into(),
+        ));
     }
 
     // 全新库：一次性落到最新 schema，建表和 user_version 同一个事务。

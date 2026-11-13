@@ -21,6 +21,7 @@ import type {
   RepairScope,
   SearchHit,
   SecurityStatus,
+  BootError,
   StorageStats,
   UnlockMethod,
   UpdateChannel,
@@ -71,6 +72,10 @@ export function avatarSrc(lib: string, convId: number): string {
 }
 
 // ─── Security (app-level) ───────────────────────────────────────────────────
+
+export async function bootError(): Promise<BootError | null> {
+  return invoke<BootError | null>("boot_error");
+}
 
 export async function securityStatus(): Promise<SecurityStatus> {
   return invoke<SecurityStatus>("security_status");

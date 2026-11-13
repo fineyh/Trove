@@ -30,8 +30,10 @@ static OPEN: Lazy<RwLock<HashMap<String, Arc<Library>>>> = Lazy::new(|| RwLock::
 static MAIN: OnceCell<RwLock<String>> = OnceCell::new();
 
 pub fn init(data_dir: &Path) -> AppResult<()> {
-    std::fs::create_dir_all(data_dir.join("libraries"))?;
+    // Set first: the boot-error screen still needs the path when the
+    // directory can't be created.
     let _ = DATA_DIR.set(data_dir.to_path_buf());
+    std::fs::create_dir_all(data_dir.join("libraries"))?;
     Ok(())
 }
 

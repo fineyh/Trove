@@ -186,6 +186,12 @@ pub fn install(staged: &Staged, data_dir: &Path) -> AppResult<PathBuf> {
     if kr.exists() {
         fs::rename(&kr, aside.join(crate::services::keyring::FILE_NAME))?;
     }
+    // The mirror belongs to the keyring being replaced; left here it would
+    // be the "backup" of a keyring that no longer exists.
+    let bak = data_dir.join(crate::services::keyring::BACKUP_NAME);
+    if bak.exists() {
+        fs::rename(&bak, aside.join(crate::services::keyring::BACKUP_NAME))?;
+    }
     if libs.exists() {
         fs::rename(&libs, aside.join("libraries"))?;
     }
@@ -196,6 +202,7 @@ pub fn install(staged: &Staged, data_dir: &Path) -> AppResult<PathBuf> {
         let _ = fs::remove_dir_all(&libs);
         let _ = fs::rename(aside.join("libraries"), &libs);
         let _ = fs::rename(aside.join(crate::services::keyring::FILE_NAME), &kr);
+        let _ = fs::rename(aside.join(crate::services::keyring::BACKUP_NAME), &bak);
         return Err(e.into());
     }
     let _ = fs::remove_dir_all(&staged.dir);

@@ -204,6 +204,22 @@ export interface AppEnvironment {
 
 // ─── Security & libraries (ADR-036 / ADR-038) ───────────────────────────────
 
+/** Startup failed (R4.1): the window shows only this. */
+export type BootErrorKind =
+  | "keyring_missing"
+  | "keyring_damaged"
+  | "newer_version"
+  | "library_unreadable"
+  | "data_dir"
+  | "other";
+
+export interface BootError {
+  kind: BootErrorKind;
+  /** The raw error, shown folded away. */
+  detail: string;
+  dataDir: string;
+}
+
 export interface SecurityStatus {
   /** A startup password is set. */
   appPassword: boolean;

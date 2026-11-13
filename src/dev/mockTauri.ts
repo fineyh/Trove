@@ -1,6 +1,6 @@
 /**
  * Dev-only fake backend for looking at the UI in a plain browser:
- *   npm run dev → http://localhost:1420/?mock   (add &locked to see the lock screen)
+ *   npm run dev → http://localhost:1420/?mock   (add &locked to see the lock screen, &bootError[=kind] for a failed start)
  *
  * Fakes `window.__TAURI_INTERNALS__` with canned libraries, conversations and
  * messages, and swaps `trove://` image URLs for generated placeholders.
@@ -77,6 +77,14 @@ function install() {
   ];
 
   const handlers: Record<string, (a: any) => any> = {
+    boot_error: () =>
+      q.has("bootError")
+        ? {
+            kind: q.get("bootError") || "keyring_damaged",
+            detail: "keyring.json 格式无效: expected value at line 1 column 1\nkeyring.json.bak 格式无效: EOF while parsing an object at line 3 column 0",
+            dataDir: "C:\\Users\\me\\AppData\\Roaming\\com.trove.app",
+          }
+        : null,
     security_status: () => ({ appPassword: true, appUnlocked: appUnlocked, appRecovery: true, mainLibrary: "main", legacyPlainCopy: false, legacyProblem: null }),
     app_unlock: () => { appUnlocked = true; },
     app_lock: () => { appUnlocked = false; },

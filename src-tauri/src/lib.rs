@@ -44,11 +44,21 @@ pub fn run() {
                 .expect("failed to resolve app data dir");
             purge_webview_profile_if_requested(app);
             events::init(app.handle().clone());
-            let unlocked = services::session::boot(&data_dir).expect("open libraries");
-            services::volume_monitor::start();
-            services::session::start_keyfile_watcher();
-            if unlocked {
-                commands::spawn_all_library_tasks();
+            // A failed boot must not end the process: a release build has no
+            // console, so the user would see nothing at all. Open the window
+            // anyway and let it show the error (R4.1).
+            match services::session::boot(&data_dir) {
+                Ok(unlocked) => {
+                    services::volume_monitor::start();
+                    services::session::start_keyfile_watcher();
+                    if unlocked {
+                        commands::spawn_all_library_tasks();
+                    }
+                }
+                Err(f) => {
+                    eprintln!("boot failed ({:?}): {}", f.kind, f.detail);
+                    services::session::set_boot_error(f);
+                }
             }
             // Created here rather than in tauri.conf.json so it can be
             // incognito: no history or disk cache written by the WebView.
@@ -71,6 +81,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::health::ping,
+            commands::security::boot_error,
             commands::security::security_status,
             commands::security::app_unlock,
             commands::security::app_lock,

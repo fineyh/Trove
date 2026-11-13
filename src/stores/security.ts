@@ -4,10 +4,12 @@
 import { create } from "zustand";
 import * as ipc from "../ipc/client";
 import { toast } from "./toast";
-import type { SecurityStatus, UnlockMethod } from "../types";
+import type { BootError, SecurityStatus, UnlockMethod } from "../types";
 
 interface SecurityState {
   status: SecurityStatus | null;
+  /** Startup failed; nothing else in the backend works. */
+  bootError: BootError | null;
   ready: boolean;
   refresh: () => Promise<void>;
   unlock: (secret: string, method: UnlockMethod) => Promise<void>;
@@ -21,9 +23,15 @@ interface SecurityState {
 
 export const useSecurityStore = create<SecurityState>((set, get) => ({
   status: null,
+  bootError: null,
   ready: false,
   refresh: async () => {
     try {
+      const bootError = await ipc.bootError();
+      if (bootError) {
+        set({ bootError, ready: true });
+        return;
+      }
       const status = await ipc.securityStatus();
       set({ status, ready: true });
     } catch (e) {

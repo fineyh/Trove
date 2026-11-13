@@ -33,3 +33,13 @@ impl Serialize for AppError {
 }
 
 pub type AppResult<T> = Result<T, AppError>;
+
+/// Data written by a newer Trove (the keyring, or a library's schema).
+/// Carried inside `AppError::Other` so boot can tell it apart (ADR-045).
+#[derive(Debug, Error)]
+#[error("{what} 版本为 v{found}，当前版本最高支持 v{supported}")]
+pub struct NewerData {
+    pub what: &'static str,
+    pub found: i64,
+    pub supported: i64,
+}

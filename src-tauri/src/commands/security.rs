@@ -5,8 +5,9 @@
 //! (ADR-034).
 
 use crate::services::keyring::Secret;
-use crate::services::session::{self, SecurityStatus};
+use crate::services::session::{self, BootErrorKind, SecurityStatus};
 use crate::{AppError, AppResult};
+use serde::Serialize;
 
 pub(crate) fn require_password(password: &str) -> AppResult<()> {
     if password.chars().count() < 6 {
@@ -15,8 +16,29 @@ pub(crate) fn require_password(password: &str) -> AppResult<()> {
     Ok(())
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BootError {
+    pub kind: BootErrorKind,
+    pub detail: String,
+    pub data_dir: String,
+}
+
+/// Set when startup failed; the frontend asks this before anything else.
+#[tauri::command]
+pub fn boot_error() -> Option<BootError> {
+    session::boot_error().map(|f| BootError {
+        kind: f.kind,
+        detail: f.detail,
+        data_dir: session::data_dir().to_string_lossy().to_string(),
+    })
+}
+
 #[tauri::command]
 pub fn security_status() -> AppResult<SecurityStatus> {
+    if let Some(f) = session::boot_error() {
+        return Err(AppError::Other(anyhow::anyhow!(f.detail)));
+    }
     Ok(session::status())
 }
 
