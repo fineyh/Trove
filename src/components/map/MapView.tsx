@@ -126,7 +126,9 @@ function MapOverlay() {
   // React StrictMode's double-invoke (cleanup runs `map.remove()` between).
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
-    const map = L.map(containerRef.current).setView([20, 0], 2);
+    // The zoom range lives on the map, not the tile layer: with tiles off there
+    // is no layer to supply it, and markercluster throws without a maxZoom.
+    const map = L.map(containerRef.current, { maxZoom: 19 }).setView([20, 0], 2);
     // Online tiles tell the tile server which areas you look at — i.e. where
     // your photos were taken. Off = markers on a blank canvas.
     if (tilesOn) {
