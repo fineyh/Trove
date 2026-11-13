@@ -51,7 +51,7 @@ export function installNativeShell(): void {
   );
 
   // Bubble phase: a component that showed its own menu already called
-  // preventDefault. Text fields and selected text keep the system edit menu.
+  // preventDefault. Text fields and selected text are left to TextEditMenu.
   document.addEventListener("contextmenu", (e) => {
     if (e.defaultPrevented) return;
     if (isEditable(e.target) || hasSelection()) return;

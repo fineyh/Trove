@@ -83,6 +83,8 @@ export function ContextMenu({ open, x, y, items, onClose }: ContextMenuProps) {
       style={{ position: "fixed", left: pos?.left ?? x, top: pos?.top ?? y, visibility: pos ? "visible" : "hidden" }}
       className="z-[70] min-w-[180px] animate-menu-in rounded-xl bg-app-panel p-1 shadow-lg ring-1 ring-black/[0.06] dark:ring-white/10"
       onContextMenu={(e) => e.preventDefault()}
+      // Keep focus where it was (a text field's selection, for TextEditMenu).
+      onMouseDown={(e) => e.preventDefault()}
     >
       {entries.map((item, idx) =>
         item === "separator" ? (

@@ -6,6 +6,7 @@ import App from "./App";
 import { ErrorBoundary } from "./components/ui/ErrorBoundary";
 import { Toaster } from "./components/ui/Toaster";
 import { TooltipLayer } from "./components/ui/Tooltip";
+import { TextEditMenu } from "./components/ui/TextEditMenu";
 import { installNativeShell } from "./lib/nativeShell";
 import { installWindowChrome } from "./lib/windowChrome";
 import { initTheme } from "./stores/theme";
@@ -28,5 +29,6 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     </ErrorBoundary>
     <Toaster />
     <TooltipLayer />
+    <TextEditMenu />
   </React.StrictMode>,
 );

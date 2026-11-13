@@ -76,7 +76,10 @@ pub fn run() {
                 .title("Trove")
                 .inner_size(1280.0, 800.0)
                 .min_inner_size(900.0, 600.0)
-                .incognito(true);
+                .incognito(true)
+                // Lets the frontend's own edit menu read the clipboard for
+                // 粘贴 without a WebView permission prompt (ADR-047).
+                .enable_clipboard_access();
             // No system title bar: the panes' own headers are the title bar
             // and the window buttons are drawn by the frontend (ADR-043).
             // macOS keeps its traffic lights over the content instead.

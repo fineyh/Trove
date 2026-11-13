@@ -410,7 +410,7 @@ export function MessageBubble({ message, tile }: MessageBubbleProps) {
   }
 
   const handleContextMenu = (e: React.MouseEvent) => {
-    // Selected text keeps the system copy menu.
+    // Selected text gets the app-wide edit menu (TextEditMenu) instead.
     if (!media && window.getSelection()?.toString()) return;
     e.preventDefault();
     if (menuItems.length === 0) return;
