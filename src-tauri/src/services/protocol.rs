@@ -117,29 +117,43 @@ fn media(lib: &str, media_id: i64, req: &Request<Vec<u8>>) -> Resp {
     }
 }
 
-/// A conversation's avatar: either a media row (`media:<id>`, served as its
-/// thumbnail) or a file the user picked.
+/// A conversation's avatar: a media row (`media:<id>`, served as its
+/// thumbnail), a picture stored in the library (`blob`), or — until the
+/// WebView has taken it in — a file the user picked before v7.
 fn avatar(lib: &str, conv_id: i64, req: &Request<Vec<u8>>) -> Resp {
-    let v: Option<String> = db::with_lib(lib, |c| {
-        Ok(c.query_row("SELECT avatar_path FROM conversations WHERE id = ?1", [conv_id], |r| {
-            r.get::<_, Option<String>>(0)
-        })
-        .optional()?
-        .flatten())
+    type Row = (Option<String>, Option<Vec<u8>>, Option<String>);
+    let row: Option<Row> = db::with_lib(lib, |c| {
+        Ok(c.query_row(
+            "SELECT avatar_path, avatar_data, avatar_mime FROM conversations WHERE id = ?1",
+            [conv_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .optional()?)
     })
     .ok()
     .flatten();
-    match v {
-        Some(s) if s.starts_with("media:") => match s[6..].parse::<i64>() {
+    let Some((Some(kind), data, mime)) = row else {
+        return status(StatusCode::NOT_FOUND);
+    };
+    if let Some(mid) = kind.strip_prefix("media:") {
+        return match mid.parse::<i64>() {
             Ok(mid) => match thumbs::get(lib, mid) {
                 Ok(Some(_)) => thumb(lib, mid),
                 _ => media(lib, mid, req),
             },
             Err(_) => status(StatusCode::NOT_FOUND),
-        },
-        Some(p) => serve_file(&PathBuf::from(p), req),
-        None => status(StatusCode::NOT_FOUND),
+        };
     }
+    if kind == "blob" {
+        return match data {
+            Some(data) => base(Response::builder())
+                .header(header::CONTENT_TYPE, mime.unwrap_or_else(|| "image/webp".into()))
+                .body(data)
+                .unwrap(),
+            None => status(StatusCode::NOT_FOUND),
+        };
+    }
+    serve_file(&PathBuf::from(kind), req)
 }
 
 fn parse_range(h: &str, len: u64) -> Option<(u64, u64)> {

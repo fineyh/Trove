@@ -1,7 +1,8 @@
 use crate::{db, services, AppError, AppResult};
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use tauri::ipc::{InvokeBody, Request};
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -9,6 +10,9 @@ pub struct Conversation {
     pub id: i64,
     pub name: String,
     pub has_avatar: bool,
+    /// The picture is still a file path from before v7; the WebView takes it
+    /// into the library when it sees this (ADR-050).
+    pub avatar_file: bool,
     pub kind: String,
     pub pinned: bool,
     pub archived: bool,
@@ -41,6 +45,14 @@ pub(crate) fn hide_offline(_lib: &str) -> AppResult<bool> {
 /// visible". `?1` is the hide-offline flag.
 pub(crate) const VISIBLE: &str = "(?1 = 0 OR m.media_id IS NULL OR v.online = 1)";
 
+/// SQL predicate over `conversations` (alias `c`): the avatar is a file path,
+/// i.e. neither stored in the library nor a media row.
+const AVATAR_IS_FILE: &str =
+    "(c.avatar_path IS NOT NULL AND c.avatar_path <> 'blob' AND c.avatar_path NOT LIKE 'media:%')";
+
+/// A stored avatar is a 256px square; anything near this size is not one.
+const AVATAR_MAX_BYTES: usize = 512 * 1024;
+
 #[tauri::command]
 pub fn list_conversations(lib: String) -> AppResult<Vec<Conversation>> {
     let hide = hide_offline(&lib)? as i64;
@@ -64,7 +76,8 @@ pub fn list_conversations(lib: String) -> AppResult<Vec<Conversation>> {
                     LEFT JOIN volumes v ON v.id = md.volume_id
                     WHERE m.conv_id = c.id AND {VISIBLE}
                     ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS preview_kind,
-                (c.kind = 'folder_watch' AND COALESCE(sv.online, 0) = 0) AS source_offline
+                (c.kind = 'folder_watch' AND COALESCE(sv.online, 0) = 0) AS source_offline,
+                {AVATAR_IS_FILE} AS avatar_file
              FROM conversations c
              LEFT JOIN volumes sv ON sv.id = c.source_volume_id
              WHERE c.archived = 0
@@ -86,6 +99,7 @@ pub fn list_conversations(lib: String) -> AppResult<Vec<Conversation>> {
                     preview: row.get(9)?,
                     preview_kind: row.get(10)?,
                     source_offline: row.get::<_, i64>(11)? != 0,
+                    avatar_file: row.get::<_, i64>(12)? != 0,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -210,6 +224,9 @@ pub struct UpdateConversationArgs {
     pub name: Option<String>,
     #[serde(default)]
     pub avatar_path: Option<String>,
+    /// Back to the default avatar. Wins over `avatar_path`.
+    #[serde(default)]
+    pub clear_avatar: bool,
     #[serde(default)]
     pub pinned: Option<bool>,
     #[serde(default)]
@@ -226,11 +243,10 @@ pub fn update_conversation(lib: String, args: UpdateConversationArgs) -> AppResu
                 params![name, now, args.id],
             )?;
         }
-        if let Some(avatar) = &args.avatar_path {
-            conn.execute(
-                "UPDATE conversations SET avatar_path = ?1, updated_at = ?2 WHERE id = ?3",
-                params![avatar, now, args.id],
-            )?;
+        if args.clear_avatar {
+            set_avatar(conn, args.id, None, now)?;
+        } else if let Some(avatar) = &args.avatar_path {
+            set_avatar(conn, args.id, Some(avatar), now)?;
         }
         if let Some(pinned) = args.pinned {
             conn.execute(
@@ -246,6 +262,52 @@ pub fn update_conversation(lib: String, args: UpdateConversationArgs) -> AppResu
         }
         Ok(())
     })
+}
+
+/// Point the avatar somewhere else (`None` = the default one). Whatever
+/// picture was stored in the library goes with the old choice.
+fn set_avatar(conn: &Connection, id: i64, avatar: Option<&str>, now: i64) -> rusqlite::Result<()> {
+    conn.execute(
+        "UPDATE conversations
+         SET avatar_path = ?1, avatar_data = NULL, avatar_mime = NULL, updated_at = ?2
+         WHERE id = ?3",
+        params![avatar, now, id],
+    )?;
+    Ok(())
+}
+
+/// Replace a file-path avatar with the picture itself. Does nothing when the
+/// avatar is no longer a file path (changed or removed while the WebView was
+/// shrinking it). `updated_at` stays: the conversation didn't change, and
+/// touching it would reorder the list behind the user's back.
+fn adopt_avatar(conn: &Connection, id: i64, data: &[u8], mime: &str) -> rusqlite::Result<bool> {
+    let n = conn.execute(
+        &format!(
+            "UPDATE conversations AS c SET avatar_path = 'blob', avatar_data = ?1, avatar_mime = ?2
+             WHERE c.id = ?3 AND {AVATAR_IS_FILE}"
+        ),
+        params![data, mime, id],
+    )?;
+    Ok(n > 0)
+}
+
+/// Raw body = the shrunk picture; `x-lib`, `x-conv-id`, `x-mime` in headers
+/// (same shape as `thumbs_put`). Returns whether it was stored.
+#[tauri::command]
+pub fn adopt_conversation_avatar(request: Request<'_>) -> AppResult<bool> {
+    let InvokeBody::Raw(data) = request.body() else {
+        return Err(AppError::InvalidArg("adopt_conversation_avatar expects raw bytes".into()));
+    };
+    let header = |name: &str| request.headers().get(name).and_then(|v| v.to_str().ok());
+    let lib = header("x-lib").ok_or_else(|| AppError::InvalidArg("x-lib".into()))?;
+    let id: i64 = header("x-conv-id")
+        .and_then(|v| v.parse().ok())
+        .ok_or_else(|| AppError::InvalidArg("x-conv-id".into()))?;
+    let mime = header("x-mime").unwrap_or("image/webp");
+    if data.is_empty() || data.len() > AVATAR_MAX_BYTES || !mime.starts_with("image/") {
+        return Err(AppError::InvalidArg("avatar picture".into()));
+    }
+    db::with_lib(lib, |conn| Ok(adopt_avatar(conn, id, data, mime)?))
 }
 
 /// Delete a conversation, and the media rows (with their thumbnails) that no
@@ -293,4 +355,67 @@ pub fn boot_existing_watchers(lib: &str) -> AppResult<()> {
         services::volume_monitor::try_start_watcher(lib, id);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn lib() -> Connection {
+        let c = Connection::open_in_memory().unwrap();
+        crate::db::run_migrations_for_test(&c);
+        c.execute_batch(
+            "INSERT INTO conversations (id, name, kind, avatar_path, created_at, updated_at) VALUES
+               (1, 'file', 'manual', 'D:/pics/a.jpg', 0, 5),
+               (2, 'media', 'manual', 'media:9', 0, 5),
+               (3, 'none', 'manual', NULL, 0, 5);",
+        )
+        .unwrap();
+        c
+    }
+
+    fn avatar(c: &Connection, id: i64) -> (Option<String>, Option<Vec<u8>>, Option<String>, i64) {
+        c.query_row(
+            "SELECT avatar_path, avatar_data, avatar_mime, updated_at FROM conversations WHERE id = ?1",
+            [id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn adopting_stores_the_picture_and_keeps_the_order() {
+        let c = lib();
+        assert!(adopt_avatar(&c, 1, b"img", "image/webp").unwrap());
+        assert_eq!(
+            avatar(&c, 1),
+            (Some("blob".into()), Some(b"img".to_vec()), Some("image/webp".into()), 5)
+        );
+    }
+
+    #[test]
+    fn adopting_leaves_other_kinds_alone() {
+        let c = lib();
+        assert!(!adopt_avatar(&c, 2, b"img", "image/webp").unwrap());
+        assert!(!adopt_avatar(&c, 3, b"img", "image/webp").unwrap());
+        assert_eq!(avatar(&c, 2).0.as_deref(), Some("media:9"));
+        assert_eq!(avatar(&c, 3), (None, None, None, 5));
+        // Already adopted: a second, late answer must not overwrite it.
+        assert!(adopt_avatar(&c, 1, b"one", "image/webp").unwrap());
+        assert!(!adopt_avatar(&c, 1, b"two", "image/webp").unwrap());
+        assert_eq!(avatar(&c, 1).1.as_deref(), Some(&b"one"[..]));
+    }
+
+    #[test]
+    fn changing_or_removing_drops_the_stored_picture() {
+        let c = lib();
+        adopt_avatar(&c, 1, b"img", "image/webp").unwrap();
+        set_avatar(&c, 1, Some("media:4"), 9).unwrap();
+        assert_eq!(avatar(&c, 1), (Some("media:4".into()), None, None, 9));
+
+        set_avatar(&c, 1, Some("D:/x.png"), 10).unwrap();
+        adopt_avatar(&c, 1, b"img", "image/png").unwrap();
+        set_avatar(&c, 1, None, 11).unwrap();
+        assert_eq!(avatar(&c, 1), (None, None, None, 11));
+    }
 }

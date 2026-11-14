@@ -218,13 +218,32 @@ export async function createConversation(lib: string, args: CreateConversationAr
 export interface UpdateConversationArgs {
   id: number;
   name?: string;
+  /** `media:<id>` (a media row of this library) or a file path. */
   avatarPath?: string;
+  /** Back to the default avatar. */
+  clearAvatar?: boolean;
   pinned?: boolean;
   archived?: boolean;
 }
 
 export async function updateConversation(lib: string, args: UpdateConversationArgs): Promise<void> {
   await invoke("update_conversation", { lib, args });
+}
+
+/**
+ * Store the shrunk picture in place of a file-path avatar (ADR-050). Raw
+ * body, metadata in headers, like `thumbsPut`. False = the avatar was no
+ * longer a file path, nothing stored.
+ */
+export async function adoptConversationAvatar(
+  lib: string,
+  convId: number,
+  mime: string,
+  bytes: Uint8Array,
+): Promise<boolean> {
+  if (!isTauri()) return false;
+  const headers = { "x-lib": lib, "x-conv-id": String(convId), "x-mime": mime };
+  return (await tauriInvoke<boolean>("adopt_conversation_avatar", bytes, { headers })) === true;
 }
 
 export async function deleteConversation(lib: string, id: number): Promise<void> {

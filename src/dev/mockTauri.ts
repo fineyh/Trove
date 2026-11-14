@@ -31,7 +31,7 @@ function install() {
   ];
 
   const conv = (id: number, name: string, kind: string, ago: number, count: number, preview: string | null, previewKind: string | null, extra: any = {}) => ({
-    id, name, hasAvatar: false, kind, pinned: false, archived: false, createdAt: now - 90 * D, updatedAt: now - ago,
+    id, name, hasAvatar: false, avatarFile: false, kind, pinned: false, archived: false, createdAt: now - 90 * D, updatedAt: now - ago,
     messageCount: count, preview, previewKind, sourceOffline: false, ...extra,
   });
   const conversations = [
@@ -39,7 +39,7 @@ function install() {
     conv(2, "猫", "manual", 3 * H, 58, "又在睡觉", "text"),
     conv(3, "截图", "manual", 26 * H, 1320, "Screenshot 2026-11-05", "image"),
     conv(4, "家庭录像", "folder_watch", 4 * D, 87, "VID_0912", "video", { sourceOffline: true }),
-    conv(5, "壁纸", "manual", 12 * D, 340, "aurora-4k", "image"),
+    conv(5, "壁纸", "manual", 12 * D, 340, "aurora-4k", "image", { hasAvatar: true }),
     conv(6, "设计参考", "manual", 40 * D, 76, "dribbble-shot", "image"),
     conv(7, "文档扫描", "manual", 70 * D, 12, "合同.pdf", "other"),
   ];
@@ -152,6 +152,15 @@ function install() {
     unlock_library: (a) => { const l = libraries.find((x) => x.id === a.lib || x.id === a.id); if (l) l.unlocked = true; },
     lock_library: (a) => { const l = libraries.find((x) => x.id === a.lib || x.id === a.id); if (l) l.unlocked = false; },
     list_conversations: () => conversations,
+    update_conversation: (a) => {
+      const c = conversations.find((x) => x.id === a.args.id);
+      if (!c) return;
+      if (a.args.name) c.name = a.args.name;
+      if (a.args.pinned != null) c.pinned = a.args.pinned;
+      if (a.args.clearAvatar) c.hasAvatar = false;
+      else if (a.args.avatarPath) c.hasAvatar = true;
+      c.updatedAt = Date.now();
+    },
     list_messages: (a) => (a.args?.before ? [] : messages.map((m) => ({ ...m, convId: a.args.convId }))),
     list_conv_media: (a) => (a.args?.before ? [] : messages.filter((m) => m.media && m.media.kind !== "other").map((m) => ({ ...m, convId: a.args.convId }))),
     search: () => [],

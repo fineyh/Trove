@@ -148,6 +148,7 @@ pub fn run() {
             commands::conversations::list_conversations,
             commands::conversations::create_conversation,
             commands::conversations::update_conversation,
+            commands::conversations::adopt_conversation_avatar,
             commands::conversations::delete_conversation,
             commands::messages::list_messages,
             commands::messages::list_conv_media,

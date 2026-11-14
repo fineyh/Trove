@@ -88,30 +88,11 @@ fn create_manual_from_folder_blocking(
     });
     let paths = services::folder_scanner::enumerate_media(&folder);
 
-    // The avatar is a reference to a media row ("media:<id>"), served as that
-    // row's thumbnail — not a file path the WebView would have to load.
-    let mut first_image: Option<String> = None;
+    // No avatar is picked here: a conversation keeps the default one until
+    // the user chooses a picture (ADR-050).
     let (imported, _cancelled) =
-        super::media::ingest_batch(lib, conv_id, &paths, &job, true, true, |p, msg| {
-            if first_image.is_none() {
-                let mime = mime_guess::from_path(p).first_or_octet_stream();
-                if mime.type_().as_str() == "image" {
-                    first_image = Some(format!("media:{}", msg.media_id));
-                }
-            }
-        });
+        super::media::ingest_batch(lib, conv_id, &paths, &job, true, true, |_, _| {});
     services::thumbs::wake(lib);
-
-    if let Some(avatar) = first_image {
-        let touch = now_ms();
-        let _ = db::with_lib(lib, |conn| -> AppResult<()> {
-            conn.execute(
-                "UPDATE conversations SET avatar_path = ?1, updated_at = ?2 WHERE id = ?3",
-                params![avatar, touch, conv_id],
-            )?;
-            Ok(())
-        });
-    }
 
     Ok(BulkImportResult { conv_id, imported })
 }

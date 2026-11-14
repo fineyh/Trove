@@ -12,6 +12,8 @@ use std::collections::HashMap;
 struct ConvRow {
     name: String,
     avatar_path: Option<String>,
+    avatar_data: Option<Vec<u8>>,
+    avatar_mime: Option<String>,
     kind: String,
     source_volume_id: Option<i64>,
     source_relpath: Option<String>,
@@ -65,7 +67,8 @@ struct Snapshot {
 fn read(c: &Connection, conv_id: i64) -> AppResult<Snapshot> {
     let conv = c
         .query_row(
-            "SELECT name, avatar_path, kind, source_volume_id, source_relpath, pinned, created_at, updated_at
+            "SELECT name, avatar_path, kind, source_volume_id, source_relpath, pinned, created_at, updated_at,
+                    avatar_data, avatar_mime
              FROM conversations WHERE id = ?1",
             [conv_id],
             |r| {
@@ -78,6 +81,8 @@ fn read(c: &Connection, conv_id: i64) -> AppResult<Snapshot> {
                     pinned: r.get(5)?,
                     created_at: r.get(6)?,
                     updated_at: r.get(7)?,
+                    avatar_data: r.get(8)?,
+                    avatar_mime: r.get(9)?,
                 })
             },
         )
@@ -234,8 +239,9 @@ fn write(c: &Connection, s: &Snapshot) -> AppResult<i64> {
         other => other.clone(),
     };
     tx.execute(
-        "INSERT INTO conversations (name, avatar_path, kind, source_volume_id, source_relpath, pinned, archived, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, ?7, ?8)",
+        "INSERT INTO conversations (name, avatar_path, kind, source_volume_id, source_relpath, pinned, archived,
+                                    created_at, updated_at, avatar_data, avatar_mime)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, ?7, ?8, ?9, ?10)",
         params![
             s.conv.name,
             avatar,
@@ -244,7 +250,9 @@ fn write(c: &Connection, s: &Snapshot) -> AppResult<i64> {
             s.conv.source_relpath,
             s.conv.pinned,
             s.conv.created_at,
-            s.conv.updated_at
+            s.conv.updated_at,
+            s.conv.avatar_data,
+            s.conv.avatar_mime
         ],
     )?;
     let conv_id = tx.last_insert_rowid();
@@ -311,7 +319,8 @@ mod tests {
         a.execute_batch(
             "INSERT INTO volumes (id, platform_id, label, online, created_at) VALUES (1, 'v', 'D', 1, 0);
              INSERT INTO conversations (id, name, kind, avatar_path, created_at, updated_at) VALUES (1, 'x', 'manual', 'media:5', 0, 0);
-             INSERT INTO conversations (id, name, kind, created_at, updated_at) VALUES (2, 'y', 'manual', 0, 0);
+             INSERT INTO conversations (id, name, kind, avatar_path, avatar_data, avatar_mime, created_at, updated_at)
+               VALUES (2, 'y', 'manual', 'blob', x'0102', 'image/webp', 0, 0);
              INSERT INTO media (id, volume_id, relpath, size_bytes, mtime, blake3, kind) VALUES (5, 1, 'a.jpg', 1, 0, 'h', 'image');
              INSERT INTO media (id, volume_id, relpath, size_bytes, mtime, blake3, kind) VALUES (6, 1, 'b.jpg', 1, 0, 'h2', 'image');
              INSERT INTO thumbs (media_id, data, mime, width, height, created_at) VALUES (5, x'00', 'image/webp', 1, 1, 0);
@@ -330,6 +339,17 @@ mod tests {
         let avatar: String = b.query_row("SELECT avatar_path FROM conversations", [], |r| r.get(0)).unwrap();
         let mid: i64 = b.query_row("SELECT id FROM media WHERE relpath = 'a.jpg'", [], |r| r.get(0)).unwrap();
         assert_eq!(avatar, format!("media:{mid}"));
+
+        // A picture stored in the library moves with its conversation.
+        let other = write(&b, &read(&a, 2).unwrap()).unwrap();
+        let stored: (String, Vec<u8>, String) = b
+            .query_row(
+                "SELECT avatar_path, avatar_data, avatar_mime FROM conversations WHERE id = ?1",
+                [other],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(stored, ("blob".to_string(), vec![1, 2], "image/webp".to_string()));
 
         // Source: conv 1 gone, media 5 gone (with its thumb), media 6 kept for conv 2.
         let left: Vec<i64> = a.prepare("SELECT id FROM media ORDER BY id").unwrap()

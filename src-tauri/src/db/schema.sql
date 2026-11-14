@@ -18,7 +18,12 @@ CREATE TABLE volumes (
 CREATE TABLE conversations (
   id              INTEGER PRIMARY KEY,
   name            TEXT    NOT NULL,
+  -- NULL = default (first letter / folder glyph); 'media:<id>' = that media
+  -- row's thumbnail; 'blob' = the picture in avatar_data. Anything else is a
+  -- file path from before v7, taken in by the WebView on sight (ADR-050).
   avatar_path     TEXT,
+  avatar_data     BLOB,
+  avatar_mime     TEXT,
   kind            TEXT    NOT NULL CHECK (kind IN ('manual', 'folder_watch')),
   source_volume_id INTEGER REFERENCES volumes(id) ON DELETE SET NULL,
   source_relpath  TEXT,

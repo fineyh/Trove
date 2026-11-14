@@ -1,4 +1,4 @@
-import { ArrowRightLeft, ImagePlus, MoreHorizontal, PanelRightClose, Pencil, Pin, PinOff } from "lucide-react";
+import { ArrowRightLeft, ImageMinus, ImagePlus, MoreHorizontal, PanelRightClose, Pencil, Pin, PinOff } from "lucide-react";
 import { useRef, useState } from "react";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { useConversationsStore } from "../../stores/conversations";
@@ -21,6 +21,7 @@ export function ProfileDrawer() {
   const rename = useConversationsStore((s) => s.rename);
   const togglePinned = useConversationsStore((s) => s.togglePinned);
   const setAvatar = useConversationsStore((s) => s.setAvatar);
+  const clearAvatar = useConversationsStore((s) => s.clearAvatar);
   const setMoving = useSessionStore((s) => s.setMovingConversation);
   const libraryCount = useLibrariesStore((s) => s.list.length);
 
@@ -107,6 +108,18 @@ export function ProfileDrawer() {
                 .catch((e) => toast.error("更换头像失败", e));
             },
           },
+          ...(conv.hasAvatar
+            ? [
+                {
+                  label: "移除头像",
+                  icon: <ImageMinus size={15} />,
+                  onClick: () => {
+                    setMenu(null);
+                    void clearAvatar(conv.id).catch((e) => toast.error("移除头像失败", e));
+                  },
+                },
+              ]
+            : []),
           {
             label: conv.pinned ? "取消置顶" : "置顶",
             icon: conv.pinned ? <PinOff size={15} /> : <Pin size={15} />,

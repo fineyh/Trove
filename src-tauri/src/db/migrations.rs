@@ -7,7 +7,7 @@ const SCHEMA_SQL: &str = include_str!("schema.sql");
 
 /// 当前代码能理解的最高 schema 版本。改 `schema.sql` 时必须同时 bump 这个常量
 /// 并补一条 `V{N}_TO_V{N+1}`，否则老库升不上来、新库会被下面的守卫拒绝。
-pub const SCHEMA_LATEST: i64 = 6;
+pub const SCHEMA_LATEST: i64 = 7;
 
 const V1_TO_V2: &str = "
 ALTER TABLE conversations ADD COLUMN enc_kdf_salt BLOB;
@@ -108,6 +108,15 @@ DELETE FROM settings WHERE key IN ('missing_file_strategy', 'app_locked');
 INSERT OR REPLACE INTO settings(key, value) VALUES ('offline_content', 'show');
 ";
 
+/// v7 (2026-11): a conversation's picture can live in the library itself
+/// (ADR-050). `avatar_path = 'blob'` means "the bytes are in `avatar_data`".
+/// Pictures that are still a file path are taken in by the WebView the next
+/// time the library is open (Rust has no image decoder), not here.
+const V6_TO_V7: &str = "
+ALTER TABLE conversations ADD COLUMN avatar_data BLOB;
+ALTER TABLE conversations ADD COLUMN avatar_mime TEXT;
+";
+
 fn step(conn: &Connection, to_version: i64, sql: &str) -> rusqlite::Result<()> {
     // `unchecked_transaction` 只要 `&Connection`（我们拿不到 `&mut`）。提前
     // return 时 `Transaction` 的 Drop 默认回滚，所以中途失败不会留下半成品。
@@ -172,6 +181,9 @@ pub fn run(conn: &Connection) -> AppResult<()> {
     }
     if version < 6 {
         step(conn, 6, V5_TO_V6)?;
+    }
+    if version < 7 {
+        step(conn, 7, V6_TO_V7)?;
     }
     Ok(())
 }
@@ -245,15 +257,18 @@ mod tests {
         assert!(has_table(&conn, "libraries"));
         assert!(has_column(&conn, "volumes", "online"));
         assert!(!has_column(&conn, "conversations", "encrypted"));
+        assert!(has_column(&conn, "conversations", "avatar_data"));
         run(&conn).unwrap();
         assert_eq!(user_version(&conn), SCHEMA_LATEST);
     }
 
     #[test]
-    fn v5_upgrades_to_v6_and_keeps_the_data() {
+    fn v5_upgrades_to_latest_and_keeps_the_data() {
         let conn = v5_db();
         run(&conn).unwrap();
-        assert_eq!(user_version(&conn), 6);
+        assert_eq!(user_version(&conn), SCHEMA_LATEST);
+        assert!(has_column(&conn, "conversations", "avatar_data"));
+        assert!(has_column(&conn, "conversations", "avatar_mime"));
         for (t, c) in [
             ("conversations", "encrypted"),
             ("conversations", "enc_key_wrapped"),

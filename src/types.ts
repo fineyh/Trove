@@ -4,6 +4,8 @@ export interface Conversation {
   id: number;
   name: string;
   hasAvatar: boolean;
+  /** The picture is still a file path, waiting to be taken into the library (ADR-050). */
+  avatarFile: boolean;
   kind: ConversationKind;
   pinned: boolean;
   archived: boolean;
