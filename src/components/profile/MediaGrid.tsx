@@ -1,15 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
-import { CloudOff, ImageOff, Loader2, Play, UserSquare2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { CloudOff, ImageOff, Loader2, Play } from "lucide-react";
 import type { Message } from "../../types";
 import { mediaSrc, openMedia } from "../../ipc/client";
-import { useConversationsStore } from "../../stores/conversations";
 import { EMPTY_MEDIA, useConvMediaStore } from "../../stores/convMedia";
 import { useLibrariesStore } from "../../stores/libraries";
 import { useSessionStore } from "../../stores/session";
 import { useThumbUrl } from "../../stores/thumbs";
 import { toast } from "../../stores/toast";
 import { Button } from "../ui/Button";
-import { ContextMenu } from "../ui/ContextMenu";
+import { MessageMenu, type MessageMenuTarget } from "../chat/MessageMenu";
 import { Segmented } from "../ui/Segmented";
 import { cn } from "../../lib/cn";
 import { isHeicExt } from "../../lib/heic";
@@ -46,8 +45,8 @@ interface MediaGridProps {
 export function MediaGrid({ convId }: MediaGridProps) {
   const [tab, setTab] = useState<Tab>("all");
   const open = useSessionStore((s) => s.openLightbox);
-  const setAvatar = useConversationsStore((s) => s.setAvatar);
-  const [menu, setMenu] = useState<{ x: number; y: number; mediaId: number } | null>(null);
+  const [menu, setMenu] = useState<MessageMenuTarget | null>(null);
+  const closeMenu = useCallback(() => setMenu(null), []);
 
   const media = useConvMediaStore((s) => s.byConv[convId]) ?? EMPTY_MEDIA;
   const loading = useConvMediaStore((s) => s.loading[convId] === true);
@@ -109,7 +108,7 @@ export function MediaGrid({ convId }: MediaGridProps) {
                   key={m.id}
                   message={m}
                   onOpen={() => openItem(m, open)}
-                  onMenu={(x, y) => setMenu({ x, y, mediaId: m.media!.id })}
+                  onMenu={(x, y) => setMenu({ x, y, message: m })}
                 />
               ))}
             </div>
@@ -123,26 +122,7 @@ export function MediaGrid({ convId }: MediaGridProps) {
           </>
         )}
       </div>
-      <ContextMenu
-        open={menu !== null}
-        x={menu?.x ?? 0}
-        y={menu?.y ?? 0}
-        onClose={() => setMenu(null)}
-        items={[
-          {
-            label: "设为会话头像",
-            icon: <UserSquare2 size={15} />,
-            onClick: () => {
-              const target = menu;
-              setMenu(null);
-              if (!target) return;
-              void setAvatar(convId, `media:${target.mediaId}`)
-                .then(() => toast.success("已设为会话头像"))
-                .catch((e) => toast.error("设置头像失败", e));
-            },
-          },
-        ]}
-      />
+      <MessageMenu menu={menu} onClose={closeMenu} />
     </div>
   );
 }
@@ -154,7 +134,7 @@ function GridItem({
 }: {
   message: Message;
   onOpen: () => void;
-  /** Right-click on something that can be an avatar (a picture or a video). */
+  /** Right-click: the same menu as the message in the chat. */
   onMenu: (x: number, y: number) => void;
 }) {
   const lib = useLibrariesStore((st) => st.current);
@@ -174,15 +154,16 @@ function GridItem({
   return (
     <button
       type="button"
-      onClick={onOpen}
+      // Not `disabled`: a disabled button gets no right-click, and a missing
+      // file still has a menu (copy path, delete).
+      onClick={missing ? undefined : onOpen}
+      aria-disabled={missing || undefined}
       onContextMenu={(e) => {
-        if (!isImage && media.kind !== "video") return;
         e.preventDefault();
         onMenu(e.clientX, e.clientY);
       }}
-      disabled={missing}
       data-tip={offline ? "离线" : missing ? "缺失" : undefined}
-      className="relative aspect-square overflow-hidden rounded-md bg-app-subtle"
+      className={cn("relative aspect-square overflow-hidden rounded-md bg-app-subtle", missing && "cursor-default")}
     >
       {src && !failed ? (
         <img

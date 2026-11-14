@@ -1,30 +1,13 @@
-import { useEffect, useRef, useState } from "react";
-import {
-  CloudOff,
-  Copy,
-  ExternalLink,
-  File as FileIcon,
-  FolderSearch,
-  ImageOff,
-  MapPin,
-  PictureInPicture2,
-  Play,
-  Trash2,
-  UserSquare2,
-} from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { CloudOff, File as FileIcon, ImageOff, Play } from "lucide-react";
 import type { Message } from "../../types";
 import * as ipc from "../../ipc/client";
 import { useSessionStore } from "../../stores/session";
-import { useMessagesStore } from "../../stores/messages";
-import { useConversationsStore } from "../../stores/conversations";
 import { useLibrariesStore } from "../../stores/libraries";
 import { useThumbUrl } from "../../stores/thumbs";
 import { toast } from "../../stores/toast";
-import { ContextMenu, type ContextMenuEntry } from "../ui/ContextMenu";
-import { ConfirmDialog } from "../ui/ConfirmDialog";
-import { openPlayerWindow } from "../../lib/playerWindow";
+import { MessageMenu, type MessageMenuTarget } from "./MessageMenu";
 import { formatBytes, formatDuration, isImageMedia, kindLabel } from "../../lib/media";
-import { useMapEnabled } from "../map/MapView";
 import { cn } from "../../lib/cn";
 
 /** Longest side of a single preview, CSS px. Matches the stored thumbnail. */
@@ -301,170 +284,32 @@ export function isTileable(m: Message): boolean {
 }
 
 export function MessageBubble({ message, tile }: MessageBubbleProps) {
-  const lib = useLib();
-  const remove = useMessagesStore((s) => s.remove);
-  // Synced-folder conversations mirror a live folder: deleting a message
-  // record alone is futile (a rescan re-adds the file), so they don't offer
-  // it. Missing files are cleaned up from the missing-files dialog instead.
-  const isFolderWatch = useConversationsStore(
-    (s) => s.list.find((c) => c.id === message.convId)?.kind === "folder_watch",
-  );
-  const setAvatar = useConversationsStore((s) => s.setAvatar);
-  const mapEnabled = useMapEnabled();
-  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [deleteFile, setDeleteFile] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [menu, setMenu] = useState<MessageMenuTarget | null>(null);
+  const closeMenu = useCallback(() => setMenu(null), []);
 
   const media = message.media;
-  const reachable = media?.status === "ok";
-  const isImage = media != null && isImageMedia(media);
-  const isVideo = media?.kind === "video";
-
   let body: React.ReactNode;
   if (!media) body = <TextMessage message={message} />;
   else if (media.status === "offline") body = <OfflineMedia message={message} tile={tile} />;
   else if (media.status === "missing") body = <MissingMedia message={message} />;
-  else if (isImage) body = <ImageMessage message={message} tile={tile} />;
-  else if (isVideo) body = <VideoMessage message={message} tile={tile} />;
+  else if (isImageMedia(media)) body = <ImageMessage message={message} tile={tile} />;
+  else if (media.kind === "video") body = <VideoMessage message={message} tile={tile} />;
   else body = <FileMessage message={message} />;
-
-  const openConfirm = () => {
-    setMenu(null);
-    setDeleteFile(false);
-    setConfirmOpen(true);
-  };
-
-  const handleConfirm = async () => {
-    setBusy(true);
-    try {
-      await remove(message.id, message.convId, reachable && deleteFile);
-      setConfirmOpen(false);
-    } catch (err) {
-      toast.error("删除失败", err);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const act = (fn: () => Promise<unknown>, failText: string) => () => {
-    setMenu(null);
-    void fn().catch((e) => toast.error(failText, e));
-  };
-
-  const menuItems: ContextMenuEntry[] = [];
-  if (!media && message.caption) {
-    menuItems.push({
-      label: "复制",
-      icon: <Copy size={15} />,
-      onClick: act(() => navigator.clipboard.writeText(message.caption ?? ""), "复制失败"),
-    });
-  }
-  if (media && lib) {
-    if (reachable && (isVideo || isImage)) {
-      menuItems.push({
-        label: "在新窗口打开",
-        icon: <PictureInPicture2 size={15} />,
-        onClick: act(() => openPlayerWindow(message), "打开窗口失败"),
-      });
-    }
-    if (media.hasGeo && mapEnabled) {
-      menuItems.push({
-        label: "在地图上显示",
-        icon: <MapPin size={15} />,
-        onClick: () => {
-          setMenu(null);
-          useSessionStore.getState().showOnMap(media.id);
-        },
-      });
-    }
-    menuItems.push(
-      {
-        label: "用默认应用打开",
-        icon: <ExternalLink size={15} />,
-        disabled: !reachable,
-        onClick: act(() => ipc.openMedia(lib, media.id), "打开失败"),
-      },
-      {
-        label: "在资源管理器中显示",
-        icon: <FolderSearch size={15} />,
-        disabled: !reachable,
-        onClick: act(() => ipc.revealMedia(lib, media.id), "打开文件夹失败"),
-      },
-      "separator",
-      {
-        label: "复制文件路径",
-        icon: <Copy size={15} />,
-        onClick: act(async () => {
-          const p = await ipc.mediaPathForCopy(lib, media.id);
-          await navigator.clipboard.writeText(p);
-          toast.success("已复制路径");
-        }, "复制失败"),
-      },
-    );
-    if (isImage || isVideo) {
-      menuItems.push({
-        label: "设为会话头像",
-        icon: <UserSquare2 size={15} />,
-        onClick: act(async () => {
-          await setAvatar(message.convId, `media:${media.id}`);
-          toast.success("已设为会话头像");
-        }, "设置头像失败"),
-      });
-    }
-  }
-  if (!isFolderWatch) {
-    menuItems.push("separator", {
-      label: "删除",
-      variant: "danger",
-      icon: <Trash2 size={15} />,
-      onClick: openConfirm,
-    });
-  }
 
   const handleContextMenu = (e: React.MouseEvent) => {
     // Selected text gets the app-wide edit menu (TextEditMenu) instead.
     if (!media && window.getSelection()?.toString()) return;
     e.preventDefault();
-    if (menuItems.length === 0) return;
-    setMenu({ x: e.clientX, y: e.clientY });
+    setMenu({ x: e.clientX, y: e.clientY, message });
   };
 
   return (
     <>
-      <div className={cn(tile ? "shrink-0" : "flex")} onContextMenu={handleContextMenu}>
+      {/* As wide as the bubble, not the row: blank space beside it gets no menu. */}
+      <div className={cn(tile ? "shrink-0" : "flex w-fit max-w-full")} onContextMenu={handleContextMenu}>
         {body}
       </div>
-
-      <ContextMenu open={menu !== null} x={menu?.x ?? 0} y={menu?.y ?? 0} onClose={() => setMenu(null)} items={menuItems} />
-
-      <ConfirmDialog
-        open={confirmOpen}
-        title="删除消息"
-        variant="danger"
-        confirmText="删除"
-        busy={busy}
-        onConfirm={handleConfirm}
-        onCancel={() => {
-          if (!busy) setConfirmOpen(false);
-        }}
-        message={
-          <div className="flex flex-col gap-3">
-            <p>{reachable ? "磁盘上的文件默认保留。" : "只删除这条消息。"}</p>
-            {reachable && (
-              <label className="flex items-center gap-2 text-sm text-app-fg">
-                <input
-                  type="checkbox"
-                  checked={deleteFile}
-                  onChange={(e) => setDeleteFile(e.target.checked)}
-                  className="h-4 w-4 accent-[rgb(var(--danger))]"
-                />
-                同时把文件移到回收站
-              </label>
-            )}
-          </div>
-        }
-      />
+      <MessageMenu menu={menu} onClose={closeMenu} />
     </>
   );
 }
