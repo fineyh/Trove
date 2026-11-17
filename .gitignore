@@ -17,6 +17,9 @@ src-tauri/target
 src-tauri/gen
 src-tauri/.tauri/
 
+# npm run local copy (ADR-052)
+/.local/
+
 # release artifact
 latest.json
 
