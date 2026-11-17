@@ -44,8 +44,10 @@ struct MediaRow {
     state: String,
     lat: Option<f64>,
     lon: Option<f64>,
-    geo_scanned: i64,
+    meta_scanned: i64,
     thumb_scanned: i64,
+    taken_at: Option<i64>,
+    taken_offset: Option<i64>,
 }
 
 struct MsgRow {
@@ -99,7 +101,7 @@ fn read(c: &Connection, conv_id: i64) -> AppResult<Snapshot> {
     let media = c
         .prepare(
             "SELECT id, volume_id, relpath, size_bytes, mtime, blake3, kind, width, height, duration_ms,
-                    state, lat, lon, geo_scanned, thumb_scanned
+                    state, lat, lon, meta_scanned, thumb_scanned, taken_at, taken_offset
              FROM media WHERE id IN (SELECT media_id FROM messages WHERE conv_id = ?1)",
         )?
         .query_map([conv_id], |r| {
@@ -117,8 +119,10 @@ fn read(c: &Connection, conv_id: i64) -> AppResult<Snapshot> {
                 state: r.get(10)?,
                 lat: r.get(11)?,
                 lon: r.get(12)?,
-                geo_scanned: r.get(13)?,
+                meta_scanned: r.get(13)?,
                 thumb_scanned: r.get(14)?,
+                taken_at: r.get(15)?,
+                taken_offset: r.get(16)?,
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -205,11 +209,12 @@ fn write(c: &Connection, s: &Snapshot) -> AppResult<i64> {
             None => {
                 tx.execute(
                     "INSERT INTO media (volume_id, relpath, size_bytes, mtime, blake3, kind, width, height,
-                        duration_ms, state, lat, lon, geo_scanned, thumb_scanned)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                        duration_ms, state, lat, lon, meta_scanned, thumb_scanned, taken_at, taken_offset)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
                     params![
                         vid, m.relpath, m.size_bytes, m.mtime, m.blake3, m.kind, m.width, m.height,
-                        m.duration_ms, m.state, m.lat, m.lon, m.geo_scanned, m.thumb_scanned
+                        m.duration_ms, m.state, m.lat, m.lon, m.meta_scanned, m.thumb_scanned,
+                        m.taken_at, m.taken_offset
                     ],
                 )?;
                 tx.last_insert_rowid()

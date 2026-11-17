@@ -358,11 +358,6 @@ export async function listGeotaggedMedia(lib: string): Promise<GeotaggedMedia[]>
   return invoke<GeotaggedMedia[]>("list_geotagged_media", { lib });
 }
 
-export async function backfillGeotags(lib: string): Promise<void> {
-  if (!isTauri()) return;
-  await invoke("backfill_geotags", { lib });
-}
-
 export function onGeoBackfillDone(
   handler: (p: { lib: string; updated: number }) => void,
 ): Promise<UnlistenFn> {

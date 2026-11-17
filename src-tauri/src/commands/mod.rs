@@ -35,8 +35,8 @@ where
 }
 
 /// What happens once a library becomes readable: reconcile its media against
-/// the volumes mounted right now, resume its folder watchers, and nudge the
-/// thumbnail worker. Detached, because the scan stats every file and must not
+/// the volumes mounted right now, resume its folder watchers, nudge the
+/// thumbnail worker, and read the metadata of files never read. Detached, because the scan stats every file and must not
 /// delay the moment the library appears (ADR-034). Single-flight per library.
 pub(crate) fn spawn_library_tasks(lib: String) {
     use once_cell::sync::Lazy;
@@ -63,6 +63,7 @@ pub(crate) fn spawn_library_tasks(lib: String) {
             log::error!("boot watchers [{lib}]: {e}");
         }
         crate::services::thumbs::wake(&lib);
+        crate::services::meta_backfill::run(&lib);
     });
     if let Err(e) = spawned {
         log::error!("spawn library tasks: {e}");

@@ -7,7 +7,7 @@ const SCHEMA_SQL: &str = include_str!("schema.sql");
 
 /// 当前代码能理解的最高 schema 版本。改 `schema.sql` 时必须同时 bump 这个常量
 /// 并补一条 `V{N}_TO_V{N+1}`，否则老库升不上来、新库会被下面的守卫拒绝。
-pub const SCHEMA_LATEST: i64 = 7;
+pub const SCHEMA_LATEST: i64 = 8;
 
 const V1_TO_V2: &str = "
 ALTER TABLE conversations ADD COLUMN enc_kdf_salt BLOB;
@@ -117,6 +117,17 @@ ALTER TABLE conversations ADD COLUMN avatar_data BLOB;
 ALTER TABLE conversations ADD COLUMN avatar_mime TEXT;
 ";
 
+/// v8 (2026-11): capture time (ADR-053). The GPS flag becomes a flag for "the
+/// file's own metadata was read" and starts over, so the next pass reads the
+/// capture time of everything already in the library.
+const V7_TO_V8: &str = "
+ALTER TABLE media RENAME COLUMN geo_scanned TO meta_scanned;
+ALTER TABLE media ADD COLUMN taken_at INTEGER;
+ALTER TABLE media ADD COLUMN taken_offset INTEGER;
+UPDATE media SET meta_scanned = 0;
+CREATE INDEX idx_media_meta_todo ON media(id) WHERE meta_scanned = 0;
+";
+
 fn step(conn: &Connection, to_version: i64, sql: &str) -> rusqlite::Result<()> {
     // `unchecked_transaction` 只要 `&Connection`（我们拿不到 `&mut`）。提前
     // return 时 `Transaction` 的 Drop 默认回滚，所以中途失败不会留下半成品。
@@ -185,6 +196,9 @@ pub fn run(conn: &Connection) -> AppResult<()> {
     if version < 7 {
         step(conn, 7, V6_TO_V7)?;
     }
+    if version < 8 {
+        step(conn, 8, V7_TO_V8)?;
+    }
     Ok(())
 }
 
@@ -228,8 +242,8 @@ mod tests {
              INSERT INTO conversations (id, name, kind, created_at, updated_at)
                VALUES (1, '旅行', 'manual', 0, 0);
              INSERT INTO media (id, volume_id, relpath, size_bytes, mtime, blake3, kind,
-                                thumb_path, thumb_scanned, state)
-               VALUES (1, 1, 'a.jpg', 10, 0, 'h', 'image', 'thumbs/x.jpg', 1, 'broken');
+                                thumb_path, thumb_scanned, state, geo_scanned)
+               VALUES (1, 1, 'a.jpg', 10, 0, 'h', 'image', 'thumbs/x.jpg', 1, 'broken', 1);
              INSERT INTO messages (id, conv_id, media_id, caption, created_at)
                VALUES (1, 1, 1, 'a', 0);
              UPDATE settings SET value = 'hide' WHERE key = 'missing_file_strategy';",
@@ -258,6 +272,8 @@ mod tests {
         assert!(has_column(&conn, "volumes", "online"));
         assert!(!has_column(&conn, "conversations", "encrypted"));
         assert!(has_column(&conn, "conversations", "avatar_data"));
+        assert!(has_column(&conn, "media", "taken_at"));
+        assert!(has_column(&conn, "media", "meta_scanned"));
         run(&conn).unwrap();
         assert_eq!(user_version(&conn), SCHEMA_LATEST);
     }
@@ -269,7 +285,11 @@ mod tests {
         assert_eq!(user_version(&conn), SCHEMA_LATEST);
         assert!(has_column(&conn, "conversations", "avatar_data"));
         assert!(has_column(&conn, "conversations", "avatar_mime"));
+        assert!(has_column(&conn, "media", "taken_at"));
+        assert!(has_column(&conn, "media", "taken_offset"));
+        assert!(has_column(&conn, "media", "meta_scanned"));
         for (t, c) in [
+            ("media", "geo_scanned"),
             ("conversations", "encrypted"),
             ("conversations", "enc_key_wrapped"),
             ("messages", "caption_iv"),
@@ -286,6 +306,10 @@ mod tests {
             )
             .unwrap();
         assert_eq!((name.as_str(), caption.as_str(), scanned), ("旅行", "a", 0));
+        let meta: i64 = conn
+            .query_row("SELECT meta_scanned FROM media WHERE id = 1", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(meta, 0, "v8 要重读每个文件的元数据（拍摄时间）");
         let offline: String = conn
             .query_row("SELECT value FROM settings WHERE key = 'offline_content'", [], |r| r.get(0))
             .unwrap();

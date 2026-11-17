@@ -39,6 +39,10 @@ export interface MediaPayload {
   hasThumb: boolean;
   /** Has a GPS position (can be shown on the map). */
   hasGeo: boolean;
+  /** Capture time, UTC ms; `takenOffset` is the UTC offset in minutes where it
+   *  was taken. Shown as the clock time there, not converted (ADR-053). */
+  takenAt: number | null;
+  takenOffset: number | null;
 }
 
 export interface Message {
@@ -61,6 +65,8 @@ export interface GeotaggedMedia {
   convId: number;
   messageId: number;
   createdAt: number;
+  takenAt: number | null;
+  takenOffset: number | null;
 }
 
 export interface SearchHit {

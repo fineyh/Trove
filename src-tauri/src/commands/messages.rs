@@ -22,6 +22,10 @@ pub struct MediaPayload {
     /// Has a GPS position, so the UI can offer "show on map". The coordinates
     /// themselves only travel with the map's own query.
     pub has_geo: bool,
+    /// Capture time, UTC ms, and the UTC offset (minutes) where it was taken.
+    /// Shown as the clock time there (ADR-053).
+    pub taken_at: Option<i64>,
+    pub taken_offset: Option<i32>,
 }
 
 #[derive(Debug, Serialize)]
@@ -41,7 +45,8 @@ const MESSAGE_COLUMNS: &str = "
     md.id, md.kind, md.width, md.height, md.duration_ms, md.size_bytes,
     md.relpath, md.state, COALESCE(v.online, 0),
     EXISTS (SELECT 1 FROM thumbs t WHERE t.media_id = md.id),
-    md.lat IS NOT NULL AND md.lon IS NOT NULL";
+    md.lat IS NOT NULL AND md.lon IS NOT NULL,
+    md.taken_at, md.taken_offset";
 
 const MESSAGE_FROM: &str = "
     FROM messages m
@@ -83,6 +88,8 @@ fn row_to_message(row: &rusqlite::Row) -> rusqlite::Result<MessagePayload> {
                 status: media_status(&state, online).to_string(),
                 has_thumb: row.get::<_, i64>(14)? != 0,
                 has_geo: row.get::<_, i64>(15)? != 0,
+                taken_at: row.get(16)?,
+                taken_offset: row.get(17)?,
             })
         }
         None => None,
@@ -105,7 +112,7 @@ fn load_message_row(conn: &rusqlite::Connection, msg_id: i64) -> AppResult<Messa
 /// Cursor for paging *backwards* (toward older messages).
 ///
 /// Composite on purpose: `created_at` is not monotonic with `id`, because
-/// folder scans and the watcher store the file's mtime (see `ingest_one`), so
+/// folder scans and the watcher store the file's time (see `ingest_one`), so
 /// an older photo imported later gets a higher id. An id-only cursor would
 /// skip or repeat rows around every such boundary.
 #[derive(Debug, Deserialize)]
@@ -354,14 +361,15 @@ mod tests {
             "CREATE TABLE volumes (id INTEGER PRIMARY KEY, online INTEGER NOT NULL);
              CREATE TABLE media (id INTEGER PRIMARY KEY, volume_id INTEGER, kind TEXT, width INTEGER,
                                  height INTEGER, duration_ms INTEGER, size_bytes INTEGER,
-                                 relpath TEXT, state TEXT NOT NULL, lat REAL, lon REAL);
+                                 relpath TEXT, state TEXT NOT NULL, lat REAL, lon REAL,
+                                 taken_at INTEGER, taken_offset INTEGER);
              CREATE TABLE thumbs (media_id INTEGER PRIMARY KEY);
              CREATE TABLE messages (
                id INTEGER PRIMARY KEY, conv_id INTEGER NOT NULL, media_id INTEGER,
                caption TEXT, play_count INTEGER DEFAULT 0, created_at INTEGER NOT NULL
              );
              INSERT INTO volumes VALUES (1, 0), (2, 1);
-             INSERT INTO media VALUES (1, 1, 'image', NULL, NULL, NULL, 1, 'a.HEIC', 'live', 35.0, 135.7);",
+             INSERT INTO media VALUES (1, 1, 'image', NULL, NULL, NULL, 1, 'a.HEIC', 'live', 35.0, 135.7, 1556881200000, 540);",
         )
         .unwrap();
         let rows = [
@@ -472,7 +480,7 @@ mod tests {
     fn missing_files_are_never_hidden() {
         let conn = fixture();
         conn.execute_batch(
-            "INSERT INTO media VALUES (2, 2, 'image', NULL, NULL, NULL, 1, 'b.jpg', 'broken', NULL, NULL);
+            "INSERT INTO media VALUES (2, 2, 'image', NULL, NULL, NULL, 1, 'b.jpg', 'broken', NULL, NULL, NULL, NULL);
              INSERT INTO messages (id, conv_id, media_id, created_at) VALUES (20, 1, 2, 950);",
         )
         .unwrap();
@@ -525,5 +533,6 @@ mod tests {
         );
         // Whether it has a position travels with the row; the position doesn't.
         assert!(m.has_geo);
+        assert_eq!((m.taken_at, m.taken_offset), (Some(1556881200000), Some(540)));
     }
 }

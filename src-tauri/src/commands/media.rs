@@ -14,6 +14,24 @@ fn now_ms() -> i64 {
     chrono::Utc::now().timestamp_millis()
 }
 
+fn mtime_ms(metadata: &std::fs::Metadata) -> i64 {
+    metadata
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or_else(now_ms)
+}
+
+/// When a file was taken, else its mtime: the order a batch is sent in.
+fn file_time_of(path: &Path) -> i64 {
+    services::exif::read_meta(path, classify(path))
+        .taken
+        .map(|t| t.at)
+        .or_else(|| std::fs::metadata(path).ok().map(|m| mtime_ms(&m)))
+        .unwrap_or(0)
+}
+
 fn classify(path: &Path) -> &'static str {
     // HEIC/HEIF aren't reliably mapped by mime_guess; pin them to "image" so the
     // frontend routes them through the (HEIC-aware) image renderer.
@@ -58,9 +76,21 @@ pub(crate) fn ingest_batch(
     paths: &[PathBuf],
     job: &services::jobs::ImportJob,
     allow_message_dup: bool,
-    use_mtime_for_created_at: bool,
+    file_time: bool,
     mut on_imported: impl FnMut(&Path, ImportedMessage),
 ) -> (usize, bool) {
+    // Files sent "now" all land at the bottom; within the batch they go in
+    // the order they were taken (ADR-053). This reads each file's metadata a
+    // second time — only the header, next to a full-content hash.
+    let sorted: Vec<PathBuf>;
+    let paths = if file_time {
+        paths
+    } else {
+        let mut keyed: Vec<(i64, &PathBuf)> = paths.iter().map(|p| (file_time_of(p), p)).collect();
+        keyed.sort_by_key(|(t, _)| *t);
+        sorted = keyed.into_iter().map(|(_, p)| p.clone()).collect();
+        &sorted
+    };
     let total = paths.len();
     let mut imported = 0usize;
     let mut failed = 0usize;
@@ -85,7 +115,7 @@ pub(crate) fn ingest_batch(
                 failed,
             });
         }
-        match ingest_one(lib, conv_id, path, allow_message_dup, use_mtime_for_created_at) {
+        match ingest_one(lib, conv_id, path, allow_message_dup, file_time) {
             Ok(Some(msg)) => {
                 imported += 1;
                 on_imported(path, msg);
@@ -184,10 +214,10 @@ fn import_files_blocking(lib: &str, args: ImportFilesArgs) -> AppResult<Vec<Impo
 ///   - `false` → only create a message if no existing message in this conv
 ///               already references the same media (folder scan / watcher)
 ///
-/// `use_mtime_for_created_at`:
-///   - `false` → use wall-clock now (composer "I'm sending this right now")
-///   - `true`  → use the file's mtime (folder scans / watcher — preserves
-///               chronological order of an imported collection)
+/// `file_time`:
+///   - `false` → the message is dated now (composer "I'm sending this right now")
+///   - `true`  → the message is dated when the file was taken, else its mtime
+///               (folder scans / watcher — a mirror of a collection, ADR-053)
 ///
 /// Returns `None` when the file was an exact duplicate skipped by the dedup
 /// path; `Some` when a fresh message was created.
@@ -196,7 +226,7 @@ pub(crate) fn ingest_one(
     conv_id: i64,
     path: &Path,
     allow_message_dup: bool,
-    use_mtime_for_created_at: bool,
+    file_time: bool,
 ) -> AppResult<Option<ImportedMessage>> {
     let resolved = services::volume_resolver::resolve(path).map_err(AppError::InvalidArg)?;
     let volume_id = super::conversations::ensure_volume(
@@ -208,26 +238,19 @@ pub(crate) fn ingest_one(
 
     let metadata = std::fs::metadata(path)?;
     let size_bytes = metadata.len() as i64;
-    let mtime = metadata
-        .modified()
-        .ok()
-        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or_else(now_ms);
+    let mtime = mtime_ms(&metadata);
     let blake3 = services::hasher::blake3_file(path)?;
     let kind = classify(path);
-    // Best-effort geotag extraction (image EXIF / video ©xyz atom). Done before
-    // the DB transaction since it's pure file I/O and must not hold the DB lock.
-    let geo = services::exif::read_geotag(path, kind);
-    let (lat, lon): (Option<f64>, Option<f64>) = match geo {
-        Some((la, lo)) => (Some(la), Some(lo)),
-        None => (None, None),
-    };
+    // Best-effort GPS + capture time. Done before the DB transaction since
+    // it's pure file I/O and must not hold the DB lock.
+    let meta = services::exif::read_meta(path, kind);
+    let (lat, lon) = (meta.geo.map(|g| g.0), meta.geo.map(|g| g.1));
+    let (taken_at, taken_offset) = (meta.taken.map(|t| t.at), meta.taken.map(|t| t.offset));
     let filename_caption = path
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_default();
-    let created_at = if use_mtime_for_created_at { mtime } else { now_ms() };
+    let created_at = if file_time { taken_at.unwrap_or(mtime) } else { now_ms() };
 
     let result = db::with_lib(lib, |conn| -> AppResult<Option<(i64, i64)>> {
         let existing: Option<i64> = conn
@@ -238,15 +261,15 @@ pub(crate) fn ingest_one(
             )
             .optional()?;
         let media_id = if let Some(id) = existing {
-            // Re-extracting geotag on re-import keeps lat/lon current if the file
-            // was edited (e.g. GPS stripped). geo_scanned is set so the backfill
-            // pass skips this row.
+            // Re-reading metadata on re-import keeps it current if the file
+            // was edited (e.g. GPS stripped). meta_scanned is set so the
+            // backfill pass skips this row.
             conn.execute(
                 "UPDATE media SET thumb_scanned = CASE WHEN blake3 = ?3 THEN thumb_scanned ELSE 0 END,
                     size_bytes = ?1, mtime = ?2, blake3 = ?3, state = 'live',
-                    lat = ?4, lon = ?5, geo_scanned = 1
-                 WHERE id = ?6",
-                params![size_bytes, mtime, blake3, lat, lon, id],
+                    lat = ?4, lon = ?5, taken_at = ?6, taken_offset = ?7, meta_scanned = 1
+                 WHERE id = ?8",
+                params![size_bytes, mtime, blake3, lat, lon, taken_at, taken_offset, id],
             )?;
             conn.execute(
                 "DELETE FROM broken_pointers WHERE media_id = ?1",
@@ -257,8 +280,8 @@ pub(crate) fn ingest_one(
             conn.execute(
                 "INSERT INTO media
                     (volume_id, relpath, size_bytes, mtime, blake3, kind, state,
-                     lat, lon, geo_scanned)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'live', ?7, ?8, 1)",
+                     lat, lon, taken_at, taken_offset, meta_scanned)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'live', ?7, ?8, ?9, ?10, 1)",
                 params![
                     volume_id,
                     resolved.relpath,
@@ -267,7 +290,9 @@ pub(crate) fn ingest_one(
                     blake3,
                     kind,
                     lat,
-                    lon
+                    lon,
+                    taken_at,
+                    taken_offset
                 ],
             )?;
             conn.last_insert_rowid()

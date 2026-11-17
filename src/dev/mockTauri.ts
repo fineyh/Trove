@@ -47,16 +47,16 @@ function install() {
   let mid = 1000;
   const img = (w: number, h: number, ago: number, caption: string, status = "ok") => ({
     id: ++mid, convId: 1, caption, playCount: 0, createdAt: now - ago,
-    media: { id: mid, kind: "image", width: w, height: h, durationMs: null, sizeBytes: 3_400_000, ext: "jpg", status, hasThumb: true, hasGeo: true },
+    media: { id: mid, kind: "image", width: w, height: h, durationMs: null, sizeBytes: 3_400_000, ext: "jpg", status, hasThumb: true, hasGeo: true, takenAt: now - ago - 400 * D, takenOffset: 540 },
   });
   const vid = (ago: number, caption: string, plays = 0) => ({
     id: ++mid, convId: 1, caption, playCount: plays, createdAt: now - ago,
-    media: { id: mid, kind: "video", width: 1920, height: 1080, durationMs: 42_000, sizeBytes: 48_000_000, ext: "mp4", status: "ok", hasThumb: true, hasGeo: true },
+    media: { id: mid, kind: "video", width: 1920, height: 1080, durationMs: 42_000, sizeBytes: 48_000_000, ext: "mp4", status: "ok", hasThumb: true, hasGeo: true, takenAt: now - ago - 400 * D, takenOffset: 540 },
   });
   const text = (ago: number, caption: string) => ({ id: ++mid, convId: 1, caption, playCount: 0, createdAt: now - ago, media: null });
   const file = (ago: number, caption: string) => ({
     id: ++mid, convId: 1, caption, playCount: 0, createdAt: now - ago,
-    media: { id: mid, kind: "other", width: null, height: null, durationMs: null, sizeBytes: 820_000, ext: "pdf", status: "ok", hasThumb: false, hasGeo: false },
+    media: { id: mid, kind: "other", width: null, height: null, durationMs: null, sizeBytes: 820_000, ext: "pdf", status: "ok", hasThumb: false, hasGeo: false, takenAt: null, takenOffset: null },
   });
   const messages = [
     img(4000, 3000, 3 * D + 3 * H, "IMG_3990"),
@@ -88,7 +88,7 @@ function install() {
           mediaId: ++id, lat: lat + r * Math.sin(t), lon: lon + (r * Math.cos(t)) / Math.cos((lat * Math.PI) / 180),
           kind: roll < 0.12 ? "video" : "image", ext: roll < 0.12 ? "mp4" : "jpg",
           status: roll > 0.97 ? "offline" : "ok", hasThumb: roll < 0.99,
-          convId: 1, messageId: id, createdAt: now - daysAgo * D - Math.floor(rnd() * 3 * D),
+          convId: 1, messageId: id, createdAt: now - daysAgo * D - Math.floor(rnd() * 3 * D), takenAt: null, takenOffset: null,
         });
       }
     }
@@ -97,6 +97,7 @@ function install() {
   const pin = (m: any, lat: number, lon: number) => ({
     mediaId: m.media.id, lat, lon, kind: m.media.kind, ext: m.media.ext, status: m.media.status,
     hasThumb: true, convId: 1, messageId: m.id, createdAt: m.createdAt,
+    takenAt: m.media.takenAt, takenOffset: m.media.takenOffset,
   });
   const geo: Record<string, any[]> = {
     main: [

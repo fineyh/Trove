@@ -4,6 +4,7 @@ import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
 import "maplibre-gl/dist/maplibre-gl.css";
 import Supercluster from "supercluster";
 import { thumbSrc } from "../../ipc/client";
+import { photoTime } from "../../lib/datetime";
 import { useThumbsStore } from "../../stores/thumbs";
 import type { GeotaggedMedia } from "../../types";
 import { styleUrl, tuneStyle } from "./mapStyle";
@@ -368,7 +369,7 @@ export const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(function Ma
       radius: CLUSTER_RADIUS,
       // Past the map's own limit: items at one spot stay one stack, however far in.
       maxZoom: MAX_ZOOM + 1,
-      map: (p) => ({ top: p.i, topAt: items[p.i].createdAt }),
+      map: (p) => ({ top: p.i, topAt: photoTime(items[p.i]) }),
       reduce: (acc, p) => {
         if (p.topAt > acc.topAt || (p.topAt === acc.topAt && p.top < acc.top)) {
           acc.top = p.top;

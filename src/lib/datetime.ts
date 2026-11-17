@@ -73,3 +73,47 @@ export function formatListTime(ts: number): string {
 
 /** 消息流里两条消息隔了多久才插一条时间（同一天内）。 */
 export const TIME_GAP_MS = 5 * 60_000;
+
+// ─── 拍摄时间（ADR-053） ─────────────────────────────────────────────────────
+// 显示拍摄地当时的钟面时间，不按现在所在的时区换算：东京晚上 8 点拍的，在哪儿看都是 20:00。
+
+/** 拍摄地的钟面时间：把偏移加进去后按 UTC 读各字段。 */
+function takenWall(at: number, offset: number): Date {
+  return new Date(at + offset * 60_000);
+}
+
+/** 查看器里的拍摄时间：YYYY年M月D日 HH:MM。 */
+export function formatTakenTime(at: number, offset: number): string {
+  const d = takenWall(at, offset);
+  const hh = String(d.getUTCHours()).padStart(2, "0");
+  const mm = String(d.getUTCMinutes()).padStart(2, "0");
+  return `${d.getUTCFullYear()}年${d.getUTCMonth() + 1}月${d.getUTCDate()}日 ${hh}:${mm}`;
+}
+
+/** 时区：UTC+9 / UTC+5:30 / UTC-4 / UTC。 */
+export function formatUtcOffset(offset: number): string {
+  if (offset === 0) return "UTC";
+  const sign = offset > 0 ? "+" : "-";
+  const abs = Math.abs(offset);
+  const m = abs % 60;
+  return `UTC${sign}${Math.floor(abs / 60)}${m ? `:${String(m).padStart(2, "0")}` : ""}`;
+}
+
+/** 照片的时间（排序、按月分组用）：有拍摄时间用拍摄时间，否则用消息时间。 */
+export function photoTime(m: { takenAt: number | null; createdAt: number }): number {
+  return m.takenAt ?? m.createdAt;
+}
+
+/** 照片属于哪一年哪一月：拍摄地的日期；没有拍摄时间时按本地时区看消息时间。 */
+export function photoYearMonth(m: {
+  takenAt: number | null;
+  takenOffset: number | null;
+  createdAt: number;
+}): [number, number] {
+  if (m.takenAt != null) {
+    const d = takenWall(m.takenAt, m.takenOffset ?? 0);
+    return [d.getUTCFullYear(), d.getUTCMonth() + 1];
+  }
+  const d = new Date(m.createdAt);
+  return [d.getFullYear(), d.getMonth() + 1];
+}

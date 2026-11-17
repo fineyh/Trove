@@ -1,17 +1,10 @@
-//! Map feature: query geotagged media + backfill GPS for pre-existing rows.
+//! Map feature: query geotagged media.
 //!
-//! Geotags are written at import time by [`crate::services::exif`] via
-//! `ingest_one`. Media imported before this feature existed has `geo_scanned =
-//! 0`; [`backfill_geotags`] scans those rows once (lazily, on first map open)
-//! so old libraries light up too.
+//! Geotags are written at import time by `ingest_one`, and for older rows by
+//! [`crate::services::meta_backfill`], which emits `geo:backfill-done`.
 
-use crate::services::{exif, volume_resolver};
-use crate::{db, events, AppError, AppResult};
-use rusqlite::params;
+use crate::{db, AppResult};
 use serde::Serialize;
-use std::collections::HashSet;
-use std::path::Path;
-use std::sync::Mutex;
 
 /// One geotagged item shown on the map. Mirrors `MediaPayload`'s camelCase
 /// convention. `available` is false when the source volume's mount is unknown
@@ -30,6 +23,8 @@ pub struct GeotaggedMedia {
     pub conv_id: i64,
     pub message_id: i64,
     pub created_at: i64,
+    pub taken_at: Option<i64>,
+    pub taken_offset: Option<i32>,
 }
 
 /// The map shows one library at a time: a locked library isn't open, so its
@@ -44,7 +39,8 @@ pub fn list_geotagged_media(lib: String) -> AppResult<Vec<GeotaggedMedia>> {
         let mut stmt = conn.prepare(
             "SELECT md.id, md.lat, md.lon, md.kind, md.state, v.online, md.relpath,
                     m.id AS msg_id, m.conv_id, m.created_at,
-                    EXISTS (SELECT 1 FROM thumbs t WHERE t.media_id = md.id)
+                    EXISTS (SELECT 1 FROM thumbs t WHERE t.media_id = md.id),
+                    md.taken_at, md.taken_offset
              FROM media md
              JOIN volumes v ON v.id = md.volume_id
              JOIN messages m ON m.media_id = md.id
@@ -66,6 +62,8 @@ pub fn list_geotagged_media(lib: String) -> AppResult<Vec<GeotaggedMedia>> {
             conv_id: i64,
             created_at: i64,
             has_thumb: bool,
+            taken_at: Option<i64>,
+            taken_offset: Option<i32>,
         }
 
         let rows = stmt.query_map([], |r| {
@@ -81,6 +79,8 @@ pub fn list_geotagged_media(lib: String) -> AppResult<Vec<GeotaggedMedia>> {
                 conv_id: r.get(8)?,
                 created_at: r.get(9)?,
                 has_thumb: r.get::<_, i64>(10)? != 0,
+                taken_at: r.get(11)?,
+                taken_offset: r.get(12)?,
             })
         })?;
 
@@ -109,152 +109,10 @@ pub fn list_geotagged_media(lib: String) -> AppResult<Vec<GeotaggedMedia>> {
                 conv_id: row.conv_id,
                 message_id: row.msg_id,
                 created_at: row.created_at,
+                taken_at: row.taken_at,
+                taken_offset: row.taken_offset,
             });
         }
         Ok(out)
     })
-}
-
-/// Libraries with a backfill in flight. Per library: one library's scan must
-/// not make another's a no-op.
-static BACKFILL_RUNNING: Mutex<Option<HashSet<String>>> = Mutex::new(None);
-
-/// Claim the backfill slot for `lib`; false when it is already running.
-fn backfill_claim(lib: &str) -> bool {
-    let mut guard = BACKFILL_RUNNING.lock().unwrap_or_else(|e| e.into_inner());
-    guard.get_or_insert_with(HashSet::new).insert(lib.to_string())
-}
-
-fn backfill_release(lib: &str) {
-    let mut guard = BACKFILL_RUNNING.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some(set) = guard.as_mut() {
-        set.remove(lib);
-    }
-}
-
-const BACKFILL_BATCH: usize = 200;
-
-/// Scan media that was never checked for a geotag (`geo_scanned = 0`) and fill
-/// in lat/lon from the file. Runs on a background thread so the command returns
-/// immediately; emits `geo:backfill-done` when finished. Idempotent — a second
-/// call for the same library while one is in flight is a no-op.
-#[tauri::command]
-pub fn backfill_geotags(lib: String) -> AppResult<()> {
-    if !db::is_open(&lib) {
-        return Ok(());
-    }
-    if !backfill_claim(&lib) {
-        return Ok(()); // already running for this library
-    }
-    std::thread::spawn(move || {
-        let updated = run_backfill(&lib).unwrap_or(0);
-        backfill_release(&lib);
-        events::emit_geo_backfill_done(&lib, updated);
-    });
-    Ok(())
-}
-
-struct Candidate {
-    id: i64,
-    abs: String,
-    kind: String,
-}
-
-fn run_backfill(lib: &str) -> AppResult<usize> {
-    let mut cursor: i64 = 0;
-    let mut total_updated = 0usize;
-
-    loop {
-        // 1. Pull a batch of unscanned candidates (cursor keeps progress so
-        //    offline files we can't read don't get re-fetched this run).
-        let batch: Vec<Candidate> = db::with_lib(lib, |conn| {
-            let mut stmt = conn.prepare(
-                "SELECT md.id, v.last_mount, md.relpath, md.kind
-                 FROM media md JOIN volumes v ON v.id = md.volume_id
-                 WHERE md.geo_scanned = 0 AND md.state = 'live' AND v.online = 1
-                   AND md.kind IN ('image', 'video')
-                   AND v.last_mount IS NOT NULL
-                   AND md.id > ?1
-                 ORDER BY md.id ASC
-                 LIMIT ?2",
-            )?;
-            let rows = stmt.query_map(params![cursor, BACKFILL_BATCH as i64], |r| {
-                let id: i64 = r.get(0)?;
-                let mount: String = r.get(1)?;
-                let relpath: String = r.get(2)?;
-                let kind: String = r.get(3)?;
-                let abs = volume_resolver::absolute_for(Path::new(&mount), &relpath)
-                    .to_string_lossy()
-                    .to_string();
-                Ok(Candidate { id, abs, kind })
-            })?;
-            rows.collect::<rusqlite::Result<Vec<_>>>()
-                .map_err(AppError::from)
-        })?;
-
-        if batch.is_empty() {
-            break;
-        }
-        cursor = batch.last().map(|c| c.id).unwrap_or(cursor);
-
-        // 2. Read geotags outside the DB lock (pure file I/O).
-        //    Only files that actually exist get marked scanned; offline files
-        //    keep geo_scanned = 0 so a later run (volume mounted) retries them.
-        let mut writes: Vec<(i64, Option<(f64, f64)>)> = Vec::new();
-        for c in &batch {
-            let path = Path::new(&c.abs);
-            if !path.exists() {
-                continue;
-            }
-            writes.push((c.id, exif::read_geotag(path, &c.kind)));
-        }
-
-        if writes.is_empty() {
-            continue;
-        }
-
-        // 3. Commit the batch in a single transaction (short lock hold).
-        let batch_updated = db::with_lib(lib, |conn| {
-            conn.execute_batch("BEGIN")?;
-            let mut n = 0usize;
-            for (id, geo) in &writes {
-                match geo {
-                    Some((lat, lon)) => {
-                        conn.execute(
-                            "UPDATE media SET lat = ?1, lon = ?2, geo_scanned = 1 WHERE id = ?3",
-                            params![lat, lon, id],
-                        )?;
-                        n += 1;
-                    }
-                    None => {
-                        conn.execute(
-                            "UPDATE media SET geo_scanned = 1 WHERE id = ?1",
-                            params![id],
-                        )?;
-                    }
-                }
-            }
-            conn.execute_batch("COMMIT")?;
-            Ok(n)
-        })?;
-        total_updated += batch_updated;
-    }
-
-    Ok(total_updated)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn backfill_slot_is_per_library() {
-        assert!(backfill_claim("geo-test-a"));
-        assert!(!backfill_claim("geo-test-a"), "same library: already running");
-        assert!(backfill_claim("geo-test-b"), "another library is independent");
-        backfill_release("geo-test-a");
-        assert!(backfill_claim("geo-test-a"), "free again after release");
-        backfill_release("geo-test-a");
-        backfill_release("geo-test-b");
-    }
 }

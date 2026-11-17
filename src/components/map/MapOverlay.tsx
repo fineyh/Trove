@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Focus, Loader2, MapPin, Minus, PanelRightOpen, Plus, WifiOff } from "lucide-react";
-import { backfillGeotags, listGeotaggedMedia, onGeoBackfillDone } from "../../ipc/client";
+import { listGeotaggedMedia, onGeoBackfillDone } from "../../ipc/client";
+import { photoTime } from "../../lib/datetime";
 import { cn } from "../../lib/cn";
 import { useLibrariesStore } from "../../stores/libraries";
 import { useMessagesStore } from "../../stores/messages";
@@ -52,21 +53,20 @@ export default function MapOverlay({ lib }: { lib: string }) {
   const [panelOpen, setPanelOpen] = useState(true);
   const [basemapFailed, setBasemapFailed] = useState(false);
 
-  // Load what has a position, start a (lazy, idempotent) scan of older media,
-  // and fetch again when that scan found more.
+  // Load what has a position, and fetch again when the background read of
+  // older media (run when the library opens) found more.
   useEffect(() => {
     let cancelled = false;
     const load = () =>
       listGeotaggedMedia(lib).then((m) => {
         if (cancelled) return;
-        setMedia([...m].sort((a, b) => b.createdAt - a.createdAt || b.mediaId - a.mediaId));
+        setMedia([...m].sort((a, b) => photoTime(b) - photoTime(a) || b.mediaId - a.mediaId));
       });
     load()
       .catch(() => {})
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
-    void backfillGeotags(lib);
 
     let unlisten: (() => void) | null = null;
     void onGeoBackfillDone(({ lib: l, updated }) => {

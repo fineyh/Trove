@@ -51,9 +51,14 @@ CREATE TABLE media (
   state       TEXT    NOT NULL DEFAULT 'live' CHECK (state IN ('live', 'broken')),
   lat         REAL,
   lon         REAL,
-  geo_scanned INTEGER NOT NULL DEFAULT 0,
+  -- 1 once the file's own metadata (GPS + capture time) has been read.
+  meta_scanned INTEGER NOT NULL DEFAULT 0,
   -- Thumbnail queue: 0 = to do, 1 = done, 2 = gave up (undecodable).
   thumb_scanned INTEGER NOT NULL DEFAULT 0,
+  -- Capture time (ADR-053): UTC ms for ordering, plus the UTC offset in
+  -- minutes of the place it was taken, so it shows the clock time there.
+  taken_at     INTEGER,
+  taken_offset INTEGER,
   UNIQUE (volume_id, relpath)
 );
 
@@ -61,6 +66,7 @@ CREATE INDEX idx_media_blake3 ON media(blake3);
 CREATE INDEX idx_media_size ON media(size_bytes);
 CREATE INDEX idx_media_geo ON media(lat, lon) WHERE lat IS NOT NULL;
 CREATE INDEX idx_media_thumb_todo ON media(id) WHERE thumb_scanned = 0;
+CREATE INDEX idx_media_meta_todo ON media(id) WHERE meta_scanned = 0;
 
 -- Thumbnails are a performance cache living next to their row (ADR-037):
 -- same file, same key, same transaction, gone with the media row.

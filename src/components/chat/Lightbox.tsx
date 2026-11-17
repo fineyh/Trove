@@ -18,6 +18,7 @@ import { isImageMedia } from "../../lib/media";
 import { useDisplayableImageUrl } from "../../lib/useDisplayableImageUrl";
 import { useViewerTransform } from "../../lib/useViewerTransform";
 import { RotatableVideo } from "../ui/RotatableVideo";
+import { TakenTime } from "../ui/TakenTime";
 import { useEscapeLayer } from "../ui/Modal";
 import { useMapEnabled } from "../map/MapView";
 
@@ -168,6 +169,10 @@ export function Lightbox({ convId }: LightboxProps) {
       className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-black/90"
       onClick={close}
     >
+      <div className="absolute left-4 top-[60px] z-10">
+        <TakenTime at={current.media.takenAt} offset={current.media.takenOffset} />
+      </div>
+
       <div className="absolute right-4 top-[60px] z-10 flex items-center gap-2">
         {zoomed && (
           <button

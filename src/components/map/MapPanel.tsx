@@ -3,6 +3,7 @@ import { ArrowLeft, CloudOff, ImageOff, PanelRightClose, Play } from "lucide-rea
 import { mediaSrc } from "../../ipc/client";
 import { isHeicExt } from "../../lib/heic";
 import { isImageMedia } from "../../lib/media";
+import { photoYearMonth } from "../../lib/datetime";
 import { useThumbUrl } from "../../stores/thumbs";
 import type { GeotaggedMedia } from "../../types";
 import { IconButton } from "../ui/Button";
@@ -33,8 +34,8 @@ function groupByMonth(items: GeotaggedMedia[]): MonthGroup[] {
   const groups: MonthGroup[] = [];
   let key = "";
   items.forEach((m, i) => {
-    const d = new Date(m.createdAt);
-    const k = `${d.getFullYear()}年${d.getMonth() + 1}月`;
+    const [y, mo] = photoYearMonth(m);
+    const k = `${y}年${mo}月`;
     if (k !== key) {
       key = k;
       groups.push({ label: k, start: i, items: [] });

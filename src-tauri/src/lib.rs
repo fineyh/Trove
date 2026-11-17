@@ -161,7 +161,6 @@ pub fn run() {
             commands::folders::create_manual_from_folder,
             commands::folders::rescan_folder,
             commands::geo::list_geotagged_media,
-            commands::geo::backfill_geotags,
             commands::repair::repair_media,
             commands::repair::list_broken_pointers,
             commands::search::search,

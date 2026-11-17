@@ -90,6 +90,10 @@ fn poll_once() {
             });
         }
         events::emit_volumes_changed(&lib);
+        // Files on a disk that was away may never have been read.
+        if !appeared.is_empty() {
+            crate::services::meta_backfill::spawn(lib.clone());
+        }
     }
 }
 

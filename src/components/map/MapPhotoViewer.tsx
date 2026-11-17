@@ -15,6 +15,7 @@ import { isImageMedia } from "../../lib/media";
 import { useDisplayableImageUrl } from "../../lib/useDisplayableImageUrl";
 import { useViewerTransform } from "../../lib/useViewerTransform";
 import { RotatableVideo } from "../ui/RotatableVideo";
+import { TakenTime } from "../ui/TakenTime";
 import { useEscapeLayer } from "../ui/Modal";
 
 interface MapPhotoViewerProps {
@@ -99,18 +100,21 @@ export function MapPhotoViewer({
       className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-black/90"
       onClick={onClose}
     >
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          onJump(current);
-        }}
-        className="absolute left-4 top-[60px] z-10 flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/20"
-        data-tip="在会话中打开"
-      >
-        <MessageSquare size={16} />
-        在会话中打开
-      </button>
+      <div className="absolute left-4 top-[60px] z-10 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onJump(current);
+          }}
+          className="flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/20"
+          data-tip="在会话中打开"
+        >
+          <MessageSquare size={16} />
+          在会话中打开
+        </button>
+        <TakenTime at={current.takenAt} offset={current.takenOffset} />
+      </div>
 
       <div className="absolute right-4 top-[60px] z-10 flex items-center gap-2">
         {zoomed && (

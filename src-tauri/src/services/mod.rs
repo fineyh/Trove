@@ -6,6 +6,7 @@ pub mod folder_scanner;
 pub mod hasher;
 pub mod jobs;
 pub mod keyring;
+pub mod meta_backfill;
 pub mod oauth;
 pub mod protocol;
 pub mod relocate;
