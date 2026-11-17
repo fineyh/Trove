@@ -25,6 +25,8 @@ interface RotatableVideoProps {
   autoPlay?: boolean;
   /** The clip's pixel size, once known (the player window sizes itself to it). */
   onNaturalSize?: (width: number, height: number) => void;
+  /** The `<video>` element, for the viewing tracker (ADR-054). */
+  onVideo?: (el: HTMLVideoElement | null) => void;
 }
 
 const RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
@@ -70,9 +72,16 @@ const POPOVER =
  * whatever the app theme, so the tokens resolve to their dark values here.
  */
 export function RotatableVideo(
-  { src, style, rotation = 0, autoPlay, onNaturalSize }: RotatableVideoProps,
+  { src, style, rotation = 0, autoPlay, onNaturalSize, onVideo }: RotatableVideoProps,
 ) {
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const setVideo = useCallback(
+    (el: HTMLVideoElement | null) => {
+      videoRef.current = el;
+      onVideo?.(el);
+    },
+    [onVideo],
+  );
   const trackRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const rateRef = useRef<HTMLDivElement>(null);
@@ -335,7 +344,7 @@ export function RotatableVideo(
       )}
     >
       <video
-        ref={videoRef}
+        ref={setVideo}
         src={src}
         autoPlay={autoPlay}
         className="shrink-0 object-contain"

@@ -5,7 +5,6 @@ import {
 import type { Message } from "../types";
 import { mediaSrc } from "../ipc/client";
 import { currentLib } from "../stores/libraries";
-import { useMessagesStore } from "../stores/messages";
 import { isHeicExt } from "./heic";
 import { isImageMedia } from "./media";
 import { PLAYER_TITLEBAR_HEIGHT } from "../player/layout";
@@ -52,7 +51,8 @@ export async function openPlayerWindow(message: Message): Promise<void> {
   const src = mediaSrc(lib, message.media.id);
   const title =
     message.caption?.trim() || (kind === "image" ? "Trove 图片" : "Trove 视频");
-  const params = new URLSearchParams({ src, title, kind });
+  // lib + message id let the popup record its own viewing (ADR-054).
+  const params = new URLSearchParams({ src, title, kind, lib, mid: String(message.id) });
   // Flag HEIC so the player decodes it (WebView can't show HEIC natively).
   if (kind === "image" && isHeicExt(message.media.ext)) {
     params.set("heic", "1");
@@ -91,11 +91,6 @@ export async function openPlayerWindow(message: Message): Promise<void> {
     x: 120 + offset,
     y: 120 + offset,
   });
-
-  // Mirror Lightbox: opening a video counts as a play (images aren't counted).
-  if (kind === "video") {
-    void useMessagesStore.getState().registerPlay(message.id);
-  }
 }
 
 /** Close every media popup window (e.g. when the main window is closing). */

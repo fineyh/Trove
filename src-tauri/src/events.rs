@@ -51,6 +51,21 @@ pub fn emit_security_changed() {
     }
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Played {
+    pub lib: String,
+    pub message_id: i64,
+    pub play_count: i64,
+}
+
+/// A video reached "one play" (ADR-054), in any window.
+pub fn emit_played(lib: &str, message_id: i64, play_count: i64) {
+    if let Some(h) = APP_HANDLE.get() {
+        let _ = h.emit("stats:played", Played { lib: lib.to_string(), message_id, play_count });
+    }
+}
+
 /// New thumbnail work may exist in `lib`; the frontend worker resumes.
 pub fn emit_thumbs_wake(lib: &str) {
     if let Some(h) = APP_HANDLE.get() {

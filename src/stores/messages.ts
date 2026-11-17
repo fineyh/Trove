@@ -33,7 +33,8 @@ interface MessagesState {
   loadOlder: (convId: number) => Promise<void>;
   sendText: (convId: number, text: string) => Promise<void>;
   importFiles: (convId: number, paths: string[]) => Promise<void>;
-  registerPlay: (messageId: number) => Promise<void>;
+  /** The backend counted a play (`stats:played`, ADR-054). */
+  applyPlayed: (messageId: number, playCount: number) => void;
   remove: (
     messageId: number,
     convId: number,
@@ -153,16 +154,17 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
     // so the next open refetches instead of showing a stale list.
     useConvMediaStore.getState().invalidate(convId);
   },
-  registerPlay: async (messageId) => {
-    const next = await ipc.incrementPlayCount(currentLib(), messageId);
+  applyPlayed: (messageId, next) => {
     set((s) => {
-      const out: Record<number, Message[]> = {};
+      // Only the list holding it changes; the others keep their identity.
+      let changed = false;
+      const out: Record<number, Message[]> = { ...s.byConv };
       for (const [k, list] of Object.entries(s.byConv)) {
-        out[Number(k)] = list.map((m) =>
-          m.id === messageId ? { ...m, playCount: next } : m,
-        );
+        if (!list.some((m) => m.id === messageId)) continue;
+        out[Number(k)] = list.map((m) => (m.id === messageId ? { ...m, playCount: next } : m));
+        changed = true;
       }
-      return { byConv: out };
+      return changed ? { byConv: out } : {};
     });
   },
   remove: async (messageId, convId, deleteFile = false) => {

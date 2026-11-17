@@ -324,8 +324,51 @@ export function onImportProgress(handler: (p: ImportProgressEvent) => void): Pro
   return subscribe("import:progress", handler);
 }
 
-export async function incrementPlayCount(lib: string, messageId: number): Promise<number> {
-  return invoke<number>("increment_play_count", { lib, messageId });
+// ─── Viewing history (ADR-054) ──────────────────────────────────────────────
+
+export type ViewSurface = "viewer" | "popup" | "map";
+
+/** Start a view; `null` when nothing is recorded (switched off, or not media). */
+export async function statsViewBegin(
+  lib: string,
+  messageId: number,
+  surface: ViewSurface,
+  startedAt: number,
+  tzOffset: number,
+): Promise<number | null> {
+  return invoke<number | null>("stats_view_begin", { lib, messageId, surface, startedAt, tzOffset });
+}
+
+export interface ViewTick {
+  spanStart: number | null;
+  spanEnd: number | null;
+  coveredMs: number | null;
+  lastPosMs: number | null;
+  durationMs: number | null;
+}
+
+export async function statsViewTick(lib: string, viewId: number, tick: ViewTick): Promise<void> {
+  await invoke("stats_view_tick", { lib, viewId, ...tick });
+}
+
+export async function statsPresenceTick(
+  lib: string,
+  startAt: number,
+  endAt: number,
+  tzOffset: number,
+): Promise<void> {
+  await invoke("stats_presence_tick", { lib, startAt, endAt, tzOffset });
+}
+
+export async function statsClear(lib: string): Promise<void> {
+  await invoke("stats_clear", { lib });
+}
+
+/** A video reached "one play", in any window. */
+export function onPlayed(
+  handler: (p: { lib: string; messageId: number; playCount: number }) => void,
+): Promise<UnlistenFn> {
+  return subscribe("stats:played", handler);
 }
 
 export async function deleteMessage(lib: string, messageId: number, deleteFile = false): Promise<void> {
@@ -433,6 +476,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   repairDefaultScope: "lastFolderOnly",
   idleLockMinutes: 0,
   mapTiles: "online",
+  viewStats: "on",
 };
 
 function parseRepairScope(raw: string | undefined): RepairScope {
@@ -470,6 +514,7 @@ export async function getAllSettings(): Promise<AppSettings> {
     repairDefaultScope: parseRepairScope(raw["repair_default_scope"]),
     idleLockMinutes: parseIdle(raw["idle_lock_minutes"]),
     mapTiles: raw["map_tiles"] === "off" ? "off" : "online",
+    viewStats: raw["view_stats"] === "off" ? "off" : "on",
   };
 }
 
@@ -489,6 +534,8 @@ export async function saveSetting<K extends keyof AppSettings>(
       return invoke("set_setting", { key: "idle_lock_minutes", value: String(value) });
     case "mapTiles":
       return invoke("set_setting", { key: "map_tiles", value });
+    case "viewStats":
+      return invoke("set_setting", { key: "view_stats", value });
   }
 }
 

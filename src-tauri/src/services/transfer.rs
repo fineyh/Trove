@@ -51,6 +51,7 @@ struct MediaRow {
 }
 
 struct MsgRow {
+    id: i64,
     media_id: Option<i64>,
     caption: Option<String>,
     play_count: i64,
@@ -64,6 +65,23 @@ struct Snapshot {
     thumbs: Vec<(i64, Vec<u8>, String, i64, i64, i64)>,
     broken: Vec<(i64, i64, Option<i64>, Option<String>)>,
     messages: Vec<MsgRow>,
+    views: Vec<ViewRow>,
+}
+
+/// Viewing history of the conversation (ADR-054); it moves with it.
+struct ViewRow {
+    message_id: Option<i64>,
+    media_id: Option<i64>,
+    kind: String,
+    surface: String,
+    started_at: i64,
+    tz_offset: i64,
+    watch_ms: i64,
+    covered_ms: Option<i64>,
+    last_pos_ms: Option<i64>,
+    duration_ms: Option<i64>,
+    counted: i64,
+    spans: Vec<(i64, i64)>,
 }
 
 fn read(c: &Connection, conv_id: i64) -> AppResult<Snapshot> {
@@ -92,9 +110,15 @@ fn read(c: &Connection, conv_id: i64) -> AppResult<Snapshot> {
         .ok_or_else(|| AppError::NotFound(format!("conversation #{conv_id}")))?;
 
     let messages = c
-        .prepare("SELECT media_id, caption, play_count, created_at FROM messages WHERE conv_id = ?1 ORDER BY id")?
+        .prepare("SELECT id, media_id, caption, play_count, created_at FROM messages WHERE conv_id = ?1 ORDER BY id")?
         .query_map([conv_id], |r| {
-            Ok(MsgRow { media_id: r.get(0)?, caption: r.get(1)?, play_count: r.get(2)?, created_at: r.get(3)? })
+            Ok(MsgRow {
+                id: r.get(0)?,
+                media_id: r.get(1)?,
+                caption: r.get(2)?,
+                play_count: r.get(3)?,
+                created_at: r.get(4)?,
+            })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
 
@@ -169,7 +193,41 @@ fn read(c: &Connection, conv_id: i64) -> AppResult<Snapshot> {
             volumes.insert(vid, v);
         }
     }
-    Ok(Snapshot { conv, volumes, media, thumbs, broken, messages })
+    let mut views = c
+        .prepare(
+            "SELECT id, message_id, media_id, kind, surface, started_at, tz_offset, watch_ms,
+                    covered_ms, last_pos_ms, duration_ms, counted
+             FROM views WHERE conv_id = ?1 ORDER BY id",
+        )?
+        .query_map([conv_id], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                ViewRow {
+                    message_id: r.get(1)?,
+                    media_id: r.get(2)?,
+                    kind: r.get(3)?,
+                    surface: r.get(4)?,
+                    started_at: r.get(5)?,
+                    tz_offset: r.get(6)?,
+                    watch_ms: r.get(7)?,
+                    covered_ms: r.get(8)?,
+                    last_pos_ms: r.get(9)?,
+                    duration_ms: r.get(10)?,
+                    counted: r.get(11)?,
+                    spans: Vec::new(),
+                },
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut spans_stmt = c.prepare("SELECT start_at, end_at FROM view_spans WHERE view_id = ?1")?;
+    for (id, v) in &mut views {
+        v.spans = spans_stmt
+            .query_map([*id], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+    }
+    let views = views.into_iter().map(|(_, v)| v).collect();
+
+    Ok(Snapshot { conv, volumes, media, thumbs, broken, messages, views })
 }
 
 fn write(c: &Connection, s: &Snapshot) -> AppResult<i64> {
@@ -261,11 +319,42 @@ fn write(c: &Connection, s: &Snapshot) -> AppResult<i64> {
         ],
     )?;
     let conv_id = tx.last_insert_rowid();
+    let mut msgmap: HashMap<i64, i64> = HashMap::new();
     for m in &s.messages {
         tx.execute(
             "INSERT INTO messages (conv_id, media_id, caption, play_count, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![conv_id, m.media_id.map(|x| mmap[&x]), m.caption, m.play_count, m.created_at],
         )?;
+        msgmap.insert(m.id, tx.last_insert_rowid());
+    }
+    for v in &s.views {
+        // A message deleted since keeps its time without a name, as at home.
+        tx.execute(
+            "INSERT INTO views (message_id, media_id, conv_id, kind, surface, started_at, tz_offset,
+                                watch_ms, covered_ms, last_pos_ms, duration_ms, counted)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            params![
+                v.message_id.and_then(|x| msgmap.get(&x).copied()),
+                v.media_id.and_then(|x| mmap.get(&x).copied()),
+                conv_id,
+                v.kind,
+                v.surface,
+                v.started_at,
+                v.tz_offset,
+                v.watch_ms,
+                v.covered_ms,
+                v.last_pos_ms,
+                v.duration_ms,
+                v.counted
+            ],
+        )?;
+        let view_id = tx.last_insert_rowid();
+        for (start, end) in &v.spans {
+            tx.execute(
+                "INSERT INTO view_spans (view_id, start_at, end_at) VALUES (?1, ?2, ?3)",
+                params![view_id, start, end],
+            )?;
+        }
     }
     tx.commit()?;
     Ok(conv_id)
@@ -277,6 +366,12 @@ fn delete_source(c: &Connection, conv_id: i64) -> AppResult<()> {
         .prepare("SELECT DISTINCT media_id FROM messages WHERE conv_id = ?1 AND media_id IS NOT NULL")?
         .query_map([conv_id], |r| r.get(0))?
         .collect::<rusqlite::Result<Vec<_>>>()?;
+    // Its viewing history went along; don't leave a nameless copy here.
+    tx.execute(
+        "DELETE FROM view_spans WHERE view_id IN (SELECT id FROM views WHERE conv_id = ?1)",
+        [conv_id],
+    )?;
+    tx.execute("DELETE FROM views WHERE conv_id = ?1", [conv_id])?;
     tx.execute("DELETE FROM conversations WHERE id = ?1", [conv_id])?;
     for mid in media {
         tx.execute(
@@ -330,7 +425,11 @@ mod tests {
              INSERT INTO media (id, volume_id, relpath, size_bytes, mtime, blake3, kind) VALUES (6, 1, 'b.jpg', 1, 0, 'h2', 'image');
              INSERT INTO thumbs (media_id, data, mime, width, height, created_at) VALUES (5, x'00', 'image/webp', 1, 1, 0);
              INSERT INTO messages (conv_id, media_id, caption, created_at) VALUES (1, 5, 'a', 1), (1, NULL, 'hi', 2);
-             INSERT INTO messages (conv_id, media_id, caption, created_at) VALUES (1, 6, 'b', 3), (2, 6, 'b', 3);",
+             INSERT INTO messages (conv_id, media_id, caption, created_at) VALUES (1, 6, 'b', 3), (2, 6, 'b', 3);
+             INSERT INTO views (id, message_id, media_id, conv_id, kind, surface, started_at, tz_offset, watch_ms, counted)
+               VALUES (1, 1, 5, 1, 'image', 'viewer', 100, 480, 2000, 1),
+                      (2, 4, 6, 2, 'image', 'viewer', 100, 480, 1000, 1);
+             INSERT INTO view_spans (view_id, start_at, end_at) VALUES (1, 100, 2100), (2, 100, 1100);",
         )
         .unwrap();
         let snap = read(&a, 1).unwrap();
@@ -362,5 +461,22 @@ mod tests {
         assert_eq!(left, vec![6]);
         let t: i64 = a.query_row("SELECT COUNT(*) FROM thumbs", [], |r| r.get(0)).unwrap();
         assert_eq!(t, 0);
+
+        // Viewing history moved with conv 1 and points at the new rows.
+        let (vm, vmed, spans): (i64, i64, i64) = b
+            .query_row(
+                "SELECT v.message_id, v.media_id, (SELECT COUNT(*) FROM view_spans WHERE view_id = v.id)
+                 FROM views v WHERE v.conv_id = ?1",
+                [new_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        let cap: String = b.query_row("SELECT caption FROM messages WHERE id = ?1", [vm], |r| r.get(0)).unwrap();
+        assert_eq!((cap.as_str(), vmed, spans), ("a", mid, 1));
+        let left: Vec<i64> = a.prepare("SELECT id FROM views").unwrap()
+            .query_map([], |r| r.get(0)).unwrap().map(|r| r.unwrap()).collect();
+        assert_eq!(left, vec![2]);
+        let s: i64 = a.query_row("SELECT COUNT(*) FROM view_spans", [], |r| r.get(0)).unwrap();
+        assert_eq!(s, 1);
     }
 }

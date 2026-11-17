@@ -116,6 +116,8 @@ export interface AppSettings {
   repairDefaultScope: RepairScope;
   idleLockMinutes: IdleLockMinutes;
   mapTiles: MapTiles;
+  /** Record viewing history (ADR-054). */
+  viewStats: "on" | "off";
 }
 
 export interface BrokenItem {

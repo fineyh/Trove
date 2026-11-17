@@ -109,6 +109,48 @@ CREATE TRIGGER messages_fts_update AFTER UPDATE ON messages BEGIN
   INSERT INTO messages_fts(rowid, caption) VALUES (new.id, new.caption);
 END;
 
+-- Viewing history (ADR-054). A view is one item open in a viewer; its spans
+-- are the stretches actually watched. Deleting content keeps the time
+-- (SET NULL), so totals stay true.
+CREATE TABLE views (
+  id          INTEGER PRIMARY KEY,
+  message_id  INTEGER REFERENCES messages(id) ON DELETE SET NULL,
+  media_id    INTEGER REFERENCES media(id) ON DELETE SET NULL,
+  conv_id     INTEGER REFERENCES conversations(id) ON DELETE SET NULL,
+  kind        TEXT    NOT NULL CHECK (kind IN ('video', 'image')),
+  surface     TEXT    NOT NULL CHECK (surface IN ('viewer', 'popup', 'map')),
+  started_at  INTEGER NOT NULL,
+  -- Local UTC offset (minutes) at the time: days and hours are bucketed by
+  -- the clock where it was watched.
+  tz_offset   INTEGER NOT NULL,
+  watch_ms    INTEGER NOT NULL DEFAULT 0,   -- sum of its spans
+  covered_ms  INTEGER,                      -- content seen (video.played)
+  last_pos_ms INTEGER,
+  duration_ms INTEGER,
+  counted     INTEGER NOT NULL DEFAULT 0    -- reached "one play"
+);
+
+CREATE INDEX idx_views_time ON views(started_at);
+CREATE INDEX idx_views_message ON views(message_id);
+CREATE INDEX idx_views_media ON views(media_id);
+CREATE INDEX idx_views_conv ON views(conv_id);
+
+CREATE TABLE view_spans (
+  view_id  INTEGER NOT NULL REFERENCES views(id) ON DELETE CASCADE,
+  start_at INTEGER NOT NULL,
+  end_at   INTEGER NOT NULL,
+  PRIMARY KEY (view_id, start_at)
+) WITHOUT ROWID;
+
+CREATE INDEX idx_view_spans_time ON view_spans(start_at);
+
+-- Main window in front and in use, per library.
+CREATE TABLE presence (
+  start_at  INTEGER PRIMARY KEY,
+  end_at    INTEGER NOT NULL,
+  tz_offset INTEGER NOT NULL
+);
+
 CREATE TABLE broken_pointers (
   media_id           INTEGER PRIMARY KEY REFERENCES media(id) ON DELETE CASCADE,
   detected_at        INTEGER NOT NULL,

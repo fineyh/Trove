@@ -265,25 +265,6 @@ pub fn send_text(lib: String, args: SendTextArgs) -> AppResult<MessagePayload> {
     })
 }
 
-#[tauri::command]
-pub fn increment_play_count(lib: String, message_id: i64) -> AppResult<i64> {
-    db::with_lib(&lib, |conn| {
-        conn.execute(
-            "UPDATE messages SET play_count = play_count + 1 WHERE id = ?1",
-            params![message_id],
-        )?;
-        let n: i64 = conn
-            .query_row(
-                "SELECT play_count FROM messages WHERE id = ?1",
-                params![message_id],
-                |r| r.get(0),
-            )
-            .optional()?
-            .unwrap_or(0);
-        Ok(n)
-    })
-}
-
 /// Resolve the on-disk absolute path of a media row from its volume's last
 /// known mount. Stays in Rust; the WebView never sees it.
 pub(crate) fn media_abs_path(

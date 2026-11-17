@@ -7,13 +7,14 @@ import {
   RotateCw,
   X,
 } from "lucide-react";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { GeotaggedMedia } from "../../types";
 import { mediaSrc, thumbSrc } from "../../ipc/client";
 import { useLibrariesStore } from "../../stores/libraries";
 import { isImageMedia } from "../../lib/media";
 import { useDisplayableImageUrl } from "../../lib/useDisplayableImageUrl";
 import { useViewerTransform } from "../../lib/useViewerTransform";
+import { useViewTracker } from "../../lib/viewTracker";
 import { RotatableVideo } from "../ui/RotatableVideo";
 import { TakenTime } from "../ui/TakenTime";
 import { useEscapeLayer } from "../ui/Modal";
@@ -86,6 +87,15 @@ export function MapPhotoViewer({
   // Must run unconditionally (before the early return) — an empty url is a no-op.
   const url = current && lib && canPreview ? mediaSrc(lib, current.mediaId) : "";
   const image = useDisplayableImageUrl(url, current?.ext ?? "");
+
+  const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
+  useViewTracker(
+    lib,
+    current && canPreview ? current.messageId : null,
+    current?.kind === "video" ? "video" : "image",
+    "map",
+    videoEl,
+  );
 
   if (!current) return null;
 
@@ -229,6 +239,7 @@ export function MapPhotoViewer({
             autoPlay
             style={rotationStyle}
             rotation={rotation}
+            onVideo={setVideoEl}
           />
         )}
       </div>

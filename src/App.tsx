@@ -20,6 +20,7 @@ import { DragStrip, WindowControls } from "./components/ui/WindowControls";
 import {
   onConvChanged,
   onImportProgress,
+  onPlayed,
   onLibrariesChanged,
   onSecurityChanged,
   onVolumesChanged,
@@ -35,6 +36,7 @@ import { useSessionStore } from "./stores/session";
 import { useSettingsStore } from "./stores/settings";
 import { isTauri } from "./hooks/useIsTauri";
 import { useIdleLock } from "./hooks/useIdleLock";
+import { usePresenceTracker } from "./lib/viewTracker";
 import { closeAllPlayerWindows } from "./lib/playerWindow";
 import { startThumbWorker, kickThumbs } from "./lib/thumbWorker";
 
@@ -116,6 +118,7 @@ function Shell() {
   useBackendEvents();
   useThumbnailWorker();
   useIdleLock();
+  usePresenceTracker(currentLibOrNull);
 
   if (!librariesReady) return <BlankScreen />;
 
@@ -148,6 +151,8 @@ function resetLibraryCaches() {
   useConversationsStore.getState().reset();
   useSettingsStore.getState().resetLibraryData();
 }
+
+const currentLibOrNull = () => useLibrariesStore.getState().current;
 
 function isCurrent(lib: string): boolean {
   return useLibrariesStore.getState().current === lib;
@@ -197,6 +202,13 @@ function useBackendEvents() {
 
     // 导入跑在后台线程上，进度靠事件推上来（见 ImportProgressBar）
     keep(onImportProgress((payload) => useImportJobStore.getState().apply(payload)));
+
+    // Plays are counted by the backend, whichever window was watching (ADR-054).
+    keep(
+      onPlayed((p) => {
+        if (isCurrent(p.lib)) useMessagesStore.getState().applyPlayed(p.messageId, p.playCount);
+      }),
+    );
 
     return () => {
       cancelled = true;

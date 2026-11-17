@@ -7,7 +7,7 @@ const SCHEMA_SQL: &str = include_str!("schema.sql");
 
 /// 当前代码能理解的最高 schema 版本。改 `schema.sql` 时必须同时 bump 这个常量
 /// 并补一条 `V{N}_TO_V{N+1}`，否则老库升不上来、新库会被下面的守卫拒绝。
-pub const SCHEMA_LATEST: i64 = 8;
+pub const SCHEMA_LATEST: i64 = 9;
 
 const V1_TO_V2: &str = "
 ALTER TABLE conversations ADD COLUMN enc_kdf_salt BLOB;
@@ -128,6 +128,41 @@ UPDATE media SET meta_scanned = 0;
 CREATE INDEX idx_media_meta_todo ON media(id) WHERE meta_scanned = 0;
 ";
 
+/// v9 (2026-11): viewing history (ADR-054).
+const V8_TO_V9: &str = "
+CREATE TABLE views (
+  id          INTEGER PRIMARY KEY,
+  message_id  INTEGER REFERENCES messages(id) ON DELETE SET NULL,
+  media_id    INTEGER REFERENCES media(id) ON DELETE SET NULL,
+  conv_id     INTEGER REFERENCES conversations(id) ON DELETE SET NULL,
+  kind        TEXT    NOT NULL CHECK (kind IN ('video', 'image')),
+  surface     TEXT    NOT NULL CHECK (surface IN ('viewer', 'popup', 'map')),
+  started_at  INTEGER NOT NULL,
+  tz_offset   INTEGER NOT NULL,
+  watch_ms    INTEGER NOT NULL DEFAULT 0,
+  covered_ms  INTEGER,
+  last_pos_ms INTEGER,
+  duration_ms INTEGER,
+  counted     INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX idx_views_time ON views(started_at);
+CREATE INDEX idx_views_message ON views(message_id);
+CREATE INDEX idx_views_media ON views(media_id);
+CREATE INDEX idx_views_conv ON views(conv_id);
+CREATE TABLE view_spans (
+  view_id  INTEGER NOT NULL REFERENCES views(id) ON DELETE CASCADE,
+  start_at INTEGER NOT NULL,
+  end_at   INTEGER NOT NULL,
+  PRIMARY KEY (view_id, start_at)
+) WITHOUT ROWID;
+CREATE INDEX idx_view_spans_time ON view_spans(start_at);
+CREATE TABLE presence (
+  start_at  INTEGER PRIMARY KEY,
+  end_at    INTEGER NOT NULL,
+  tz_offset INTEGER NOT NULL
+);
+";
+
 fn step(conn: &Connection, to_version: i64, sql: &str) -> rusqlite::Result<()> {
     // `unchecked_transaction` 只要 `&Connection`（我们拿不到 `&mut`）。提前
     // return 时 `Transaction` 的 Drop 默认回滚，所以中途失败不会留下半成品。
@@ -198,6 +233,9 @@ pub fn run(conn: &Connection) -> AppResult<()> {
     }
     if version < 8 {
         step(conn, 8, V7_TO_V8)?;
+    }
+    if version < 9 {
+        step(conn, 9, V8_TO_V9)?;
     }
     Ok(())
 }
@@ -274,6 +312,9 @@ mod tests {
         assert!(has_column(&conn, "conversations", "avatar_data"));
         assert!(has_column(&conn, "media", "taken_at"));
         assert!(has_column(&conn, "media", "meta_scanned"));
+        for t in ["views", "view_spans", "presence"] {
+            assert!(has_table(&conn, t), "{t}");
+        }
         run(&conn).unwrap();
         assert_eq!(user_version(&conn), SCHEMA_LATEST);
     }
@@ -288,6 +329,9 @@ mod tests {
         assert!(has_column(&conn, "media", "taken_at"));
         assert!(has_column(&conn, "media", "taken_offset"));
         assert!(has_column(&conn, "media", "meta_scanned"));
+        for t in ["views", "view_spans", "presence"] {
+            assert!(has_table(&conn, t), "{t}");
+        }
         for (t, c) in [
             ("media", "geo_scanned"),
             ("conversations", "encrypted"),

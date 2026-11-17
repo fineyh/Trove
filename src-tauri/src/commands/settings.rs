@@ -8,6 +8,7 @@ const ALLOWED_KEYS: &[&str] = &[
     "repair_default_scope",
     "idle_lock_minutes",
     "map_tiles",
+    "view_stats",
 ];
 
 #[tauri::command]
@@ -30,6 +31,7 @@ pub fn set_setting(key: String, value: String) -> AppResult<()> {
         "offline_content" => matches!(value.as_str(), "show" | "hide"),
         "idle_lock_minutes" => matches!(value.as_str(), "0" | "5" | "15" | "30" | "60"),
         "map_tiles" => matches!(value.as_str(), "online" | "off"),
+        "view_stats" => matches!(value.as_str(), "on" | "off"),
         _ => true,
     };
     if !ok {

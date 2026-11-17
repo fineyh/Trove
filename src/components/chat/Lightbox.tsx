@@ -7,16 +7,16 @@ import {
   RotateCw,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Message } from "../../types";
 import { mediaSrc } from "../../ipc/client";
 import { useLibrariesStore } from "../../stores/libraries";
 import { EMPTY_MEDIA, useConvMediaStore } from "../../stores/convMedia";
-import { useMessagesStore } from "../../stores/messages";
 import { useSessionStore } from "../../stores/session";
 import { isImageMedia } from "../../lib/media";
 import { useDisplayableImageUrl } from "../../lib/useDisplayableImageUrl";
 import { useViewerTransform } from "../../lib/useViewerTransform";
+import { useViewTracker } from "../../lib/viewTracker";
 import { RotatableVideo } from "../ui/RotatableVideo";
 import { TakenTime } from "../ui/TakenTime";
 import { useEscapeLayer } from "../ui/Modal";
@@ -47,7 +47,6 @@ export function Lightbox({ convId }: LightboxProps) {
   const loadOlder = useConvMediaStore((s) => s.loadOlder);
   const ensureContains = useConvMediaStore((s) => s.ensureContains);
 
-  const registerPlay = useMessagesStore((s) => s.registerPlay);
   const activeId = useSessionStore((s) => s.lightboxMessageId);
   const close = useSessionStore((s) => s.closeLightbox);
   const lib = useLibrariesStore((s) => s.current) ?? "";
@@ -130,14 +129,14 @@ export function Lightbox({ convId }: LightboxProps) {
     return () => window.removeEventListener("keydown", onKey);
   }, [activeId, close, goPrev, goNext, zoomIn, zoomOut, resetView]);
 
-  const playedRef = useRef<Set<number>>(new Set());
-  useEffect(() => {
-    if (!current) return;
-    if (current.media?.kind === "video" && !playedRef.current.has(current.id)) {
-      playedRef.current.add(current.id);
-      void registerPlay(current.id);
-    }
-  }, [current, registerPlay]);
+  const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
+  useViewTracker(
+    lib,
+    current?.id ?? null,
+    current?.media?.kind === "video" ? "video" : "image",
+    "viewer",
+    videoEl,
+  );
 
   // Must run unconditionally (before the early return) — an empty url is a no-op.
   const url = current?.media && lib ? mediaSrc(lib, current.media.id) : "";
@@ -294,6 +293,7 @@ export function Lightbox({ convId }: LightboxProps) {
             autoPlay
             style={rotationStyle}
             rotation={rotation}
+            onVideo={setVideoEl}
           />
         )}
         {/* Always rendered: hiding it while zoomed would change the image's

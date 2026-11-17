@@ -22,6 +22,8 @@ function install() {
   let uiTheme = "system";
   const uiPrefs: Record<string, string> = {};
   const callbacks = new Map<number, (m: any) => void>();
+  const views: any[] = [];
+  const presence: Record<number, number> = {};
   const settings: Record<string, string> = { offline_content: "show", map_tiles: "online", idle_lock_minutes: "15" };
 
   const libraries = [
@@ -148,6 +150,20 @@ function install() {
     get_ui_prefs: () => ({ theme: uiTheme, ...uiPrefs }),
     set_ui_pref: (a) => { if (a.key === "theme") uiTheme = a.value; else uiPrefs[a.key] = a.value; },
     get_all_settings: () => settings,
+    // Viewing history (ADR-054): kept in __mock.views to look at in the console.
+    stats_view_begin: (a) => {
+      if (settings.view_stats === "off") return null;
+      views.push({ ...a, spans: {} as Record<number, number>, facts: null });
+      return views.length;
+    },
+    stats_view_tick: (a) => {
+      const v = views[a.viewId - 1];
+      if (!v) return;
+      if (a.spanStart != null) v.spans[a.spanStart] = a.spanEnd;
+      v.facts = { coveredMs: a.coveredMs, lastPosMs: a.lastPosMs, durationMs: a.durationMs };
+    },
+    stats_presence_tick: (a) => { presence[a.startAt] = a.endAt; },
+    stats_clear: () => { views.length = 0; for (const k of Object.keys(presence)) delete presence[k as any]; },
     set_setting: (a) => { settings[a.key] = a.value; },
     list_libraries: () => libraries,
     unlock_library: (a) => { const l = libraries.find((x) => x.id === a.lib || x.id === a.id); if (l) l.unlocked = true; },
@@ -217,6 +233,8 @@ function install() {
       messages.push(text(0 - (Date.now() - now), caption));
       emit("conv:changed", { lib: "main", convId, added: 1, broken: 0, renamed: 0 });
     },
+    views,
+    presence,
   };
 
   let cb = 0;

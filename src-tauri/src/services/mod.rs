@@ -11,6 +11,7 @@ pub mod oauth;
 pub mod protocol;
 pub mod relocate;
 pub mod session;
+pub mod stats;
 pub mod thumbs;
 pub mod transfer;
 pub mod volume_monitor;

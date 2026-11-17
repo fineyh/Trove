@@ -6,6 +6,7 @@ import { RotatableVideo } from "../components/ui/RotatableVideo";
 import { cn } from "../lib/cn";
 import { useDisplayableImageUrl } from "../lib/useDisplayableImageUrl";
 import { useViewerTransform } from "../lib/useViewerTransform";
+import { useViewTracker } from "../lib/viewTracker";
 import { PLAYER_TITLEBAR_HEIGHT } from "./layout";
 
 /** Don't let the popup exceed this fraction of the monitor's work area. */
@@ -17,6 +18,8 @@ const SRC = params.get("src") ?? "";
 const TITLE = params.get("title") ?? "";
 const KIND: "video" | "image" = params.get("kind") === "image" ? "image" : "video";
 const IS_HEIC = params.get("heic") === "1";
+const LIB = params.get("lib") ?? "";
+const MESSAGE_ID = Number(params.get("mid")) || null;
 
 /** The picture fills the area under the title bar and follows the window size. */
 const FILL = { width: "100vw", height: `calc(100vh - ${PLAYER_TITLEBAR_HEIGHT}px)` };
@@ -43,6 +46,8 @@ export function PlayerApp() {
   const win = useMemo(() => getCurrentWindow(), []);
   const [pinned, setPinned] = useState(false);
   const [natural, setNatural] = useState<{ w: number; h: number } | null>(null);
+  const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
+  useViewTracker(LIB, MESSAGE_ID, KIND, "popup", videoEl);
 
   const view = useViewerTransform(SRC, { fill: FILL });
   const { rotation, zoomIn, zoomOut, resetView } = view;
@@ -113,6 +118,7 @@ export function PlayerApp() {
             style={view.rotationStyle}
             rotation={rotation}
             onNaturalSize={(w, h) => setNatural({ w, h })}
+            onVideo={setVideoEl}
           />
         ) : image.status === "error" ? (
           <div className="text-sm text-app-secondary">无法预览这个格式</div>

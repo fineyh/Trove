@@ -11,6 +11,7 @@ pub mod repair;
 pub mod search;
 pub mod security;
 pub mod settings;
+pub mod stats;
 pub mod system;
 pub mod thumbs;
 pub mod updater;
