@@ -9,7 +9,7 @@
 
 const DEV = import.meta.env.DEV;
 
-function isEditable(el: EventTarget | null): boolean {
+export function isEditable(el: EventTarget | null): boolean {
   if (!(el instanceof HTMLElement)) return false;
   if (el.isContentEditable) return true;
   if (el instanceof HTMLTextAreaElement) return !el.readOnly && !el.disabled;

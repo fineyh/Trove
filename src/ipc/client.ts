@@ -293,6 +293,21 @@ export async function importFiles(lib: string, convId: number, paths: string[]):
   await invoke("import_files", { lib, args: { convId, paths } });
 }
 
+export type PathKind = "folder" | "image" | "video" | "audio" | "other" | "missing";
+
+/** One stat per path: what a drag is carrying. */
+export async function inspectPaths(paths: string[]): Promise<PathKind[]> {
+  if (!isTauri()) return paths.map(() => "other");
+  const res = await invoke<{ kind: PathKind }[]>("inspect_paths", { paths });
+  return res.map((r) => r.kind);
+}
+
+/** Files copied in Explorer; empty when the clipboard holds none. */
+export async function clipboardFiles(): Promise<string[]> {
+  if (!isTauri()) return [];
+  return invoke<string[]>("clipboard_files");
+}
+
 export interface CreateManualFromFolderResult {
   convId: number;
   imported: number;

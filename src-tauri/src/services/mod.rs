@@ -1,5 +1,6 @@
 pub mod audio;
 pub mod backup;
+pub mod clipboard;
 pub mod crypto;
 pub mod exif;
 pub mod file_watcher;

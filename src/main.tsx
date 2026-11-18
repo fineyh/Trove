@@ -9,6 +9,7 @@ import { TooltipLayer } from "./components/ui/Tooltip";
 import { TextEditMenu } from "./components/ui/TextEditMenu";
 import { installNativeShell } from "./lib/nativeShell";
 import { installWindowChrome } from "./lib/windowChrome";
+import { installFileDrop } from "./lib/fileDrop";
 import { initTheme } from "./stores/theme";
 import { initUpdates } from "./stores/update";
 import { installGlobalErrorHandlers } from "./lib/globalErrors";
@@ -17,6 +18,7 @@ import "./styles.css";
 installGlobalErrorHandlers();
 installNativeShell();
 installWindowChrome();
+installFileDrop();
 initTheme();
 initUpdates();
 

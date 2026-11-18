@@ -12,6 +12,7 @@ import { ConvAvatar } from "../ui/ConvAvatar";
 import { EmptyState } from "../ui/EmptyState";
 import { ImportProgressBar } from "../ui/ImportProgressBar";
 import { DragStrip } from "../ui/WindowControls";
+import { DropOverlay } from "../ui/DropOverlay";
 import { cn } from "../../lib/cn";
 
 export function ChatView() {
@@ -44,17 +45,22 @@ export function ChatView() {
 
   if (!conv || activeId === null) {
     return (
-      <div className="relative flex h-full flex-1 items-center justify-center bg-app-panel">
+      <div data-drop="pane/new" className="relative flex h-full flex-1 items-center justify-center bg-app-panel">
         <DragStrip />
         <EmptyState icon={<MessagesSquare size={32} strokeWidth={1.5} />} title="选择一个会话" />
+        <DropOverlay target={{ zone: "pane", kind: "new" }} title="新建会话" />
       </div>
     );
   }
 
   const isWatch = conv.kind === "folder_watch";
+  const dropTarget = { zone: "pane", kind: isWatch ? "watch" : "conv", convId: conv.id } as const;
 
   return (
-    <div className="flex h-full min-w-0 flex-1 flex-col bg-app-panel">
+    <div
+      data-drop={`pane/${dropTarget.kind}:${conv.id}`}
+      className="relative flex h-full min-w-0 flex-1 flex-col bg-app-panel"
+    >
       <header
         data-drag-region
         className={cn(
@@ -114,6 +120,8 @@ export function ChatView() {
       </main>
 
       {isWatch ? <ImportProgressBar convId={activeId} /> : <Composer convId={activeId} />}
+
+      <DropOverlay target={dropTarget} title={isWatch ? "无法添加到同步文件夹" : `添加到「${conv.name}」`} />
 
       {lightboxId !== null && <Lightbox convId={activeId} />}
     </div>

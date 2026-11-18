@@ -182,12 +182,22 @@ fn import_files_blocking(lib: &str, args: ImportFilesArgs) -> AppResult<Vec<Impo
 
     let job = services::jobs::ImportJob::begin()
         .ok_or_else(|| AppError::InvalidArg(BUSY.into()))?;
-    let paths: Vec<PathBuf> = args
-        .paths
-        .iter()
-        .map(PathBuf::from)
-        .filter(|p| p.is_file())
-        .collect();
+    let paths = expand_paths(lib, args.conv_id, &args.paths);
+    if paths.is_empty() {
+        // Only folders came in (a drop or paste) and none held media. Without
+        // this the import would end silently.
+        events::emit_import_progress(events::ImportProgress {
+            lib: lib.to_string(),
+            conv_id: args.conv_id,
+            done: 0,
+            total: 0,
+            current: None,
+            finished: true,
+            cancelled: false,
+            failed: 0,
+        });
+        return Err(AppError::InvalidArg("文件夹中没有图片、视频或录音".into()));
+    }
 
     let mut imported = Vec::with_capacity(paths.len());
     ingest_batch(lib, args.conv_id, &paths, &job, true, false, |_, msg| {
@@ -207,6 +217,67 @@ fn import_files_blocking(lib: &str, args: ImportFilesArgs) -> AppResult<Vec<Impo
     services::thumbs::wake(lib);
 
     Ok(imported)
+}
+
+/// Files as given; folders (dropped or pasted) become the media inside them,
+/// the same set「导入文件夹」takes. Hand-picked files of any type stay.
+fn expand_paths(lib: &str, conv_id: i64, raw: &[String]) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut announced = false;
+    for p in raw.iter().map(PathBuf::from) {
+        if p.is_file() {
+            out.push(p);
+        } else if p.is_dir() {
+            if !announced {
+                // A big folder takes a while to list: show「正在查找文件」.
+                announced = true;
+                events::emit_import_progress(events::ImportProgress {
+                    lib: lib.to_string(),
+                    conv_id,
+                    done: 0,
+                    total: 0,
+                    current: None,
+                    finished: false,
+                    cancelled: false,
+                    failed: 0,
+                });
+            }
+            out.extend(services::folder_scanner::enumerate_media(&p));
+        }
+    }
+    let mut seen = std::collections::HashSet::new();
+    out.retain(|p| seen.insert(p.clone()));
+    out
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PathInfo {
+    /// `folder`, `image`, `video`, `audio`, `other`; `missing` if gone.
+    pub kind: &'static str,
+}
+
+/// What is being dragged in, for the drop overlay: one stat per path.
+#[tauri::command]
+pub fn inspect_paths(paths: Vec<String>) -> Vec<PathInfo> {
+    paths
+        .iter()
+        .map(|raw| {
+            let p = Path::new(raw);
+            let kind = match std::fs::metadata(p) {
+                Ok(m) if m.is_dir() => "folder",
+                Ok(_) => classify(p),
+                Err(_) => "missing",
+            };
+            PathInfo { kind }
+        })
+        .collect()
+}
+
+/// Files copied in Explorer (Ctrl+C), for pasting into a conversation.
+#[tauri::command]
+pub fn clipboard_files() -> Vec<String> {
+    services::clipboard::files()
 }
 
 /// Insert a media file into the DB and (optionally) attach a message to a

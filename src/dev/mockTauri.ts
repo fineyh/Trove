@@ -314,6 +314,17 @@ function install() {
       return a.handler;
     },
     "plugin:event|unlisten": () => null,
+    inspect_paths: (a) =>
+      (a.paths as string[]).map((p) => {
+        const ext = p.split(".").pop()?.toLowerCase() ?? "";
+        if (!p.includes(".")) return { kind: "folder" };
+        if (["mp4", "mov"].includes(ext)) return { kind: "video" };
+        if (["m4a", "mp3"].includes(ext)) return { kind: "audio" };
+        if (["jpg", "heic", "png"].includes(ext)) return { kind: "image" };
+        return { kind: "other" };
+      }),
+    clipboard_files: () => ["D:\\Photos\\2024\\IMG_5001.HEIC", "D:\\Photos\\2024\\IMG_5002.HEIC"],
+    import_files: () => [],
     "plugin:app|version": () => "0.4.2",
     "plugin:window|get_all_windows": () => ["main"],
   };
@@ -328,6 +339,11 @@ function install() {
     },
     views,
     presence,
+    /** Fake a file drag at CSS pixel (x, y): `__mock.drag("enter", 600, 400)`. */
+    drag(type: "enter" | "over" | "drop" | "leave", x = 0, y = 0, paths = ["D:\\Photos\\2024\\IMG_5001.HEIC", "D:\\Photos\\2024\\VID_5002.MOV", "D:\\Photos\\2024\\Voice 12.m4a", "D:\\Photos\\Kyoto"]) {
+      const dpr = window.devicePixelRatio || 1;
+      emit(`tauri://drag-${type}`, type === "leave" ? null : { paths, position: { x: x * dpr, y: y * dpr } });
+    },
   };
 
   let cb = 0;

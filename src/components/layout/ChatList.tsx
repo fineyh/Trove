@@ -1,6 +1,8 @@
 import {
+  ArrowDownToLine,
   ArrowRightLeft,
   AudioLines,
+  Ban,
   CloudOff,
   FileText,
   Image,
@@ -29,6 +31,38 @@ import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { ConvAvatar } from "../ui/ConvAvatar";
 import { Button, IconButton } from "../ui/Button";
 import { EmptyState } from "../ui/EmptyState";
+import { describeDrop, useFileDropStore } from "../../stores/fileDrop";
+
+/** While files are dragged in: a slot under the list that starts a new
+ *  conversation with them. Below the rows, so nothing shifts under the pointer. */
+function NewConversationSlot() {
+  const drag = useFileDropStore((s) => s.drag);
+  if (!drag) return null;
+  const on = drag.target?.zone === "list";
+  return (
+    <div data-drop="list/new" className="shrink-0 animate-pop-in border-t border-app-border px-2 py-2">
+      <div
+        className={cn(
+          "flex h-16 items-center gap-3 rounded-xl border px-2.5 transition-[background-color,border-color] duration-fast",
+          on ? "border-app-accent/50 bg-app-accent/10" : "border-dashed border-app-border",
+        )}
+      >
+        <div
+          className={cn(
+            "flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-[10px] transition-colors duration-fast",
+            on ? "bg-app-accent text-app-on-accent" : "bg-app-subtle text-app-secondary",
+          )}
+        >
+          <Plus size={20} />
+        </div>
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <span className={cn("text-sm font-medium", on ? "text-app-accent" : "text-app-secondary")}>新建会话</span>
+          <span className="truncate text-xs text-app-muted">{describeDrop(drag)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 
 function PreviewIcon({ kind }: { kind: Conversation["previewKind"] }) {
@@ -51,19 +85,36 @@ interface ConversationRowProps {
   onContextMenu: (e: React.MouseEvent, conv: Conversation) => void;
 }
 
+/** Files dragged over this row: what dropping them would do, else null. */
+function useRowDrop(c: Conversation): string | null {
+  return useFileDropStore((s) => {
+    const t = s.drag?.target;
+    if (!s.drag || !t || t.zone !== "row" || t.kind === "new" || t.convId !== c.id) return null;
+    return t.kind === "watch" ? "无法添加到同步文件夹" : `添加 ${describeDrop(s.drag)}`;
+  });
+}
+
 function ConversationRow({ c, onContextMenu }: ConversationRowProps) {
   const active = useSessionStore((s) => s.activeConversationId === c.id);
   const setActive = useSessionStore((s) => s.setActiveConversation);
+  const isWatch = c.kind === "folder_watch";
+  const drop = useRowDrop(c);
+  const dropOk = drop !== null && !isWatch;
 
   return (
     <button
       type="button"
+      data-drop={`row/${isWatch ? "watch" : "conv"}:${c.id}`}
       onClick={() => setActive(active ? null : c.id)}
       onContextMenu={(e) => onContextMenu(e, c)}
       aria-current={active}
       className={cn(
-        "flex h-16 w-full items-center gap-3 rounded-xl px-2.5 text-left transition-colors duration-fast",
-        active ? "bg-app-accent/10" : "hover:bg-app-hover/[0.04]",
+        "flex h-16 w-full items-center gap-3 rounded-xl px-2.5 text-left transition-[background-color,box-shadow] duration-fast",
+        dropOk
+          ? "bg-app-accent/10 ring-1 ring-inset ring-app-accent/50"
+          : active
+            ? "bg-app-accent/10"
+            : "hover:bg-app-hover/[0.04]",
       )}
     >
       <ConvAvatar conv={c} size={42} />
@@ -73,7 +124,12 @@ function ConversationRow({ c, onContextMenu }: ConversationRowProps) {
           <span className="shrink-0 text-2xs text-app-muted">{formatListTime(c.updatedAt)}</span>
         </div>
         <div className="flex items-center gap-1.5 text-xs text-app-muted">
-          {c.sourceOffline ? (
+          {drop !== null ? (
+            <span className={cn("flex min-w-0 items-center gap-1", dropOk ? "font-medium text-app-accent" : "text-app-muted")}>
+              {dropOk ? <ArrowDownToLine size={13} className="shrink-0" /> : <Ban size={13} className="shrink-0" />}
+              <span className="truncate">{drop}</span>
+            </span>
+          ) : c.sourceOffline ? (
             <span className="flex min-w-0 items-center gap-1 text-app-warning">
               <CloudOff size={13} className="shrink-0" />
               <span className="truncate">离线</span>
@@ -244,7 +300,7 @@ export function ChatList() {
         />
       </div>
 
-      <div className="flex-1 overflow-y-auto px-2 pb-2">
+      <div data-drop="list/new" className="flex-1 overflow-y-auto px-2 pb-2">
         {!showingSearch && list.length === 0 && (
           <EmptyState
             className="py-16"
@@ -276,6 +332,8 @@ export function ChatList() {
           </>
         )}
       </div>
+
+      <NewConversationSlot />
 
       <ContextMenu
         open={menu !== null}

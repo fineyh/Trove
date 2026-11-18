@@ -172,6 +172,8 @@ pub fn run() {
             commands::messages::delete_message,
             commands::media::import_files,
             commands::media::cancel_import,
+            commands::media::inspect_paths,
+            commands::media::clipboard_files,
             commands::folders::create_manual_from_folder,
             commands::folders::rescan_folder,
             commands::geo::list_geotagged_media,
