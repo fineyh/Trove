@@ -98,7 +98,7 @@ export function Lightbox({ convId }: LightboxProps) {
     rotation,
     rotateLeft,
     rotateRight,
-    scale,
+    percent,
     zoomed,
     zoomIn,
     zoomOut,
@@ -106,7 +106,6 @@ export function Lightbox({ convId }: LightboxProps) {
     stageRef,
     mediaRef,
     mediaStyle,
-    rotationStyle,
     mediaHandlers,
   } = useViewerTransform(current?.id);
 
@@ -183,7 +182,7 @@ export function Lightbox({ convId }: LightboxProps) {
             className="flex h-9 items-center rounded-full bg-white/10 px-3 text-xs font-medium tabular-nums text-white transition-colors duration-fast hover:bg-white/20"
             data-tip="适应窗口  0"
           >
-            {Math.round(scale * 100)}%
+            {percent}%
           </button>
         )}
         {current.media.hasGeo && mapEnabled && (
@@ -291,9 +290,11 @@ export function Lightbox({ convId }: LightboxProps) {
           <RotatableVideo
             src={url}
             autoPlay
-            style={rotationStyle}
+            style={mediaStyle}
             rotation={rotation}
             onVideo={setVideoEl}
+            frameRef={mediaRef}
+            onFramePointerDown={mediaHandlers.onPointerDown}
           />
         )}
         {/* Always rendered: hiding it while zoomed would change the image's

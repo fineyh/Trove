@@ -17,7 +17,8 @@ import { useEscapeLayer } from "./Modal";
 
 interface RotatableVideoProps {
   src: string;
-  /** The rotation transform style; applied to the `<video>` frame only. */
+  /** Fit size + cursor from `useViewerTransform`; applied to the `<video>`
+   *  frame only (the hook writes the transform itself, through `frameRef`). */
   style?: CSSProperties;
   /** Signed multiple of 90 from `useViewerTransform`; lets fullscreen swap the fill
    *  caps at a quarter turn so a rotated clip still fills the screen. */
@@ -27,6 +28,9 @@ interface RotatableVideoProps {
   onNaturalSize?: (width: number, height: number) => void;
   /** The `<video>` element, for the viewing tracker (ADR-054). */
   onVideo?: (el: HTMLVideoElement | null) => void;
+  /** The viewer's `mediaRef` and pan handler, so the frame zooms like an image. */
+  frameRef?: (el: HTMLVideoElement | null) => void;
+  onFramePointerDown?: (e: ReactPointerEvent<HTMLElement>) => void;
 }
 
 const RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
@@ -72,15 +76,25 @@ const POPOVER =
  * whatever the app theme, so the tokens resolve to their dark values here.
  */
 export function RotatableVideo(
-  { src, style, rotation = 0, autoPlay, onNaturalSize, onVideo }: RotatableVideoProps,
+  {
+    src,
+    style,
+    rotation = 0,
+    autoPlay,
+    onNaturalSize,
+    onVideo,
+    frameRef,
+    onFramePointerDown,
+  }: RotatableVideoProps,
 ) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const setVideo = useCallback(
     (el: HTMLVideoElement | null) => {
       videoRef.current = el;
       onVideo?.(el);
+      frameRef?.(el);
     },
-    [onVideo],
+    [onVideo, frameRef],
   );
   const trackRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -317,15 +331,14 @@ export function RotatableVideo(
   // In fullscreen the frame must FILL the screen. `max-width/height` only cap the
   // element, so a clip smaller than the monitor stayed at its native resolution.
   // Set an explicit width/height instead (swapped at a quarter turn) and let the
-  // `object-contain` class scale the picture up with letterboxing. Keep only the
-  // rotation transform/transition from the viewer's style; drop its size caps
-  // so nothing fights the fill size.
+  // `object-contain` class scale the picture up with letterboxing. The viewer's
+  // size caps are overridden so nothing fights the fill size. (The zoom/rotate
+  // transform is written by `useViewerTransform` directly, not via `style`.)
   const normalized = ((rotation % 360) + 360) % 360;
   const quarterTurned = normalized === 90 || normalized === 270;
   const videoStyle: CSSProperties | undefined = fullscreen
     ? {
-        transform: style?.transform,
-        transition: style?.transition,
+        ...style,
         width: quarterTurned ? "100vh" : "100vw",
         height: quarterTurned ? "100vw" : "100vh",
         maxWidth: "none",
@@ -350,6 +363,7 @@ export function RotatableVideo(
         className="shrink-0 object-contain"
         style={videoStyle}
         onClick={togglePlay}
+        onPointerDown={onFramePointerDown}
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
         onEnded={() => setPlaying(false)}
@@ -380,6 +394,7 @@ export function RotatableVideo(
           "fixed inset-x-0 bottom-5 z-20 flex justify-center px-4 transition-opacity duration-slow",
           chromeVisible ? "opacity-100" : "pointer-events-none opacity-0",
         )}
+        data-viewer-chrome
         onClick={(e) => e.stopPropagation()}
         onPointerEnter={() => {
           hoveringBarRef.current = true;

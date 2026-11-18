@@ -65,9 +65,8 @@ export function PlayerApp() {
     void (quarter ? fitWindowTo(natural.h, natural.w) : fitWindowTo(natural.w, natural.h));
   }, [natural, rotation]);
 
-  // Image zoom keys, as in the Lightbox.
+  // Zoom keys, as in the Lightbox.
   useEffect(() => {
-    if (KIND !== "image") return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "+" || e.key === "=") zoomIn();
       else if (e.key === "-" || e.key === "_") zoomOut();
@@ -115,10 +114,12 @@ export function PlayerApp() {
           <RotatableVideo
             src={SRC}
             autoPlay
-            style={view.rotationStyle}
+            style={view.mediaStyle}
             rotation={rotation}
             onNaturalSize={(w, h) => setNatural({ w, h })}
             onVideo={setVideoEl}
+            frameRef={view.mediaRef}
+            onFramePointerDown={view.mediaHandlers.onPointerDown}
           />
         ) : image.status === "error" ? (
           <div className="text-sm text-app-secondary">无法预览此格式</div>
