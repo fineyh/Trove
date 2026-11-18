@@ -1,7 +1,7 @@
 //! The `trove://` protocol: how media reaches the WebView (ADR-037).
 //!
 //! URLs carry ids only — `/<lib>/thumb/<media_id>`, `/<lib>/media/<media_id>`,
-//! `/<lib>/avatar/<conv_id>` — never a path, so nothing about where files
+//! `/<lib>/heic/<media_id>[?max=N]`, `/<lib>/avatar/<conv_id>` — never a path, so nothing about where files
 //! live ends up in the DOM, the WebView's history or its cache. A locked
 //! library answers 423, and every response says `no-store`.
 //!
@@ -9,7 +9,7 @@
 //! the WebView read any file on disk by absolute path.
 
 use crate::db;
-use crate::services::thumbs;
+use crate::services::{heic, thumbs};
 use rusqlite::OptionalExtension;
 use std::io::{Read, Seek, SeekFrom};
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -88,6 +88,7 @@ pub fn handle(req: Request<Vec<u8>>) -> Resp {
     match *kind {
         "thumb" => thumb(lib, id),
         "media" => media(lib, id, &req),
+        "heic" => heic_bmp(lib, id, &req),
         "avatar" => avatar(lib, id, &req),
         _ => status(StatusCode::NOT_FOUND),
     }
@@ -114,6 +115,38 @@ fn media(lib: &str, media_id: i64, req: &Request<Vec<u8>>) -> Resp {
     match media_file(lib, media_id) {
         Some(p) => serve_file(&p, req),
         None => status(StatusCode::NOT_FOUND),
+    }
+}
+
+/// A HEIC decoded by the system (ADR-060), as an uncompressed BMP;
+/// `?max=N` shrinks it to N on the long edge. 501 when this machine has no
+/// decoder for it, so the page can fall back to its own.
+fn heic_bmp(lib: &str, media_id: i64, req: &Request<Vec<u8>>) -> Resp {
+    let Some(p) = media_file(lib, media_id) else {
+        return status(StatusCode::NOT_FOUND);
+    };
+    if !p.is_file() {
+        return status(StatusCode::NOT_FOUND);
+    }
+    let max = req
+        .uri()
+        .query()
+        .and_then(|q| q.split('&').find_map(|kv| kv.strip_prefix("max=")))
+        .and_then(|v| v.parse::<u32>().ok());
+    match heic::decode_bmp(&p, max) {
+        Ok(d) => base(Response::builder())
+            .header(header::CONTENT_TYPE, "image/bmp")
+            .header(header::CONTENT_LENGTH, d.bmp.len().to_string())
+            // The original's size, for the thumbnail worker (it asks for a
+            // shrunk copy but records the full dimensions).
+            .header("X-Image-Size", format!("{}x{}", d.width, d.height))
+            .header(header::ACCESS_CONTROL_EXPOSE_HEADERS, "X-Image-Size")
+            .body(d.bmp)
+            .unwrap(),
+        Err(e) => {
+            log::warn!("system HEIC decode failed: {e}");
+            status(StatusCode::NOT_IMPLEMENTED)
+        }
     }
 }
 

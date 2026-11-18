@@ -5,6 +5,7 @@ pub mod exif;
 pub mod file_watcher;
 pub mod folder_scanner;
 pub mod hasher;
+pub mod heic;
 pub mod jobs;
 pub mod keyring;
 pub mod meta_backfill;

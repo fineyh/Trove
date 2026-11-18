@@ -5429,6 +5429,7 @@ dependencies = [
  "trash",
  "url",
  "walkdir",
+ "windows 0.61.3",
  "windows-sys 0.59.0",
  "zeroize",
  "zip 2.4.2",

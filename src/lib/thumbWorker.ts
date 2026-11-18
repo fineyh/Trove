@@ -2,7 +2,8 @@
 //
 // Rust owns the queue (`media.thumb_scanned = 0`); this pulls jobs, decodes
 // the original through `trove://` (the WebView already handles every format
-// we show — HEIC via heic-to, video first frames via <video>), shrinks it to a
+// we show — HEIC via the system decoder or heic-to, video first frames via
+// <video>), shrinks it to a
 // 320px WebP and hands the bytes back to be stored in the library. Nothing
 // touches the disk on the way, and nothing here sees a path.
 //
@@ -10,7 +11,7 @@
 // 12MP photo is ~48MB of bitmap, and this runs while the user is browsing.
 
 import * as ipc from "../ipc/client";
-import { heicToJpeg, isHeicExt } from "./heic";
+import { decodeHeicBitmap, isHeicExt } from "./heic";
 import { useThumbsStore } from "../stores/thumbs";
 
 const MAX_EDGE = 320;
@@ -55,12 +56,21 @@ async function encode(
 }
 
 async function makeImage(lib: string, job: ipc.ThumbJob): Promise<Made> {
-  const resp = await fetch(ipc.mediaSrc(lib, job.mediaId));
+  const src = ipc.mediaSrc(lib, job.mediaId);
+  if (isHeicExt(job.ext)) {
+    // Comes back upright and, from the system decoder, already shrunk.
+    const { bitmap, width, height } = await decodeHeicBitmap(src, MAX_EDGE);
+    try {
+      const out = await encode(bitmap, bitmap.width, bitmap.height);
+      return { ...out, origWidth: width, origHeight: height };
+    } finally {
+      bitmap.close();
+    }
+  }
+  const resp = await fetch(src);
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-  let blob = await resp.blob();
-  if (isHeicExt(job.ext)) blob = await heicToJpeg(blob, 0.85);
   // Applies EXIF orientation by default, so width/height are as displayed.
-  const bmp = await createImageBitmap(blob);
+  const bmp = await createImageBitmap(await resp.blob());
   try {
     const out = await encode(bmp, bmp.width, bmp.height);
     return { ...out, origWidth: bmp.width, origHeight: bmp.height };

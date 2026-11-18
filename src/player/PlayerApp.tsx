@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { RotatableVideo } from "../components/ui/RotatableVideo";
 import { cn } from "../lib/cn";
-import { useDisplayableImageUrl } from "../lib/useDisplayableImageUrl";
+import { previewStyle, useDisplayableImageUrl } from "../lib/useDisplayableImageUrl";
 import { useViewerTransform } from "../lib/useViewerTransform";
 import { useViewTracker } from "../lib/viewTracker";
 import { PLAYER_TITLEBAR_HEIGHT } from "./layout";
@@ -18,6 +18,8 @@ const SRC = params.get("src") ?? "";
 const TITLE = params.get("title") ?? "";
 const KIND: "video" | "image" = params.get("kind") === "image" ? "image" : "video";
 const IS_HEIC = params.get("heic") === "1";
+/** Stored thumbnail, shown while a HEIC decodes (ADR-060). */
+const THUMB = params.get("thumb");
 const LIB = params.get("lib") ?? "";
 const MESSAGE_ID = Number(params.get("mid")) || null;
 
@@ -51,7 +53,7 @@ export function PlayerApp() {
 
   const view = useViewerTransform(SRC, { fill: FILL });
   const { rotation, zoomIn, zoomOut, resetView } = view;
-  const image = useDisplayableImageUrl(KIND === "image" ? SRC : "", IS_HEIC ? "heic" : "");
+  const image = useDisplayableImageUrl(KIND === "image" ? SRC : "", IS_HEIC ? "heic" : "", THUMB);
 
   useEffect(() => {
     if (TITLE) document.title = TITLE;
@@ -131,11 +133,14 @@ export function PlayerApp() {
             src={image.url}
             alt=""
             className="shrink-0 object-contain"
-            style={view.mediaStyle}
+            style={image.preview ? previewStyle(view.mediaStyle) : view.mediaStyle}
             draggable={false}
-            onLoad={(e) =>
-              setNatural({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })
-            }
+            onLoad={(e) => {
+              image.onLoad(e);
+              // Size the window by the real picture, not the stand-in thumbnail.
+              if (THUMB && e.currentTarget.getAttribute("src") === THUMB) return;
+              setNatural({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight });
+            }}
             {...view.mediaHandlers}
           />
         )}

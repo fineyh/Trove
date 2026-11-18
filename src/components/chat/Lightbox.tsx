@@ -9,12 +9,12 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Message } from "../../types";
-import { mediaSrc } from "../../ipc/client";
+import { mediaSrc, thumbSrc } from "../../ipc/client";
 import { useLibrariesStore } from "../../stores/libraries";
 import { EMPTY_MEDIA, useConvMediaStore } from "../../stores/convMedia";
 import { useSessionStore } from "../../stores/session";
 import { isImageMedia } from "../../lib/media";
-import { useDisplayableImageUrl } from "../../lib/useDisplayableImageUrl";
+import { previewStyle, useDisplayableImageUrl } from "../../lib/useDisplayableImageUrl";
 import { useViewerTransform } from "../../lib/useViewerTransform";
 import { useViewTracker } from "../../lib/viewTracker";
 import { RotatableVideo } from "../ui/RotatableVideo";
@@ -139,7 +139,8 @@ export function Lightbox({ convId }: LightboxProps) {
 
   // Must run unconditionally (before the early return) — an empty url is a no-op.
   const url = current?.media && lib ? mediaSrc(lib, current.media.id) : "";
-  const image = useDisplayableImageUrl(url, current?.media?.ext ?? "");
+  const thumb = current?.media?.hasThumb && lib ? thumbSrc(lib, current.media.id) : null;
+  const image = useDisplayableImageUrl(url, current?.media?.ext ?? "", thumb);
 
   if (activeId === null) return null;
 
@@ -281,7 +282,8 @@ export function Lightbox({ convId }: LightboxProps) {
               src={image.url}
               alt={current.caption ?? ""}
               className="object-contain"
-              style={mediaStyle}
+              style={image.preview ? previewStyle(mediaStyle) : mediaStyle}
+              onLoad={image.onLoad}
               draggable={false}
               {...mediaHandlers}
             />

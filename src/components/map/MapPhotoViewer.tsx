@@ -12,7 +12,7 @@ import type { GeotaggedMedia } from "../../types";
 import { mediaSrc, thumbSrc } from "../../ipc/client";
 import { useLibrariesStore } from "../../stores/libraries";
 import { isImageMedia } from "../../lib/media";
-import { useDisplayableImageUrl } from "../../lib/useDisplayableImageUrl";
+import { previewStyle, useDisplayableImageUrl } from "../../lib/useDisplayableImageUrl";
 import { useViewerTransform } from "../../lib/useViewerTransform";
 import { useViewTracker } from "../../lib/viewTracker";
 import { RotatableVideo } from "../ui/RotatableVideo";
@@ -85,7 +85,8 @@ export function MapPhotoViewer({
   const canPreview = current?.status === "ok";
   // Must run unconditionally (before the early return) — an empty url is a no-op.
   const url = current && lib && canPreview ? mediaSrc(lib, current.mediaId) : "";
-  const image = useDisplayableImageUrl(url, current?.ext ?? "");
+  const thumb = current?.hasThumb && lib && canPreview ? thumbSrc(lib, current.mediaId) : null;
+  const image = useDisplayableImageUrl(url, current?.ext ?? "", thumb);
 
   const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
   useViewTracker(
@@ -227,7 +228,8 @@ export function MapPhotoViewer({
               src={image.url}
               alt=""
               className="object-contain"
-              style={mediaStyle}
+              style={image.preview ? previewStyle(mediaStyle) : mediaStyle}
+              onLoad={image.onLoad}
               draggable={false}
               {...mediaHandlers}
             />

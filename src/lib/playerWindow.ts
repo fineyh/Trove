@@ -3,7 +3,7 @@ import {
   getAllWebviewWindows,
 } from "@tauri-apps/api/webviewWindow";
 import type { Message } from "../types";
-import { mediaSrc } from "../ipc/client";
+import { mediaSrc, thumbSrc } from "../ipc/client";
 import { currentLib } from "../stores/libraries";
 import { isHeicExt } from "./heic";
 import { isImageMedia } from "./media";
@@ -56,6 +56,7 @@ export async function openPlayerWindow(message: Message): Promise<void> {
   // Flag HEIC so the player decodes it (WebView can't show HEIC natively).
   if (kind === "image" && isHeicExt(message.media.ext)) {
     params.set("heic", "1");
+    if (message.media.hasThumb) params.set("thumb", thumbSrc(lib, message.media.id));
   }
   const query = params.toString();
 
