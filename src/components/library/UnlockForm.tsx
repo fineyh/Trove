@@ -69,7 +69,7 @@ export function UnlockForm({ onUnlock, allowRecovery, passwordPlaceholder = "密
           placeholder={isRecovery ? "恢复密钥" : passwordPlaceholder}
           spellCheck={false}
           autoComplete="off"
-          className={cn("h-8 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-app-muted", isRecovery && "font-mono tracking-wide")}
+          className={cn("h-8 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-app-muted", isRecovery && secret && "font-mono tracking-wide")}
         />
         <button
           type="submit"
