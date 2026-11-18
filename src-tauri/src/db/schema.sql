@@ -42,7 +42,7 @@ CREATE TABLE media (
   size_bytes  INTEGER NOT NULL,
   mtime       INTEGER NOT NULL,
   blake3      TEXT    NOT NULL,
-  kind        TEXT    NOT NULL CHECK (kind IN ('image', 'video', 'other')),
+  kind        TEXT    NOT NULL CHECK (kind IN ('image', 'video', 'audio', 'other')),
   width       INTEGER,
   height      INTEGER,
   duration_ms INTEGER,
@@ -54,11 +54,14 @@ CREATE TABLE media (
   -- 1 once the file's own metadata (GPS + capture time) has been read.
   meta_scanned INTEGER NOT NULL DEFAULT 0,
   -- Thumbnail queue: 0 = to do, 1 = done, 2 = gave up (undecodable).
+  -- Audio uses it for its waveform (ADR-058).
   thumb_scanned INTEGER NOT NULL DEFAULT 0,
   -- Capture time (ADR-053): UTC ms for ordering, plus the UTC offset in
   -- minutes of the place it was taken, so it shows the clock time there.
   taken_at     INTEGER,
   taken_offset INTEGER,
+  -- Audio: loudness bars for the bubble, one byte each (ADR-058).
+  peaks        BLOB,
   UNIQUE (volume_id, relpath)
 );
 
@@ -117,8 +120,9 @@ CREATE TABLE views (
   message_id  INTEGER REFERENCES messages(id) ON DELETE SET NULL,
   media_id    INTEGER REFERENCES media(id) ON DELETE SET NULL,
   conv_id     INTEGER REFERENCES conversations(id) ON DELETE SET NULL,
-  kind        TEXT    NOT NULL CHECK (kind IN ('video', 'image')),
-  surface     TEXT    NOT NULL CHECK (surface IN ('viewer', 'popup', 'map')),
+  kind        TEXT    NOT NULL CHECK (kind IN ('video', 'image', 'audio')),
+  -- 'inline': an audio message played in the message list (ADR-058).
+  surface     TEXT    NOT NULL CHECK (surface IN ('viewer', 'popup', 'map', 'inline')),
   started_at  INTEGER NOT NULL,
   -- Local UTC offset (minutes) at the time: days and hours are bucketed by
   -- the clock where it was watched.

@@ -325,7 +325,8 @@ export function onImportProgress(handler: (p: ImportProgressEvent) => void): Pro
 
 // ─── Viewing history (ADR-054) ──────────────────────────────────────────────
 
-export type ViewSurface = "viewer" | "popup" | "map";
+/** `inline`: a recording played in the message list (ADR-058). */
+export type ViewSurface = "viewer" | "popup" | "map" | "inline";
 
 /** Start a view; `null` when nothing is recorded (switched off, or not media). */
 export async function statsViewBegin(
@@ -348,6 +349,11 @@ export interface ViewTick {
 
 export async function statsViewTick(lib: string, viewId: number, tick: ViewTick): Promise<void> {
   await invoke("stats_view_tick", { lib, viewId, ...tick });
+}
+
+/** Where to resume a recording, ms; `null` to start from the top. */
+export async function statsResumePos(lib: string, messageId: number): Promise<number | null> {
+  return invoke<number | null>("stats_resume_pos", { lib, messageId });
 }
 
 export async function statsPresenceTick(

@@ -49,7 +49,7 @@ interface Span {
   sent: number;
 }
 
-function videoFacts(v: HTMLVideoElement | null) {
+function mediaFacts(v: HTMLMediaElement | null) {
   if (!v) return { coveredMs: null, lastPosMs: null, durationMs: null };
   let covered = 0;
   for (let i = 0; i < v.played.length; i++) covered += v.played.end(i) - v.played.start(i);
@@ -61,22 +61,26 @@ function videoFacts(v: HTMLVideoElement | null) {
 }
 
 /**
- * Record watching `messageId` while it is open. For a video pass its element
- * (nothing is tracked until it exists); a photo counts while the window is in
- * front and in use. `messageId === null` tracks nothing.
+ * Record watching `messageId` while it is open. For a video or a recording
+ * pass its element (nothing is tracked until it exists); a photo counts while
+ * the window is in front and in use. `messageId === null` tracks nothing.
+ *
+ * A recording keeps counting with the window in the background: it is heard,
+ * not seen. Its element is shared between recordings, so it carries
+ * `data-message` and is only read while that is this view's message.
  */
 export function useViewTracker(
   lib: string,
   messageId: number | null,
-  kind: "video" | "image",
+  kind: "video" | "image" | "audio",
   surface: ViewSurface,
-  videoEl: HTMLVideoElement | null,
+  mediaEl: HTMLMediaElement | null,
 ): void {
   // A photo ignores whatever element a video before it left behind.
-  const video = kind === "video" ? videoEl : null;
+  const video = kind === "image" ? null : mediaEl;
   useEffect(() => {
     if (!lib || messageId === null) return;
-    if (kind === "video" && !video) return;
+    if (kind !== "image" && !video) return;
     hookInput();
 
     const spans: Span[] = [];
@@ -86,11 +90,19 @@ export function useViewTracker(
     let lastFlush = Date.now();
     let sentPos: number | null = null;
 
+    const mine = () => kind !== "audio" || video?.dataset.message === String(messageId);
+    // Last facts read while the element was still ours.
+    let facts = mediaFacts(video);
+    const readFacts = () => {
+      if (mine()) facts = mediaFacts(video);
+      return facts;
+    };
+
     const watching = (now: number) => {
-      if (document.visibilityState !== "visible") return false;
-      if (kind === "image") return inUse(now);
+      if (kind === "image") return document.visibilityState === "visible" && inUse(now);
+      if (kind === "video" && document.visibilityState !== "visible") return false;
       const v = video!;
-      return !v.paused && !v.ended && !v.seeking && v.readyState >= 3;
+      return mine() && !v.paused && !v.ended && !v.seeking && v.readyState >= 3;
     };
 
     const watched = () => spans.reduce((sum, s) => sum + s.end - s.start, 0);
@@ -98,7 +110,7 @@ export function useViewTracker(
     const flush = () => {
       if (viewId === null) return;
       lastFlush = Date.now();
-      const facts = videoFacts(kind === "video" ? video : null);
+      const facts = readFacts();
       const dirty = spans.filter((s) => s.end !== s.sent);
       // Nothing new watched: still pass on a moved position (seeking while paused).
       if (dirty.length === 0 && facts.lastPosMs === sentPos) return;
@@ -119,7 +131,7 @@ export function useViewTracker(
     const maybeBegin = () => {
       if (begun || spans.length === 0) return;
       const total = watched();
-      const endedShort = kind === "video" && video!.ended && total > 0;
+      const endedShort = kind !== "image" && mine() && video!.ended && total > 0;
       if (total < MIN_MS && !endedShort) return;
       begun = true;
       void ipc
@@ -133,6 +145,7 @@ export function useViewTracker(
 
     const poll = () => {
       const now = Date.now();
+      readFacts();
       if (watching(now)) {
         if (current) current.end = now;
         else {

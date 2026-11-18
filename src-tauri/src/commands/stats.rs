@@ -51,6 +51,12 @@ pub fn stats_presence_tick(lib: String, start_at: i64, end_at: i64, tz_offset: i
     db::with_lib(&lib, |c| stats::presence(c, start_at, end_at, tz_offset, stats::now_ms()))
 }
 
+/// Where to resume a recording, if anywhere (ADR-058).
+#[tauri::command]
+pub fn stats_resume_pos(lib: String, message_id: i64) -> AppResult<Option<i64>> {
+    db::with_lib(&lib, |c| stats::resume_pos(c, message_id))
+}
+
 #[tauri::command]
 pub fn stats_clear(lib: String) -> AppResult<()> {
     db::with_lib(&lib, stats::clear)

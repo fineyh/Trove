@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  AudioLines,
   ArrowLeft,
   ChevronLeft,
   ChevronRight,
@@ -37,6 +38,7 @@ import {
 import { useConversationsStore } from "../../stores/conversations";
 import { useLibrariesStore } from "../../stores/libraries";
 import { useMessagesStore } from "../../stores/messages";
+import { useAudioStore } from "../../stores/audio";
 import { useSessionStore } from "../../stores/session";
 import { useSettingsStore } from "../../stores/settings";
 import { useThumbUrl } from "../../stores/thumbs";
@@ -116,6 +118,12 @@ function StatsPage({ lib }: { lib: string }) {
     s.setView("chats");
     s.setActiveConversation(item.convId);
     void useMessagesStore.getState().load(item.convId);
+    if (item.kind === "audio") {
+      if (item.mediaId !== null) {
+        useAudioStore.getState().play({ lib, messageId: item.messageId, mediaId: item.mediaId, convId: item.convId, title: item.name, durationMs: null });
+      }
+      return;
+    }
     s.openLightbox(item.messageId);
   };
   const openConv = (c: StatsTopConv) => {
@@ -195,6 +203,7 @@ function Overview({
 
   const videoMs = o.buckets.reduce((s, b) => s + b.videoMs, 0);
   const imageMs = o.buckets.reduce((s, b) => s + b.imageMs, 0);
+  const audioMs = o.buckets.reduce((s, b) => s + b.audioMs, 0);
 
   return (
     <>
@@ -232,6 +241,7 @@ function Overview({
         <div className="mt-4 flex items-center gap-5 text-xs text-app-secondary">
           <Legend swatch="bg-app-accent" label="视频" value={formatWatchShort(videoMs)} />
           <Legend swatch="bg-app-accent/35" label="图片" value={formatWatchShort(imageMs)} />
+          {audioMs > 0 && <Legend swatch="bg-app-accent/65" label="录音" value={formatWatchShort(audioMs)} />}
         </div>
       </Card>
 
@@ -424,13 +434,15 @@ function StackedBars({
           <div className={cn("absolute inset-0 flex items-end", dense ? "gap-[3px]" : "gap-2")}>
             {o.buckets.map((b, i) => {
               const h = max > 0 ? (b.totalMs / max) * 100 : 0;
-              const kinds = b.videoMs + b.imageMs;
+              const kinds = b.videoMs + b.imageMs + b.audioMs;
               const videoShare = kinds > 0 ? b.videoMs / kinds : 1;
-              const tip = [
-                bucketName(period, i),
-                formatWatch(b.totalMs),
-                b.videoMs > 0 && b.imageMs > 0 ? `视频 ${formatWatch(b.videoMs)} · 图片 ${formatWatch(b.imageMs)}` : "",
-              ]
+              const audioShare = kinds > 0 ? b.audioMs / kinds : 0;
+              const parts = [
+                b.videoMs > 0 ? `视频 ${formatWatch(b.videoMs)}` : "",
+                b.imageMs > 0 ? `图片 ${formatWatch(b.imageMs)}` : "",
+                b.audioMs > 0 ? `录音 ${formatWatch(b.audioMs)}` : "",
+              ].filter(Boolean);
+              const tip = [bucketName(period, i), formatWatch(b.totalMs), parts.length > 1 ? parts.join(" · ") : ""]
                 .filter(Boolean)
                 .join("\n");
               const bar = (
@@ -439,6 +451,7 @@ function StackedBars({
                   style={{ height: `${h}%`, minHeight: b.totalMs > 0 ? 3 : 0 }}
                 >
                   <span className="w-full bg-app-accent" style={{ height: `${videoShare * 100}%` }} />
+                  {audioShare > 0 && <span className="w-full bg-app-accent/65" style={{ height: `${audioShare * 100}%` }} />}
                   <span className="w-full flex-1 bg-app-accent/35" />
                 </span>
               );
@@ -550,11 +563,11 @@ function niceCount(n: number): number {
 
 function AddedCard({ period, o, current }: { period: Period; o: StatsOverview; current: number | null }) {
   const t = o.added.reduce(
-    (a, b) => ({ image: a.image + b.image, video: a.video + b.video, other: a.other + b.other }),
-    { image: 0, video: 0, other: 0 },
+    (a, b) => ({ image: a.image + b.image, video: a.video + b.video, audio: a.audio + b.audio, other: a.other + b.other }),
+    { image: 0, video: 0, audio: 0, other: 0 },
   );
-  const sum = t.image + t.video + t.other;
-  const values = o.added.map((a) => a.image + a.video + a.other);
+  const sum = t.image + t.video + t.audio + t.other;
+  const values = o.added.map((a) => a.image + a.video + a.audio + a.other);
   const highest = Math.max(0, ...values);
   const max = highest > 0 ? niceCount(highest) : 0;
   const dense = values.length > 12;
@@ -562,9 +575,10 @@ function AddedCard({ period, o, current }: { period: Period; o: StatsOverview; c
   return (
     <Card>
       <Label aside={`共 ${(o.itemsBefore + sum).toLocaleString()} 项`}>新增</Label>
-      <div className="mt-3 grid grid-cols-3 gap-2">
+      <div className={cn("mt-3 grid gap-2", t.audio > 0 ? "grid-cols-4" : "grid-cols-3")}>
         <KindStat icon={<ImageIcon size={15} />} label="图片" n={t.image} />
         <KindStat icon={<Film size={15} />} label="视频" n={t.video} />
+        {t.audio > 0 && <KindStat icon={<AudioLines size={15} />} label="录音" n={t.audio} />}
         <KindStat icon={<FileText size={15} />} label="文件" n={t.other} />
       </div>
       {sum > 0 && (
@@ -575,7 +589,7 @@ function AddedCard({ period, o, current }: { period: Period; o: StatsOverview; c
             <div className={cn("absolute inset-0 flex items-end", dense ? "gap-[3px]" : "gap-2")}>
               {o.added.map((a, i) => {
                 const v = values[i];
-                const parts = [a.image ? `图片 ${a.image}` : "", a.video ? `视频 ${a.video}` : "", a.other ? `文件 ${a.other}` : ""].filter(Boolean);
+                const parts = [a.image ? `图片 ${a.image}` : "", a.video ? `视频 ${a.video}` : "", a.audio ? `录音 ${a.audio}` : "", a.other ? `文件 ${a.other}` : ""].filter(Boolean);
                 return (
                   <div
                     key={i}
@@ -627,6 +641,8 @@ function ItemRow({ lib, item, onClick }: { lib: string; item: StatsTopItem; onCl
             <img src={thumb} alt="" loading="lazy" decoding="async" draggable={false} className="h-full w-full object-cover" />
           ) : item.kind === "video" ? (
             <Film size={16} />
+          ) : item.kind === "audio" ? (
+            <AudioLines size={16} />
           ) : (
             <ImageIcon size={16} />
           )}

@@ -7,7 +7,7 @@ const SCHEMA_SQL: &str = include_str!("schema.sql");
 
 /// 当前代码能理解的最高 schema 版本。改 `schema.sql` 时必须同时 bump 这个常量
 /// 并补一条 `V{N}_TO_V{N+1}`，否则老库升不上来、新库会被下面的守卫拒绝。
-pub const SCHEMA_LATEST: i64 = 9;
+pub const SCHEMA_LATEST: i64 = 10;
 
 const V1_TO_V2: &str = "
 ALTER TABLE conversations ADD COLUMN enc_kdf_salt BLOB;
@@ -163,6 +163,102 @@ CREATE TABLE presence (
 );
 ";
 
+/// v10 (2026-11): audio recordings (ADR-058). SQLite can't change a CHECK in
+/// place, so `media` and `views` are rebuilt (the documented 12-step way: run
+/// with foreign keys off, or dropping the old table would cascade into
+/// thumbs / messages / view_spans). Files already in the library as "other"
+/// that are audio become audio and get read again.
+fn v9_to_v10() -> String {
+    let like = crate::services::audio::AUDIO_EXTS
+        .iter()
+        .map(|e| format!("lower(relpath) LIKE '%.{e}'"))
+        .collect::<Vec<_>>()
+        .join(" OR ");
+    format!(
+        "
+CREATE TABLE media_v10 (
+  id          INTEGER PRIMARY KEY,
+  volume_id   INTEGER NOT NULL REFERENCES volumes(id) ON DELETE CASCADE,
+  relpath     TEXT    NOT NULL,
+  size_bytes  INTEGER NOT NULL,
+  mtime       INTEGER NOT NULL,
+  blake3      TEXT    NOT NULL,
+  kind        TEXT    NOT NULL CHECK (kind IN ('image', 'video', 'audio', 'other')),
+  width       INTEGER,
+  height      INTEGER,
+  duration_ms INTEGER,
+  state       TEXT    NOT NULL DEFAULT 'live' CHECK (state IN ('live', 'broken')),
+  lat         REAL,
+  lon         REAL,
+  meta_scanned INTEGER NOT NULL DEFAULT 0,
+  thumb_scanned INTEGER NOT NULL DEFAULT 0,
+  taken_at     INTEGER,
+  taken_offset INTEGER,
+  peaks        BLOB,
+  UNIQUE (volume_id, relpath)
+);
+INSERT INTO media_v10 (id, volume_id, relpath, size_bytes, mtime, blake3, kind, width, height,
+                       duration_ms, state, lat, lon, meta_scanned, thumb_scanned, taken_at, taken_offset)
+  SELECT id, volume_id, relpath, size_bytes, mtime, blake3, kind, width, height,
+         duration_ms, state, lat, lon, meta_scanned, thumb_scanned, taken_at, taken_offset
+  FROM media;
+DROP TABLE media;
+ALTER TABLE media_v10 RENAME TO media;
+CREATE INDEX idx_media_blake3 ON media(blake3);
+CREATE INDEX idx_media_size ON media(size_bytes);
+CREATE INDEX idx_media_geo ON media(lat, lon) WHERE lat IS NOT NULL;
+CREATE INDEX idx_media_thumb_todo ON media(id) WHERE thumb_scanned = 0;
+CREATE INDEX idx_media_meta_todo ON media(id) WHERE meta_scanned = 0;
+UPDATE media SET kind = 'audio', thumb_scanned = 0, meta_scanned = 0
+  WHERE kind = 'other' AND ({like});
+
+CREATE TABLE views_v10 (
+  id          INTEGER PRIMARY KEY,
+  message_id  INTEGER REFERENCES messages(id) ON DELETE SET NULL,
+  media_id    INTEGER REFERENCES media(id) ON DELETE SET NULL,
+  conv_id     INTEGER REFERENCES conversations(id) ON DELETE SET NULL,
+  kind        TEXT    NOT NULL CHECK (kind IN ('video', 'image', 'audio')),
+  surface     TEXT    NOT NULL CHECK (surface IN ('viewer', 'popup', 'map', 'inline')),
+  started_at  INTEGER NOT NULL,
+  tz_offset   INTEGER NOT NULL,
+  watch_ms    INTEGER NOT NULL DEFAULT 0,
+  covered_ms  INTEGER,
+  last_pos_ms INTEGER,
+  duration_ms INTEGER,
+  counted     INTEGER NOT NULL DEFAULT 0
+);
+INSERT INTO views_v10 (id, message_id, media_id, conv_id, kind, surface, started_at, tz_offset,
+                       watch_ms, covered_ms, last_pos_ms, duration_ms, counted)
+  SELECT id, message_id, media_id, conv_id, kind, surface, started_at, tz_offset,
+         watch_ms, covered_ms, last_pos_ms, duration_ms, counted
+  FROM views;
+DROP TABLE views;
+ALTER TABLE views_v10 RENAME TO views;
+CREATE INDEX idx_views_time ON views(started_at);
+CREATE INDEX idx_views_message ON views(message_id);
+CREATE INDEX idx_views_media ON views(media_id);
+CREATE INDEX idx_views_conv ON views(conv_id);
+"
+    )
+}
+
+/// [step] for a rebuild: foreign keys off around it (a no-op inside a
+/// transaction, so it has to be here), then checked before they come back on.
+fn rebuild_step(conn: &Connection, to_version: i64, sql: &str) -> AppResult<()> {
+    let was_on: i64 = conn.query_row("PRAGMA foreign_keys", [], |r| r.get(0))?;
+    conn.execute_batch("PRAGMA foreign_keys = OFF;")?;
+    let result = step(conn, to_version, sql);
+    if was_on != 0 {
+        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+    }
+    result?;
+    let broken: i64 = conn.query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |r| r.get(0))?;
+    if broken > 0 {
+        log::warn!("migration to v{to_version}: {broken} dangling references (left as they were)");
+    }
+    Ok(())
+}
+
 fn step(conn: &Connection, to_version: i64, sql: &str) -> rusqlite::Result<()> {
     // `unchecked_transaction` 只要 `&Connection`（我们拿不到 `&mut`）。提前
     // return 时 `Transaction` 的 Drop 默认回滚，所以中途失败不会留下半成品。
@@ -237,6 +333,9 @@ pub fn run(conn: &Connection) -> AppResult<()> {
     if version < 9 {
         step(conn, 9, V8_TO_V9)?;
     }
+    if version < 10 {
+        rebuild_step(conn, 10, &v9_to_v10())?;
+    }
     Ok(())
 }
 
@@ -288,6 +387,58 @@ mod tests {
         )
         .unwrap();
         conn
+    }
+
+    /// The rebuild must not cascade: thumbnails, messages and spans that
+    /// point at the rebuilt tables all stay, with foreign keys on as in the app.
+    #[test]
+    fn v9_to_v10_keeps_everything_pointing_at_media_and_views() {
+        let conn = v5_db();
+        for (v, sql) in [(6, V5_TO_V6), (7, V6_TO_V7), (8, V7_TO_V8), (9, V8_TO_V9)] {
+            step(&conn, v, sql).unwrap();
+        }
+        conn.execute_batch(
+            "UPDATE media SET state = 'live';
+             INSERT INTO media (id, volume_id, relpath, size_bytes, mtime, blake3, kind, thumb_scanned, meta_scanned)
+               VALUES (2, 1, '录音/会议.M4A', 10, 0, 'h2', 'other', 1, 1),
+                      (3, 1, '合同.pdf', 10, 0, 'h3', 'other', 1, 1);
+             INSERT INTO thumbs (media_id, data, mime, width, height, created_at) VALUES (1, x'00', 'image/webp', 1, 1, 0);
+             INSERT INTO messages (id, conv_id, media_id, created_at) VALUES (2, 1, 2, 0);
+             INSERT INTO views (id, message_id, media_id, conv_id, kind, surface, started_at, tz_offset)
+               VALUES (1, 1, 1, 1, 'image', 'viewer', 5, 480);
+             INSERT INTO view_spans (view_id, start_at, end_at) VALUES (1, 5, 9);
+             PRAGMA foreign_keys = ON;",
+        )
+        .unwrap();
+        run(&conn).unwrap();
+        assert_eq!(user_version(&conn), 10);
+        let fk: i64 = conn.query_row("PRAGMA foreign_keys", [], |r| r.get(0)).unwrap();
+        assert_eq!(fk, 1, "foreign keys back on");
+
+        let count = |sql: &str| conn.query_row(sql, [], |r| r.get::<_, i64>(0)).unwrap();
+        assert_eq!(count("SELECT COUNT(*) FROM thumbs"), 1);
+        assert_eq!(count("SELECT COUNT(*) FROM messages WHERE media_id IS NOT NULL"), 2);
+        assert_eq!(count("SELECT COUNT(*) FROM view_spans"), 1);
+        assert_eq!(count("SELECT COUNT(*) FROM views WHERE media_id = 1"), 1);
+        assert_eq!(count("SELECT COUNT(*) FROM pragma_foreign_key_check"), 0);
+        assert!(has_column(&conn, "media", "peaks"));
+
+        let kinds: Vec<(String, i64, i64)> = conn
+            .prepare("SELECT kind, thumb_scanned, meta_scanned FROM media ORDER BY id")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        assert_eq!(kinds[1], ("audio".into(), 0, 0), "an audio file becomes audio and is read again");
+        assert_eq!(kinds[2], ("other".into(), 1, 1));
+
+        // The new kinds are allowed now.
+        conn.execute_batch(
+            "INSERT INTO views (message_id, media_id, conv_id, kind, surface, started_at, tz_offset)
+               VALUES (2, 2, 1, 'audio', 'inline', 1, 0);",
+        )
+        .unwrap();
     }
 
     #[test]

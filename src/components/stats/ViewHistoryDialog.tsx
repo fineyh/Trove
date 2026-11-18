@@ -33,7 +33,7 @@ export function ViewHistoryDialog({
     };
   }, [lib, id]);
 
-  const isVideo = message?.media?.kind === "video";
+  const isVideo = message?.media?.kind === "video" || message?.media?.kind === "audio";
   const last = history?.views[0];
 
   return (

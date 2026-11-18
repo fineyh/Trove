@@ -1,6 +1,7 @@
 import {
   ChevronDown,
   ChevronRight,
+  FileAudio,
   FileImage,
   FileVideo,
   FolderOpen,
@@ -411,7 +412,7 @@ interface BrokenRowProps {
 }
 
 function BrokenRow({ lib, item, busy, hint, onAuto, onManual, onDelete }: BrokenRowProps) {
-  const Icon = item.kind === "video" ? FileVideo : FileImage;
+  const Icon = item.kind === "video" ? FileVideo : item.kind === "audio" ? FileAudio : FileImage;
   const displayPath = item.lastKnownRelpath ?? "路径未知";
   const volumeLabel = item.lastKnownVolumeLabel;
   return (

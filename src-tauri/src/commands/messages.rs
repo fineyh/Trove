@@ -26,6 +26,9 @@ pub struct MediaPayload {
     /// Shown as the clock time there (ADR-053).
     pub taken_at: Option<i64>,
     pub taken_offset: Option<i32>,
+    /// Audio: loudness bars, 0–255 (ADR-058). Absent until made.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub peaks: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -46,7 +49,7 @@ const MESSAGE_COLUMNS: &str = "
     md.relpath, md.state, COALESCE(v.online, 0),
     EXISTS (SELECT 1 FROM thumbs t WHERE t.media_id = md.id),
     md.lat IS NOT NULL AND md.lon IS NOT NULL,
-    md.taken_at, md.taken_offset";
+    md.taken_at, md.taken_offset, md.peaks";
 
 const MESSAGE_FROM: &str = "
     FROM messages m
@@ -90,6 +93,7 @@ fn row_to_message(row: &rusqlite::Row) -> rusqlite::Result<MessagePayload> {
                 has_geo: row.get::<_, i64>(15)? != 0,
                 taken_at: row.get(16)?,
                 taken_offset: row.get(17)?,
+                peaks: row.get(18)?,
             })
         }
         None => None,
@@ -343,14 +347,14 @@ mod tests {
              CREATE TABLE media (id INTEGER PRIMARY KEY, volume_id INTEGER, kind TEXT, width INTEGER,
                                  height INTEGER, duration_ms INTEGER, size_bytes INTEGER,
                                  relpath TEXT, state TEXT NOT NULL, lat REAL, lon REAL,
-                                 taken_at INTEGER, taken_offset INTEGER);
+                                 taken_at INTEGER, taken_offset INTEGER, peaks BLOB);
              CREATE TABLE thumbs (media_id INTEGER PRIMARY KEY);
              CREATE TABLE messages (
                id INTEGER PRIMARY KEY, conv_id INTEGER NOT NULL, media_id INTEGER,
                caption TEXT, play_count INTEGER DEFAULT 0, created_at INTEGER NOT NULL
              );
              INSERT INTO volumes VALUES (1, 0), (2, 1);
-             INSERT INTO media VALUES (1, 1, 'image', NULL, NULL, NULL, 1, 'a.HEIC', 'live', 35.0, 135.7, 1556881200000, 540);",
+             INSERT INTO media VALUES (1, 1, 'image', NULL, NULL, NULL, 1, 'a.HEIC', 'live', 35.0, 135.7, 1556881200000, 540, NULL);",
         )
         .unwrap();
         let rows = [
@@ -461,7 +465,7 @@ mod tests {
     fn missing_files_are_never_hidden() {
         let conn = fixture();
         conn.execute_batch(
-            "INSERT INTO media VALUES (2, 2, 'image', NULL, NULL, NULL, 1, 'b.jpg', 'broken', NULL, NULL, NULL, NULL);
+            "INSERT INTO media VALUES (2, 2, 'image', NULL, NULL, NULL, 1, 'b.jpg', 'broken', NULL, NULL, NULL, NULL, NULL);
              INSERT INTO messages (id, conv_id, media_id, created_at) VALUES (20, 1, 2, 950);",
         )
         .unwrap();

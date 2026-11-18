@@ -26,12 +26,14 @@ pub struct BucketStat {
     pub total_ms: i64,
     pub video_ms: i64,
     pub image_ms: i64,
+    pub audio_ms: i64,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct Added {
     pub image: i64,
     pub video: i64,
+    pub audio: i64,
     pub other: i64,
 }
 
@@ -71,7 +73,7 @@ pub struct Overview {
     pub plays: i64,
     pub top_items: Vec<TopItem>,
     pub top_convs: Vec<TopConv>,
-    /// Images / videos / files added, one per bucket (by import time).
+    /// Images / videos / audio / files added, one per bucket (by import time).
     pub added: Vec<Added>,
     /// Items in the space before the range started.
     pub items_before: i64,
@@ -84,9 +86,26 @@ struct Span {
     start: i64,
     end: i64,
     off_ms: i64,
-    video: bool,
+    kind: Kind,
     message_id: Option<i64>,
     conv_id: Option<i64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Kind {
+    Image,
+    Video,
+    Audio,
+}
+
+impl Kind {
+    fn of(s: &str) -> Kind {
+        match s {
+            "video" => Kind::Video,
+            "audio" => Kind::Audio,
+            _ => Kind::Image,
+        }
+    }
 }
 
 /// Merge overlapping spans in real time. A merged stretch keeps the offset of
@@ -141,7 +160,7 @@ fn load_spans(c: &Connection, from: i64, to: i64) -> AppResult<Vec<Span>> {
             start: r.get(0)?,
             end: r.get(1)?,
             off_ms: r.get::<_, i64>(2)? * 60_000,
-            video: r.get::<_, String>(3)? == "video",
+            kind: Kind::of(&r.get::<_, String>(3)?),
             message_id: r.get(4)?,
             conv_id: r.get(5)?,
         })
@@ -172,14 +191,12 @@ pub fn overview(c: &Connection, edges: &[i64], utc_edges: &[i64], hide_offline: 
         add_to_hours(a, b, &mut hours);
         add_to_buckets(a, b, edges, |i, d| buckets[i].total_ms += d);
     }
-    for video in [true, false] {
-        for (s, e, o) in merge(spans.iter().filter(|s| s.video == video)) {
-            add_to_buckets(s + o, e + o, edges, |i, d| {
-                if video {
-                    buckets[i].video_ms += d
-                } else {
-                    buckets[i].image_ms += d
-                }
+    for kind in [Kind::Video, Kind::Image, Kind::Audio] {
+        for (s, e, o) in merge(spans.iter().filter(|s| s.kind == kind)) {
+            add_to_buckets(s + o, e + o, edges, |i, d| match kind {
+                Kind::Video => buckets[i].video_ms += d,
+                Kind::Image => buckets[i].image_ms += d,
+                Kind::Audio => buckets[i].audio_ms += d,
             });
         }
     }
@@ -251,6 +268,7 @@ pub fn overview(c: &Connection, edges: &[i64], utc_edges: &[i64], hide_offline: 
             match kind.as_str() {
                 "image" => added[i].image += 1,
                 "video" => added[i].video += 1,
+                "audio" => added[i].audio += 1,
                 _ => added[i].other += 1,
             }
         }
@@ -466,7 +484,7 @@ mod tests {
         let e = day_edges(1);
         let o = overview(&c, &e, &e, false).unwrap();
         assert_eq!(o.total_ms, 20 * MIN);
-        assert_eq!(o.buckets[0], BucketStat { total_ms: 20 * MIN, video_ms: 10 * MIN, image_ms: 15 * MIN });
+        assert_eq!(o.buckets[0], BucketStat { total_ms: 20 * MIN, video_ms: 10 * MIN, image_ms: 15 * MIN, audio_ms: 0 });
         assert_eq!(o.hours[10], 20 * MIN);
         assert_eq!(o.hours.iter().sum::<i64>(), 20 * MIN);
         let items: Vec<(i64, i64)> = o.top_items.iter().map(|i| (i.message_id, i.watch_ms)).collect();
@@ -546,7 +564,7 @@ mod tests {
         let o = overview(&c, &e, &e, false).unwrap();
         assert_eq!(o.items_before, 1);
         assert_eq!(o.added[0], Added::default());
-        assert_eq!(o.added[1], Added { image: 1, video: 1, other: 0 });
+        assert_eq!(o.added[1], Added { image: 1, video: 1, audio: 0, other: 0 });
         assert!(!o.has_history);
     }
 

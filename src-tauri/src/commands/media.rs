@@ -42,6 +42,9 @@ fn classify(path: &Path) -> &'static str {
     if matches!(ext.as_deref(), Some("heic") | Some("heif")) {
         return "image";
     }
+    if ext.as_deref().is_some_and(services::audio::is_audio_ext) {
+        return "audio";
+    }
     let mime = mime_guess::from_path(path).first_or_octet_stream();
     match mime.type_().as_str() {
         "image" => "image",

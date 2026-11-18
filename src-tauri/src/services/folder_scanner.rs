@@ -28,7 +28,11 @@ pub fn enumerate_media_shallow(root: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
+/// Images, videos and audio recordings (ADR-058).
 pub fn is_media(path: &Path) -> bool {
+    if super::audio::is_audio(path) {
+        return true;
+    }
     let mime = mime_guess::from_path(path).first_or_octet_stream();
     matches!(mime.type_().as_str(), "image" | "video")
 }

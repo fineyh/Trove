@@ -33,8 +33,8 @@ fn valid_span(start: i64, end: i64, now: i64) -> bool {
     start > 0 && end >= start && end - start <= MAX_SPAN_MS && end <= now + FUTURE_SLACK_MS
 }
 
-/// Has this view become "one play"? Videos: 3 seconds, or 90% of a clip
-/// shorter than that. Photos: 1 second.
+/// Has this view become "one play"? Videos and audio: 3 seconds, or 90% of a
+/// clip shorter than that. Photos: 1 second.
 pub fn counts(kind: &str, watch_ms: i64, duration_ms: Option<i64>) -> bool {
     if kind == "image" {
         return watch_ms >= 1_000;
@@ -46,8 +46,8 @@ pub fn counts(kind: &str, watch_ms: i64, duration_ms: Option<i64>) -> bool {
     watch_ms >= need
 }
 
-/// Start a view of `message_id`. `None` when the message has no image or
-/// video (nothing to record).
+/// Start a view of `message_id`. `None` when the message has no image,
+/// video or audio (nothing to record).
 pub fn begin(
     c: &Connection,
     message_id: i64,
@@ -55,7 +55,7 @@ pub fn begin(
     started_at: i64,
     tz_offset: i64,
 ) -> AppResult<Option<i64>> {
-    if !matches!(surface, "viewer" | "popup" | "map") {
+    if !matches!(surface, "viewer" | "popup" | "map" | "inline") {
         return Err(AppError::InvalidArg(format!("bad surface: {surface}")));
     }
     let row: Option<(Option<i64>, i64, Option<String>)> = c
@@ -70,7 +70,7 @@ pub fn begin(
     let Some((Some(media_id), conv_id, Some(kind))) = row else {
         return Ok(None);
     };
-    if kind != "video" && kind != "image" {
+    if !matches!(kind.as_str(), "video" | "image" | "audio") {
         return Ok(None);
     }
     let started_at = started_at.min(now_ms());
@@ -93,7 +93,7 @@ pub struct Tick {
     pub duration_ms: Option<i64>,
 }
 
-/// A video just reached "one play"; its message's new count.
+/// A video or recording just reached "one play"; its message's new count.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Played {
     pub message_id: i64,
@@ -143,7 +143,7 @@ pub fn tick(c: &Connection, view_id: i64, t: Tick, now: i64) -> AppResult<Option
         tx.query_row("SELECT duration_ms FROM views WHERE id = ?1", [view_id], |r| r.get(0))?;
     if counted == 0 && counts(&kind, watch_ms, duration) {
         tx.execute("UPDATE views SET counted = 1 WHERE id = ?1", [view_id])?;
-        if let (true, Some(mid)) = (kind == "video", message_id) {
+        if let (true, Some(mid)) = (kind != "image", message_id) {
             tx.execute("UPDATE messages SET play_count = play_count + 1 WHERE id = ?1", [mid])?;
             let n: Option<i64> = tx
                 .query_row("SELECT play_count FROM messages WHERE id = ?1", [mid], |r| r.get(0))
@@ -153,6 +153,24 @@ pub fn tick(c: &Connection, view_id: i64, t: Tick, now: i64) -> AppResult<Option
     }
     tx.commit()?;
     Ok(played)
+}
+
+/// Where to pick a recording up again (ADR-058): the last position of its
+/// latest view, unless that was near the start or the end.
+pub fn resume_pos(c: &Connection, message_id: i64) -> AppResult<Option<i64>> {
+    let row: Option<(Option<i64>, Option<i64>)> = c
+        .query_row(
+            "SELECT last_pos_ms, duration_ms FROM views WHERE message_id = ?1
+             ORDER BY started_at DESC, id DESC LIMIT 1",
+            [message_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?;
+    const EDGE_MS: i64 = 5_000;
+    Ok(match row {
+        Some((Some(p), d)) if p >= EDGE_MS && d.map_or(true, |d| p < d - EDGE_MS) => Some(p),
+        _ => None,
+    })
 }
 
 /// The main window was in front and in use from `start` to `end`. Sent again
@@ -317,5 +335,25 @@ mod tests {
         assert!(enabled(&c).unwrap());
         c.execute("INSERT INTO settings(key, value) VALUES ('view_stats', 'off')", []).unwrap();
         assert!(!enabled(&c).unwrap());
+    }
+
+    #[test]
+    fn resume_from_the_latest_view_unless_at_an_edge() {
+        let c = Connection::open_in_memory().unwrap();
+        crate::db::run_migrations_for_test(&c);
+        c.execute_batch(
+            "INSERT INTO conversations (id, name, kind, created_at, updated_at) VALUES (1, 'c', 'manual', 0, 0);
+             INSERT INTO messages (id, conv_id, created_at) VALUES (1, 1, 0), (2, 1, 0), (3, 1, 0);
+             INSERT INTO views (message_id, conv_id, kind, surface, started_at, tz_offset, last_pos_ms, duration_ms) VALUES
+               (1, 1, 'audio', 'inline', 1, 0, 90000, 600000),
+               (1, 1, 'audio', 'inline', 2, 0, 120000, 600000),
+               (2, 1, 'audio', 'inline', 1, 0, 598000, 600000),
+               (3, 1, 'audio', 'inline', 1, 0, 2000, 600000);",
+        )
+        .unwrap();
+        assert_eq!(resume_pos(&c, 1).unwrap(), Some(120000), "latest view wins");
+        assert_eq!(resume_pos(&c, 2).unwrap(), None, "finished: start over");
+        assert_eq!(resume_pos(&c, 3).unwrap(), None, "barely started");
+        assert_eq!(resume_pos(&c, 9).unwrap(), None);
     }
 }

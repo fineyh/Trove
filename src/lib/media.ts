@@ -9,6 +9,7 @@ export function isImageMedia(m: Pick<MediaPayload, "kind" | "ext">): boolean {
 export function kindLabel(m: Pick<MediaPayload, "kind" | "ext">): string {
   if (isImageMedia(m)) return "图片";
   if (m.kind === "video") return "视频";
+  if (m.kind === "audio") return "录音";
   return "文件";
 }
 

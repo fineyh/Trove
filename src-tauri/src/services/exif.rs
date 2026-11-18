@@ -41,8 +41,16 @@ pub fn read_meta(path: &Path, kind: &str) -> FileMeta {
     match kind {
         "image" => read_image_meta(path),
         "video" => read_video_meta(path),
+        // Recorders that write MP4 (iPhone, most Android) date it like a video.
+        "audio" if is_mp4_audio(path) => read_video_meta(path),
         _ => FileMeta::default(),
     }
+}
+
+fn is_mp4_audio(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("m4a"))
 }
 
 /// Reject obviously bogus coordinates (out of range, or the (0,0) null island

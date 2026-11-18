@@ -5,6 +5,7 @@ import { EMPTY_MESSAGES, useMessagesStore } from "../../stores/messages";
 import { useSessionStore } from "../../stores/session";
 import { Composer } from "../chat/Composer";
 import { Lightbox } from "../chat/Lightbox";
+import { AudioBar } from "../chat/AudioMessage";
 import { MessageList } from "../chat/MessageList";
 import { IconButton } from "../ui/Button";
 import { ConvAvatar } from "../ui/ConvAvatar";
@@ -98,6 +99,8 @@ export function ChatView() {
           onClick={() => setDrawer(!drawerOpen)}
         />
       </header>
+
+      <AudioBar />
 
       <main ref={mainRef} className="flex-1 overflow-y-auto">
         <MessageList

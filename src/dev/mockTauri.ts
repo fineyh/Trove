@@ -60,6 +60,16 @@ function install() {
     id: ++mid, convId: 1, caption, playCount: 0, createdAt: now - ago,
     media: { id: mid, kind: "other", width: null, height: null, durationMs: null, sizeBytes: 820_000, ext: "pdf", status: "ok", hasThumb: false, hasGeo: false, takenAt: null, takenOffset: null },
   });
+  // Speech-like bars: syllables with pauses between phrases.
+  const speech = (n: number, k: number) =>
+    Array.from({ length: n }, (_, i) => {
+      const phrase = Math.sin(i / 7 + k) > -0.6 ? 1 : 0.08;
+      return Math.round(255 * phrase * (0.25 + 0.75 * Math.abs(Math.sin(i * 1.7 + k) * Math.cos(i * 0.45))));
+    });
+  const audio = (ago: number, caption: string, durationMs: number | null, ext = "m4a", peaks: number[] | null = speech(100, 1)) => ({
+    id: ++mid, convId: 1, caption, playCount: 0, createdAt: now - ago,
+    media: { id: mid, kind: "audio", width: null, height: null, durationMs, sizeBytes: 2_100_000, ext, status: "ok", hasThumb: false, hasGeo: false, takenAt: now - ago, takenOffset: 480, peaks: peaks ?? undefined },
+  });
   const messages = [
     img(4000, 3000, 3 * D + 3 * H, "IMG_3990"),
     img(3000, 4000, 3 * D + 3 * H - 20_000, "IMG_3991"),
@@ -69,6 +79,9 @@ function install() {
     img(4000, 3000, 2 * D, "IMG_4001", "offline"),
     img(4000, 3000, 2 * D - 60_000, "IMG_4002", "missing"),
     file(D + 2 * H, "行程单.pdf"),
+    audio(D + H, "寺里的钟声", 47_000, "m4a", speech(100, 3)),
+    audio(D + H - 60_000, "导游讲解", 1_512_000),
+    audio(D + H - 120_000, "新录音 12", null, "opus", null),
     img(1080, 1920, 50 * 60_000, "IMG_4020"),
     img(4000, 3000, 12 * 60_000, "IMG_4021"),
     text(10 * 60_000, "晚上去鸭川散步，灯笼一路亮到四条"),
@@ -104,7 +117,7 @@ function install() {
   const geo: Record<string, any[]> = {
     main: [
       // The mock conversation's own photos, so "show on map" has a target.
-      ...messages.filter((m) => m.media && m.media.kind !== "other").map((m, i) => (i < 4 ? pin(m, 34.9671 + i * 0.0004, 135.7727 + i * 0.0003) : pin(m, 35.0037 + i * 0.0006, 135.7722))),
+      ...messages.filter((m) => m.media && m.media.kind !== "other" && m.media.kind !== "audio").map((m, i) => (i < 4 ? pin(m, 34.9671 + i * 0.0004, 135.7727 + i * 0.0003) : pin(m, 35.0037 + i * 0.0006, 135.7722))),
       ...scatter(2000, [
         [34.9671, 135.7727, 38, 0.6, 3], // 伏见稻荷
         [35.0116, 135.7681, 54, 2.5, 2], // 京都市内
@@ -151,6 +164,7 @@ function install() {
     set_ui_pref: (a) => { if (a.key === "theme") uiTheme = a.value; else uiPrefs[a.key] = a.value; },
     get_all_settings: () => settings,
     // Viewing history (ADR-054): kept in __mock.views to look at in the console.
+    stats_resume_pos: () => null,
     stats_view_begin: (a) => {
       if (settings.view_stats === "off") return null;
       views.push({ ...a, spans: {} as Record<number, number>, facts: null });
@@ -173,18 +187,18 @@ function install() {
       const cleared = views.length === 0 && settings.stats_mock_cleared === "1";
       const per = span <= H ? 40 * 60_000 : span <= D ? 2.5 * H : 40 * H;
       const buckets = Array.from({ length: n }, (_, i) => {
-        if (cleared || edges[i] > wallNow) return { totalMs: 0, videoMs: 0, imageMs: 0 };
+        if (cleared || edges[i] > wallNow) return { totalMs: 0, videoMs: 0, imageMs: 0, audioMs: 0 };
         const hourShape = span <= H ? Math.max(0, Math.sin(((new Date(edges[i]).getUTCHours() - 7) / 24) * Math.PI * 2) + 0.3) : 1;
         const r = hash(edges[i]);
         const total = r < 0.15 && span <= D ? 0 : Math.round(per * Math.max(r, 0.3) * hourShape * (span > 2 * D ? n === 1 ? 3 : 1 : 1));
         const video = Math.round(total * (0.4 + hash(edges[i] + 1) * 0.5));
-        return { totalMs: total, videoMs: video, imageMs: Math.round((total - video) * 1.1) };
+        return { totalMs: total, videoMs: video, imageMs: Math.round((total - video) * 1.1), audioMs: Math.round(total * 0.15) };
       });
       const totalMs = buckets.reduce((x, b) => x + b.totalMs, 0);
       const shape = Array.from({ length: 24 }, (_, h) => Math.max(0, Math.sin(((h - 7) / 24) * Math.PI * 2) + 0.25) + (h === 21 ? 0.6 : 0));
       const shapeSum = shape.reduce((x, y) => x + y, 0);
       const hours = shape.map((v) => Math.round((v / shapeSum) * totalMs));
-      const media = messages.filter((m) => m.media && m.media.kind !== "other");
+      const media = messages.filter((m) => m.media && m.media.kind !== "other" && m.media.kind !== "audio");
       const weights = [0.24, 0.17, 0.12, 0.09, 0.07, 0.05];
       const topItems = totalMs === 0 ? [] : media.slice(0, weights.length).map((m, i) => ({
         messageId: m.id, mediaId: m.media!.id, convId: 1, convName: "2024 京都", kind: m.media!.kind, name: m.caption,
@@ -193,10 +207,10 @@ function install() {
       const convShare = [0.42, 0.2, 0.14, 0.09, 0.05, 0.03];
       const topConvs = totalMs === 0 ? [] : conversations.slice(0, convShare.length).map((c, i) => ({ convId: c.id, name: c.name, watchMs: Math.round(totalMs * convShare[i]), plays: 20 - i * 4 }));
       const added = Array.from({ length: n }, (_, i) => {
-        if (edges[i] > wallNow) return { image: 0, video: 0, other: 0 };
+        if (edges[i] > wallNow) return { image: 0, video: 0, audio: 0, other: 0 };
         const r = hash(edges[i] + 7);
         const k = span <= H ? 0.15 : span <= D ? 1 : 12;
-        return r < 0.5 ? { image: 0, video: 0, other: 0 } : { image: Math.round(r * 20 * k), video: Math.round(r * 3 * k), other: r > 0.9 ? 1 : 0 };
+        return r < 0.5 ? { image: 0, video: 0, audio: 0, other: 0 } : { image: Math.round(r * 20 * k), video: Math.round(r * 3 * k), audio: r > 0.8 ? 1 : 0, other: r > 0.9 ? 1 : 0 };
       });
       return {
         totalMs, buckets, hours, plays: Math.round(totalMs / 90_000), topItems, topConvs, added,

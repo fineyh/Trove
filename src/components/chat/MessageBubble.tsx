@@ -7,6 +7,7 @@ import { useLibrariesStore } from "../../stores/libraries";
 import { useThumbUrl } from "../../stores/thumbs";
 import { toast } from "../../stores/toast";
 import { MessageMenu, type MessageMenuTarget } from "./MessageMenu";
+import { AudioMessage } from "./AudioMessage";
 import { formatBytes, formatDuration, isImageMedia, kindLabel } from "../../lib/media";
 import { cn } from "../../lib/cn";
 
@@ -294,6 +295,7 @@ export function MessageBubble({ message, tile }: MessageBubbleProps) {
   else if (media.status === "missing") body = <MissingMedia message={message} />;
   else if (isImageMedia(media)) body = <ImageMessage message={message} tile={tile} />;
   else if (media.kind === "video") body = <VideoMessage message={message} tile={tile} />;
+  else if (media.kind === "audio") body = <AudioMessage message={message} />;
   else body = <FileMessage message={message} />;
 
   const handleContextMenu = (e: React.MouseEvent) => {

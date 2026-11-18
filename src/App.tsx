@@ -10,6 +10,8 @@ import { SettingsDialog } from "./components/dialogs/SettingsDialog";
 import { ProfileDrawer } from "./components/profile/ProfileDrawer";
 import { MapView } from "./components/map/MapView";
 import { StatsView } from "./components/stats/StatsView";
+import { AudioTracker } from "./components/chat/AudioMessage";
+import { useAudioStore } from "./stores/audio";
 import { LibraryLockedView } from "./components/library/LibraryLockedView";
 import {
   CreateLibraryDialog,
@@ -144,6 +146,7 @@ function Shell() {
       <LibrarySettingsDialog />
       <MoveConversationDialog />
       <RecoveryCodeDialog />
+      <AudioTracker />
       {lib && open && <MissingFilesDialog lib={lib.id} />}
     </div>
   );
@@ -157,6 +160,8 @@ function MissingFilesDialog({ lib }: { lib: string }) {
 }
 
 function resetLibraryCaches() {
+  // A recording from another space (or a locked one) stops.
+  useAudioStore.getState().stop();
   useMessagesStore.getState().reset();
   useConvMediaStore.getState().reset();
   useConversationsStore.getState().reset();

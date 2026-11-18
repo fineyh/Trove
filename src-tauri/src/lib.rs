@@ -163,6 +163,7 @@ pub fn run() {
             commands::messages::send_text,
             commands::stats::stats_view_begin,
             commands::stats::stats_view_tick,
+            commands::stats::stats_resume_pos,
             commands::stats::stats_presence_tick,
             commands::stats::stats_clear,
             commands::stats::stats_overview,

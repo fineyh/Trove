@@ -1,5 +1,6 @@
 import {
   ArrowRightLeft,
+  AudioLines,
   CloudOff,
   FileText,
   Image,
@@ -36,6 +37,8 @@ function PreviewIcon({ kind }: { kind: Conversation["previewKind"] }) {
       return <Image size={13} className="shrink-0" />;
     case "video":
       return <Video size={13} className="shrink-0" />;
+    case "audio":
+      return <AudioLines size={13} className="shrink-0" />;
     case "other":
       return <FileText size={13} className="shrink-0" />;
     default:

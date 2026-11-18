@@ -18,9 +18,11 @@ pub struct ThumbJob {
     pub ext: String,
 }
 
-/// Tell the frontend's worker there may be new work in `lib`.
+/// Tell the frontend's worker there may be new work in `lib`, and make any
+/// missing audio waveforms (ADR-058).
 pub fn wake(lib: &str) {
     events::emit_thumbs_wake(lib);
+    crate::services::audio::spawn(lib.to_string());
 }
 
 /// Next jobs: images and videos whose file is reachable right now. Offline

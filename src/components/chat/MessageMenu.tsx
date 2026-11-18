@@ -118,6 +118,8 @@ export function MessageMenu({ menu, onClose }: MessageMenuProps) {
           toast.success("已设为会话头像");
         }, "无法设置头像"),
       });
+    }
+    if (isImage || isVideo || media.kind === "audio") {
       items.push({
         label: "观看记录",
         icon: <History size={15} />,

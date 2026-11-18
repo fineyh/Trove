@@ -13,12 +13,12 @@ export interface Conversation {
   updatedAt: number;
   messageCount: number;
   preview: string | null;
-  previewKind: "text" | "image" | "video" | "other" | null;
+  previewKind: "text" | "image" | "video" | "audio" | "other" | null;
   /** folder_watch: the source folder's volume isn't mounted. */
   sourceOffline: boolean;
 }
 
-export type MediaKind = "image" | "video" | "other";
+export type MediaKind = "image" | "video" | "audio" | "other";
 
 /**
  * "ok": reachable. "offline": its volume isn't mounted (not a problem, just
@@ -43,6 +43,8 @@ export interface MediaPayload {
    *  was taken. Shown as the clock time there, not converted (ADR-053). */
   takenAt: number | null;
   takenOffset: number | null;
+  /** Audio: loudness bars, 0–255, once made (ADR-058). */
+  peaks?: number[];
 }
 
 export interface Message {
@@ -274,11 +276,13 @@ export interface StatsBucket {
   totalMs: number;
   videoMs: number;
   imageMs: number;
+  audioMs: number;
 }
 
 export interface StatsAdded {
   image: number;
   video: number;
+  audio: number;
   other: number;
 }
 
@@ -287,7 +291,7 @@ export interface StatsTopItem {
   mediaId: number | null;
   convId: number;
   convName: string;
-  kind: "image" | "video" | "other";
+  kind: MediaKind;
   name: string;
   hasThumb: boolean;
   watchMs: number;

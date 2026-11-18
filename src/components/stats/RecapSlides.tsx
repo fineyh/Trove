@@ -3,7 +3,7 @@
 // picture of it on the right. Layout and type scale live here; the stage,
 // paging and keys are in RecapView.
 
-import { ArrowRight, FileText, Film, Image as ImageIcon, Play, RotateCcw, TrendingDown, TrendingUp } from "lucide-react";
+import { ArrowRight, AudioLines, FileText, Film, Image as ImageIcon, Play, RotateCcw, TrendingDown, TrendingUp } from "lucide-react";
 import { cn } from "../../lib/cn";
 import { formatBytes } from "../../lib/media";
 import {
@@ -190,11 +190,11 @@ function Mosaic({ lib, covers }: { lib: string; covers: RecapCover[] }) {
 export function AddedSlide({ d }: { d: RecapData }) {
   const { o, r, period } = d;
   const t = o.added.reduce(
-    (a, b) => ({ image: a.image + b.image, video: a.video + b.video, other: a.other + b.other }),
-    { image: 0, video: 0, other: 0 },
+    (a, b) => ({ image: a.image + b.image, video: a.video + b.video, audio: a.audio + b.audio, other: a.other + b.other }),
+    { image: 0, video: 0, audio: 0, other: 0 },
   );
-  const total = t.image + t.video + t.other;
-  const values = o.added.map((a) => a.image + a.video + a.other);
+  const total = t.image + t.video + t.audio + t.other;
+  const values = o.added.map((a) => a.image + a.video + a.audio + a.other);
   return (
     <Split
       left={
@@ -208,6 +208,7 @@ export function AddedSlide({ d }: { d: RecapData }) {
           <Rise i={2} className="flex flex-wrap gap-2">
             <Chip icon={<ImageIcon size={14} />} label="图片" n={t.image} />
             <Chip icon={<Film size={14} />} label="视频" n={t.video} />
+            {t.audio > 0 && <Chip icon={<AudioLines size={14} />} label="录音" n={t.audio} />}
             {t.other > 0 && <Chip icon={<FileText size={14} />} label="文件" n={t.other} />}
           </Rise>
           <Rise i={3}>
@@ -228,7 +229,7 @@ export function AddedSlide({ d }: { d: RecapData }) {
             values={values}
             tip={(i) => {
               const a = o.added[i];
-              const parts = [a.image ? `图片 ${a.image}` : "", a.video ? `视频 ${a.video}` : "", a.other ? `文件 ${a.other}` : ""].filter(Boolean);
+              const parts = [a.image ? `图片 ${a.image}` : "", a.video ? `视频 ${a.video}` : "", a.audio ? `录音 ${a.audio}` : "", a.other ? `文件 ${a.other}` : ""].filter(Boolean);
               return `${bucketName(period, i)}\n${parts.length ? parts.join(" · ") : "无"}`;
             }}
             peakLabel={(v) => `${v.toLocaleString()} 项`}
@@ -836,6 +837,8 @@ function TopThumb({ lib, item, className }: { lib: string; item: StatsTopItem; c
         <img src={src} alt="" loading="lazy" decoding="async" draggable={false} className="h-full w-full object-cover" />
       ) : item.kind === "video" ? (
         <Film size={20} />
+      ) : item.kind === "audio" ? (
+        <AudioLines size={20} />
       ) : (
         <ImageIcon size={20} />
       )}

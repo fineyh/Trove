@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CloudOff, ImageOff, Loader2, Play } from "lucide-react";
+import { AudioLines, CloudOff, ImageOff, Loader2, Play } from "lucide-react";
 import type { Message } from "../../types";
 import { mediaSrc, openMedia } from "../../ipc/client";
 import { EMPTY_MEDIA, useConvMediaStore } from "../../stores/convMedia";
@@ -13,12 +13,19 @@ import { Segmented } from "../ui/Segmented";
 import { cn } from "../../lib/cn";
 import { isHeicExt } from "../../lib/heic";
 import { formatDuration, isImageMedia } from "../../lib/media";
+import { trackOf, useAudioStore } from "../../stores/audio";
 
 /** Grid click: view what can be viewed, explain what can't. */
 function openItem(m: Message, view: (id: number) => void) {
   const media = m.media!;
   if (media.status === "offline") {
     toast.info("文件所在的磁盘未连接");
+    return;
+  }
+  if (media.kind === "audio") {
+    const lib = useLibrariesStore.getState().current;
+    const t = lib ? trackOf(lib, m) : null;
+    if (t) useAudioStore.getState().play(t);
     return;
   }
   if (media.kind === "other" && !isImageMedia(media)) {
@@ -29,7 +36,7 @@ function openItem(m: Message, view: (id: number) => void) {
   view(m.id);
 }
 
-type Tab = "all" | "image" | "video" | "other";
+type Tab = "all" | "image" | "video" | "audio" | "other";
 
 interface MediaGridProps {
   convId: number;
@@ -71,7 +78,8 @@ export function MediaGrid({ convId }: MediaGridProps) {
           const img = isImageMedia(m.media!);
           if (tab === "image") return img;
           if (tab === "video") return m.media!.kind === "video";
-          return !img && m.media!.kind !== "video";
+          if (tab === "audio") return m.media!.kind === "audio";
+          return !img && m.media!.kind === "other";
         })
         .slice()
         .reverse(),
@@ -89,6 +97,7 @@ export function MediaGrid({ convId }: MediaGridProps) {
             { value: "all", label: "全部" },
             { value: "image", label: "图片" },
             { value: "video", label: "视频" },
+            { value: "audio", label: "录音" },
             { value: "other", label: "文件" },
           ]}
         />
@@ -150,6 +159,8 @@ function GridItem({
   const src = thumb ?? fallback;
   const offline = media.status === "offline";
   const missing = media.status === "missing";
+  const audio = media.kind === "audio";
+  const playing = useAudioStore((s) => s.playing && s.track?.lib === lib && s.track.messageId === message.id);
 
   return (
     <button
@@ -165,7 +176,13 @@ function GridItem({
       data-tip={offline ? "离线" : missing ? "缺失" : undefined}
       className={cn("relative aspect-square overflow-hidden rounded-md bg-app-subtle", missing && "cursor-default")}
     >
-      {src && !failed ? (
+      {audio ? (
+        <span className="flex h-full w-full flex-col items-center justify-center gap-1 px-1.5">
+          <AudioLines size={20} className={playing ? "text-app-accent" : "text-app-secondary"} />
+          <span className="w-full truncate text-center text-2xs leading-4 text-app-secondary">{message.caption ?? "录音"}</span>
+          {media.durationMs ? <span className="text-2xs leading-3 tabular-nums text-app-muted">{formatDuration(media.durationMs)}</span> : null}
+        </span>
+      ) : src && !failed ? (
         <img
           src={src}
           alt=""
