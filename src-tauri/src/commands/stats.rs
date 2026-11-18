@@ -1,7 +1,7 @@
 //! Viewing history (ADR-054). Called by every viewer, the popup windows too.
 
-use crate::services::stats;
-use crate::{db, events, AppResult};
+use crate::services::{stats, stats_report};
+use crate::{db, events, AppError, AppResult};
 
 /// Start a view. `None` when nothing is recorded (switched off, or not an
 /// image / video).
@@ -54,4 +54,21 @@ pub fn stats_presence_tick(lib: String, start_at: i64, end_at: i64, tz_offset: i
 #[tauri::command]
 pub fn stats_clear(lib: String) -> AppResult<()> {
     db::with_lib(&lib, stats::clear)
+}
+
+/// The statistics page (ADR-056). `edges`: bucket boundaries as wall-clock
+/// ms; `utc_edges`: the same instants in real time.
+#[tauri::command]
+pub fn stats_overview(lib: String, edges: Vec<i64>, utc_edges: Vec<i64>) -> AppResult<stats_report::Overview> {
+    if edges.len() < 2 || edges.len() != utc_edges.len() || edges.len() > 400 {
+        return Err(AppError::InvalidArg("bad bucket edges".into()));
+    }
+    let hide = super::conversations::hide_offline(&lib)?;
+    db::with_lib(&lib, |c| stats_report::overview(c, &edges, &utc_edges, hide))
+}
+
+/// One item's views (message right-click → 观看记录).
+#[tauri::command]
+pub fn stats_item_history(lib: String, message_id: i64) -> AppResult<stats_report::ItemHistory> {
+    db::with_lib(&lib, |c| stats_report::item_history(c, message_id))
 }

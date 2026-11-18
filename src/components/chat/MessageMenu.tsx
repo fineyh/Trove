@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Copy, ExternalLink, FolderSearch, MapPin, PictureInPicture2, Trash2, UserSquare2 } from "lucide-react";
+import { Copy, ExternalLink, FolderSearch, History, MapPin, PictureInPicture2, Trash2, UserSquare2 } from "lucide-react";
 import type { Message } from "../../types";
 import * as ipc from "../../ipc/client";
 import { useSessionStore } from "../../stores/session";
@@ -12,6 +12,7 @@ import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { openPlayerWindow } from "../../lib/playerWindow";
 import { isImageMedia } from "../../lib/media";
 import { useMapEnabled } from "../map/MapView";
+import { ViewHistoryDialog } from "../stats/ViewHistoryDialog";
 
 export interface MessageMenuTarget {
   x: number;
@@ -45,6 +46,7 @@ export function MessageMenu({ menu, onClose }: MessageMenuProps) {
   const [confirmFor, setConfirmFor] = useState<Message | null>(null);
   const [deleteFile, setDeleteFile] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [historyFor, setHistoryFor] = useState<Message | null>(null);
 
   const items: ContextMenuEntry[] = [];
   const message = menu?.message;
@@ -116,6 +118,14 @@ export function MessageMenu({ menu, onClose }: MessageMenuProps) {
           toast.success("已设为会话头像");
         }, "无法设置头像"),
       });
+      items.push({
+        label: "观看记录",
+        icon: <History size={15} />,
+        onClick: () => {
+          onClose();
+          setHistoryFor(message);
+        },
+      });
     }
   }
   if (message && !isFolderWatch) {
@@ -154,6 +164,8 @@ export function MessageMenu({ menu, onClose }: MessageMenuProps) {
   return (
     <>
       <ContextMenu open={menu !== null && !empty} x={menu?.x ?? 0} y={menu?.y ?? 0} onClose={onClose} items={items} />
+
+      {lib && <ViewHistoryDialog lib={lib} message={historyFor} onClose={() => setHistoryFor(null)} />}
 
       <ConfirmDialog
         open={confirmFor !== null}

@@ -1,4 +1,4 @@
-import { Lock, Map, MessageCircle, Plus, Settings, Settings2 } from "lucide-react";
+import { ChartNoAxesColumn, Lock, Map, MessageCircle, Plus, Settings, Settings2 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "../../lib/cn";
 import { useLibrariesStore } from "../../stores/libraries";
@@ -54,8 +54,8 @@ export function Sidebar() {
   const appPassword = useSecurityStore((s) => s.status?.appPassword === true);
   const lockApp = useSecurityStore((s) => s.lock);
   const setSettingsOpen = useSessionStore((s) => s.setSettingsOpen);
-  const setMapOpen = useSessionStore((s) => s.setMapOpen);
-  const mapOpen = useSessionStore((s) => s.mapOpen);
+  const setView = useSessionStore((s) => s.setView);
+  const view = useSessionStore((s) => s.view);
   const mapEnabled = useMapEnabled();
   const setLibraryDialog = useSessionStore((s) => s.setLibraryDialog);
   const updateReady = useUpdateStore((s) => s.info?.available === true);
@@ -114,31 +114,36 @@ export function Sidebar() {
         />
       </nav>
 
-      {/* With the map off there is only one view, so nothing to switch. */}
-      {mapEnabled && (
-        <>
-          <div className="my-3 h-px w-6 bg-app-border" />
+      <div className="my-3 h-px w-6 bg-app-border" />
 
-          <div className="flex flex-col items-center gap-1">
-            <IconButton
-              label="会话"
-              tipSide="right"
-              size="lg"
-              icon={<MessageCircle size={20} />}
-              active={!mapOpen}
-              onClick={() => setMapOpen(false)}
-            />
-            <IconButton
-              label="地图"
-              tipSide="right"
-              size="lg"
-              icon={<Map size={20} />}
-              active={mapOpen}
-              onClick={() => setMapOpen(true)}
-            />
-          </div>
-        </>
-      )}
+      <div className="flex flex-col items-center gap-1">
+        <IconButton
+          label="会话"
+          tipSide="right"
+          size="lg"
+          icon={<MessageCircle size={20} />}
+          active={view === "chats"}
+          onClick={() => setView("chats")}
+        />
+        {mapEnabled && (
+          <IconButton
+            label="地图"
+            tipSide="right"
+            size="lg"
+            icon={<Map size={20} />}
+            active={view === "map"}
+            onClick={() => setView("map")}
+          />
+        )}
+        <IconButton
+          label="统计"
+          tipSide="right"
+          size="lg"
+          icon={<ChartNoAxesColumn size={20} />}
+          active={view === "stats"}
+          onClick={() => setView("stats")}
+        />
+      </div>
 
       <div className="flex-1" />
 

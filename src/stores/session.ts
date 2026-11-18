@@ -12,6 +12,9 @@ export interface RecoveryReveal {
   target: string;
 }
 
+/** What fills the window beside the space bar. */
+export type MainView = "chats" | "map" | "stats";
+
 interface SessionState {
   activeConversationId: number | null;
   profileDrawerOpen: boolean;
@@ -19,7 +22,7 @@ interface SessionState {
   settingsOpen: boolean;
   /** Section the settings dialog opens on. */
   settingsSection: string | null;
-  mapOpen: boolean;
+  view: MainView;
   /** Media the map should fly to once it has loaded ("show on map"). */
   mapFocus: number | null;
   lightboxMessageId: number | null;
@@ -33,7 +36,7 @@ interface SessionState {
   setProfileDrawerOpen: (open: boolean) => void;
   setNewConversationOpen: (open: boolean) => void;
   setSettingsOpen: (open: boolean, section?: string) => void;
-  setMapOpen: (open: boolean) => void;
+  setView: (view: MainView) => void;
   /** Open the map on one media item's position. */
   showOnMap: (mediaId: number) => void;
   clearMapFocus: () => void;
@@ -53,7 +56,7 @@ export const useSessionStore = create<SessionState>((set) => ({
   newConversationOpen: false,
   settingsOpen: false,
   settingsSection: null,
-  mapOpen: false,
+  view: "chats",
   mapFocus: null,
   lightboxMessageId: null,
   libraryDialog: null,
@@ -70,8 +73,8 @@ export const useSessionStore = create<SessionState>((set) => ({
   setNewConversationOpen: (open) => set({ newConversationOpen: open }),
   setSettingsOpen: (open, section) =>
     set({ settingsOpen: open, settingsSection: open ? (section ?? null) : null }),
-  setMapOpen: (open) => set({ mapOpen: open, mapFocus: null }),
-  showOnMap: (mediaId) => set({ mapOpen: true, mapFocus: mediaId, lightboxMessageId: null }),
+  setView: (view) => set({ view, mapFocus: null }),
+  showOnMap: (mediaId) => set({ view: "map", mapFocus: mediaId, lightboxMessageId: null }),
   clearMapFocus: () => set({ mapFocus: null }),
   openLightbox: (messageId) => set({ lightboxMessageId: messageId }),
   closeLightbox: () => set({ lightboxMessageId: null }),

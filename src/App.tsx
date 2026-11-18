@@ -9,6 +9,7 @@ import { NewConversationDialog } from "./components/dialogs/NewConversationDialo
 import { SettingsDialog } from "./components/dialogs/SettingsDialog";
 import { ProfileDrawer } from "./components/profile/ProfileDrawer";
 import { MapView } from "./components/map/MapView";
+import { StatsView } from "./components/stats/StatsView";
 import { LibraryLockedView } from "./components/library/LibraryLockedView";
 import {
   CreateLibraryDialog,
@@ -101,7 +102,7 @@ function Shell() {
       useLibrariesStore.getState().clear();
       resetLibraryCaches();
       useSessionStore.getState().setSettingsOpen(false);
-      useSessionStore.getState().setMapOpen(false);
+      useSessionStore.getState().setView("chats");
       useSessionStore.getState().setLibraryDialog(null);
     };
   }, []);
@@ -134,6 +135,7 @@ function Shell() {
           <ChatView />
           <ProfileDrawer />
           <MapView />
+          <StatsView />
         </>
       )}
       <NewConversationDialog />

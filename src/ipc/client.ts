@@ -13,6 +13,7 @@ import type {
   CreatedLibrary,
   DownloadEvent,
   GeotaggedMedia,
+  ItemHistory,
   IdleLockMinutes,
   ImportProgressEvent,
   LibraryInfo,
@@ -22,6 +23,7 @@ import type {
   SearchHit,
   SecurityStatus,
   BootError,
+  StatsOverview,
   StorageStats,
   UnlockMethod,
   UpdateChannel,
@@ -358,6 +360,16 @@ export async function statsPresenceTick(
 
 export async function statsClear(lib: string): Promise<void> {
   await invoke("stats_clear", { lib });
+}
+
+/** The statistics page: `edges` are bucket boundaries in wall-clock ms
+ *  (local time written as UTC), `utcEdges` the same instants in real time. */
+export async function statsOverview(lib: string, edges: number[], utcEdges: number[]): Promise<StatsOverview> {
+  return invoke<StatsOverview>("stats_overview", { lib, edges, utcEdges });
+}
+
+export async function statsItemHistory(lib: string, messageId: number): Promise<ItemHistory> {
+  return invoke<ItemHistory>("stats_item_history", { lib, messageId });
 }
 
 /** A video reached "one play", in any window. */

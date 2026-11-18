@@ -163,7 +163,57 @@ function install() {
       v.facts = { coveredMs: a.coveredMs, lastPosMs: a.lastPosMs, durationMs: a.durationMs };
     },
     stats_presence_tick: (a) => { presence[a.startAt] = a.endAt; },
-    stats_clear: () => { views.length = 0; for (const k of Object.keys(presence)) delete presence[k as any]; },
+    // Statistics page: made-up but stable numbers per bucket (seeded by its start).
+    stats_overview: (a) => {
+      const edges: number[] = a.edges;
+      const n = edges.length - 1;
+      const span = edges[1] - edges[0];
+      const hash = (x: number) => { let h = (x / 60_000) | 0; h = Math.imul(h ^ (h >>> 15), 2246822519); h = Math.imul(h ^ (h >>> 13), 3266489917); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+      const wallNow = now - new Date().getTimezoneOffset() * 60_000;
+      const cleared = views.length === 0 && settings.stats_mock_cleared === "1";
+      const per = span <= H ? 40 * 60_000 : span <= D ? 2.5 * H : 40 * H;
+      const buckets = Array.from({ length: n }, (_, i) => {
+        if (cleared || edges[i] > wallNow) return { totalMs: 0, videoMs: 0, imageMs: 0 };
+        const hourShape = span <= H ? Math.max(0, Math.sin(((new Date(edges[i]).getUTCHours() - 7) / 24) * Math.PI * 2) + 0.3) : 1;
+        const r = hash(edges[i]);
+        const total = r < 0.15 && span <= D ? 0 : Math.round(per * Math.max(r, 0.3) * hourShape * (span > 2 * D ? n === 1 ? 3 : 1 : 1));
+        const video = Math.round(total * (0.4 + hash(edges[i] + 1) * 0.5));
+        return { totalMs: total, videoMs: video, imageMs: Math.round((total - video) * 1.1) };
+      });
+      const totalMs = buckets.reduce((x, b) => x + b.totalMs, 0);
+      const shape = Array.from({ length: 24 }, (_, h) => Math.max(0, Math.sin(((h - 7) / 24) * Math.PI * 2) + 0.25) + (h === 21 ? 0.6 : 0));
+      const shapeSum = shape.reduce((x, y) => x + y, 0);
+      const hours = shape.map((v) => Math.round((v / shapeSum) * totalMs));
+      const media = messages.filter((m) => m.media && m.media.kind !== "other");
+      const weights = [0.24, 0.17, 0.12, 0.09, 0.07, 0.05];
+      const topItems = totalMs === 0 ? [] : media.slice(0, weights.length).map((m, i) => ({
+        messageId: m.id, mediaId: m.media!.id, convId: 1, convName: "2024 京都", kind: m.media!.kind, name: m.caption,
+        hasThumb: true, watchMs: Math.round(totalMs * weights[i]), plays: m.media!.kind === "video" ? 6 - i : 3,
+      })).sort((x, y) => y.watchMs - x.watchMs);
+      const convShare = [0.42, 0.2, 0.14, 0.09, 0.05, 0.03];
+      const topConvs = totalMs === 0 ? [] : conversations.slice(0, convShare.length).map((c, i) => ({ convId: c.id, name: c.name, watchMs: Math.round(totalMs * convShare[i]), plays: 20 - i * 4 }));
+      const added = Array.from({ length: n }, (_, i) => {
+        if (edges[i] > wallNow) return { image: 0, video: 0, other: 0 };
+        const r = hash(edges[i] + 7);
+        const k = span <= H ? 0.15 : span <= D ? 1 : 12;
+        return r < 0.5 ? { image: 0, video: 0, other: 0 } : { image: Math.round(r * 20 * k), video: Math.round(r * 3 * k), other: r > 0.9 ? 1 : 0 };
+      });
+      return {
+        totalMs, buckets, hours, plays: Math.round(totalMs / 90_000), topItems, topConvs, added,
+        itemsBefore: 2000, hasHistory: !cleared,
+      };
+    },
+    stats_item_history: (a) => {
+      const m = messages.find((x) => x.id === a.messageId);
+      if (!m || !m.media) return { totalMs: 0, plays: 0, views: [], viewCount: 0 };
+      const list = Array.from({ length: 9 }, (_, i) => ({
+        startedAt: now - i * 26 * H - 3 * H, tzOffset: i === 6 ? 540 : -new Date().getTimezoneOffset(),
+        watchMs: 5_000 + ((i * 7919) % 11) * 31_000, surface: i % 4 === 1 ? "popup" : i === 6 ? "map" : "viewer", counted: i !== 3,
+      }));
+      return { totalMs: list.reduce((x, v) => x + v.watchMs, 0), plays: list.filter((v) => v.counted).length, views: list, viewCount: list.length };
+    },
+    stats_clear: () => {
+      settings.stats_mock_cleared = "1"; views.length = 0; for (const k of Object.keys(presence)) delete presence[k as any]; },
     set_setting: (a) => { settings[a.key] = a.value; },
     list_libraries: () => libraries,
     unlock_library: (a) => { const l = libraries.find((x) => x.id === a.lib || x.id === a.id); if (l) l.unlocked = true; },

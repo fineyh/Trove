@@ -12,6 +12,7 @@ pub mod protocol;
 pub mod relocate;
 pub mod session;
 pub mod stats;
+pub mod stats_report;
 pub mod thumbs;
 pub mod transfer;
 pub mod volume_monitor;

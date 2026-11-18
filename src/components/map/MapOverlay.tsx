@@ -37,7 +37,7 @@ interface Selection {
 /** The map of one library. Mounted per library (keyed in MapView), so nothing
  *  here can outlive a switch. */
 export default function MapOverlay({ lib }: { lib: string }) {
-  const setMapOpen = useSessionStore((s) => s.setMapOpen);
+  const setView = useSessionStore((s) => s.setView);
   const setActiveConversation = useSessionStore((s) => s.setActiveConversation);
   const openLightbox = useSessionStore((s) => s.openLightbox);
   const focusId = useSessionStore((s) => s.mapFocus);
@@ -110,7 +110,7 @@ export default function MapOverlay({ lib }: { lib: string }) {
 
   const handleJump = (item: GeotaggedMedia) => {
     setViewer(null);
-    setMapOpen(false);
+    setView("chats");
     setActiveConversation(item.convId);
     void useMessagesStore.getState().load(item.convId);
     openLightbox(item.messageId);
@@ -131,7 +131,7 @@ export default function MapOverlay({ lib }: { lib: string }) {
           )}
         >
           {/* Back, on the left: an X here would sit right beside the window's close. */}
-          <IconButton label="返回会话" icon={<ArrowLeft size={18} />} onClick={() => setMapOpen(false)} />
+          <IconButton label="返回会话" icon={<ArrowLeft size={18} />} onClick={() => setView("chats")} />
           <span className="text-base font-semibold">地图</span>
           {!loading && (
             <span className="min-w-0 truncate text-xs text-app-muted">

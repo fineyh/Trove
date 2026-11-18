@@ -14,7 +14,7 @@ export function useMapEnabled(): boolean {
 }
 
 export function MapView() {
-  const open = useSessionStore((s) => s.mapOpen);
+  const open = useSessionStore((s) => s.view === "map");
   const enabled = useMapEnabled();
   const lib = useLibrariesStore((s) => s.current);
   if (!open || !enabled || lib === null) return null;

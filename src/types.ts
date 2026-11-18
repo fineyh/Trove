@@ -267,3 +267,63 @@ export interface CreatedLibrary {
 }
 
 export type UnlockMethod = "password" | "recovery";
+
+// ─── Statistics (ADR-056) ───────────────────────────────────────────────────
+
+export interface StatsBucket {
+  totalMs: number;
+  videoMs: number;
+  imageMs: number;
+}
+
+export interface StatsAdded {
+  image: number;
+  video: number;
+  other: number;
+}
+
+export interface StatsTopItem {
+  messageId: number;
+  mediaId: number | null;
+  convId: number;
+  convName: string;
+  kind: "image" | "video" | "other";
+  name: string;
+  hasThumb: boolean;
+  watchMs: number;
+  plays: number;
+}
+
+export interface StatsTopConv {
+  convId: number;
+  name: string;
+  watchMs: number;
+  plays: number;
+}
+
+export interface StatsOverview {
+  totalMs: number;
+  buckets: StatsBucket[];
+  hours: number[];
+  plays: number;
+  topItems: StatsTopItem[];
+  topConvs: StatsTopConv[];
+  added: StatsAdded[];
+  itemsBefore: number;
+  hasHistory: boolean;
+}
+
+export interface ViewEntry {
+  startedAt: number;
+  tzOffset: number;
+  watchMs: number;
+  surface: "viewer" | "popup" | "map";
+  counted: boolean;
+}
+
+export interface ItemHistory {
+  totalMs: number;
+  plays: number;
+  views: ViewEntry[];
+  viewCount: number;
+}

@@ -60,7 +60,7 @@ export function GeneralPane() {
             label="地图"
             checked={settings.mapTiles === "online"}
             onChange={(on) => {
-              if (!on) useSessionStore.getState().setMapOpen(false);
+              if (!on && useSessionStore.getState().view === "map") useSessionStore.getState().setView("chats");
               void set("mapTiles", on ? "online" : "off");
             }}
           />
