@@ -180,5 +180,7 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
     // Same treatment for the media sequence: drop it locally rather than
     // invalidating, so an open grid/viewer keeps its scroll position.
     useConvMediaStore.getState().removeLocal(convId, messageId);
+    // The list's preview line, time and count come from the newest message.
+    void useConversationsStore.getState().refresh();
   },
 }));

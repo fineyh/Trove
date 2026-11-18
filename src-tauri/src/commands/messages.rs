@@ -19,6 +19,9 @@ pub struct MediaPayload {
     /// file gone) — ADR-035.
     pub status: String,
     pub has_thumb: bool,
+    /// No thumbnail yet but one is still to be made: the UI waits for it
+    /// instead of calling the item broken.
+    pub thumb_pending: bool,
     /// Has a GPS position, so the UI can offer "show on map". The coordinates
     /// themselves only travel with the map's own query.
     pub has_geo: bool,
@@ -49,7 +52,8 @@ const MESSAGE_COLUMNS: &str = "
     md.relpath, md.state, COALESCE(v.online, 0),
     EXISTS (SELECT 1 FROM thumbs t WHERE t.media_id = md.id),
     md.kind IN ('image', 'video') AND md.lat IS NOT NULL AND md.lon IS NOT NULL,
-    md.taken_at, md.taken_offset, md.peaks";
+    md.taken_at, md.taken_offset, md.peaks,
+    COALESCE(md.thumb_scanned, 0) = 0 AND md.kind IN ('image', 'video')";
 
 const MESSAGE_FROM: &str = "
     FROM messages m
@@ -94,6 +98,7 @@ fn row_to_message(row: &rusqlite::Row) -> rusqlite::Result<MessagePayload> {
                 taken_at: row.get(16)?,
                 taken_offset: row.get(17)?,
                 peaks: row.get(18)?,
+                thumb_pending: row.get::<_, Option<i64>>(19)?.unwrap_or(0) != 0,
             })
         }
         None => None,
@@ -347,14 +352,15 @@ mod tests {
              CREATE TABLE media (id INTEGER PRIMARY KEY, volume_id INTEGER, kind TEXT, width INTEGER,
                                  height INTEGER, duration_ms INTEGER, size_bytes INTEGER,
                                  relpath TEXT, state TEXT NOT NULL, lat REAL, lon REAL,
-                                 taken_at INTEGER, taken_offset INTEGER, peaks BLOB);
+                                 taken_at INTEGER, taken_offset INTEGER, peaks BLOB,
+                                 thumb_scanned INTEGER NOT NULL DEFAULT 0);
              CREATE TABLE thumbs (media_id INTEGER PRIMARY KEY);
              CREATE TABLE messages (
                id INTEGER PRIMARY KEY, conv_id INTEGER NOT NULL, media_id INTEGER,
                caption TEXT, play_count INTEGER DEFAULT 0, created_at INTEGER NOT NULL
              );
              INSERT INTO volumes VALUES (1, 0), (2, 1);
-             INSERT INTO media VALUES (1, 1, 'image', NULL, NULL, NULL, 1, 'a.HEIC', 'live', 35.0, 135.7, 1556881200000, 540, NULL);",
+             INSERT INTO media VALUES (1, 1, 'image', NULL, NULL, NULL, 1, 'a.HEIC', 'live', 35.0, 135.7, 1556881200000, 540, NULL, 1);",
         )
         .unwrap();
         let rows = [
@@ -465,7 +471,7 @@ mod tests {
     fn missing_files_are_never_hidden() {
         let conn = fixture();
         conn.execute_batch(
-            "INSERT INTO media VALUES (2, 2, 'image', NULL, NULL, NULL, 1, 'b.jpg', 'broken', NULL, NULL, NULL, NULL, NULL);
+            "INSERT INTO media VALUES (2, 2, 'image', NULL, NULL, NULL, 1, 'b.jpg', 'broken', NULL, NULL, NULL, NULL, NULL, 0);
              INSERT INTO messages (id, conv_id, media_id, created_at) VALUES (20, 1, 2, 950);",
         )
         .unwrap();

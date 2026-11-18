@@ -4,7 +4,8 @@ import type { Message } from "../../types";
 import * as ipc from "../../ipc/client";
 import { useSessionStore } from "../../stores/session";
 import { useLibrariesStore } from "../../stores/libraries";
-import { useThumbUrl } from "../../stores/thumbs";
+import { useThumbPending, useThumbUrl } from "../../stores/thumbs";
+import { isHeicExt } from "../../lib/heic";
 import { toast } from "../../stores/toast";
 import { MessageMenu, type MessageMenuTarget } from "./MessageMenu";
 import { AudioMessage } from "./AudioMessage";
@@ -60,11 +61,15 @@ function ImageMessage({ message, tile }: MessageBubbleProps) {
   const open = useSessionStore((s) => s.openLightbox);
   const media = message.media!;
   const thumb = useThumbUrl(lib, media);
-  const [failed, setFailed] = useState(false);
+  const pending = useThumbPending(lib, media);
   // No thumbnail yet: plain formats can show the original meanwhile; HEIC
   // waits for the worker (decoding it here would double the work).
-  const fallback = !thumb && media.ext !== "heic" && media.ext !== "heif" && lib ? ipc.mediaSrc(lib, media.id) : null;
+  const fallback = !thumb && !isHeicExt(media.ext) && lib ? ipc.mediaSrc(lib, media.id) : null;
   const src = thumb ?? fallback;
+  // Remembered per URL: when the thumbnail arrives after the original failed
+  // to load, the new URL gets its own try instead of staying broken.
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const failed = src !== null && failedSrc === src;
 
   return (
     <button
@@ -73,22 +78,22 @@ function ImageMessage({ message, tile }: MessageBubbleProps) {
       className={cn("relative block overflow-hidden", MEDIA_FRAME)}
       style={previewBox(media.width, media.height, tile)}
     >
-      {failed ? (
-        <span className="flex h-full w-full items-center justify-center text-app-muted">
-          <ImageOff size={20} />
-        </span>
-      ) : src ? (
+      {src && !failed ? (
         <img
           src={src}
           alt={message.caption ?? ""}
           loading="lazy"
           decoding="async"
           draggable={false}
-          onError={() => setFailed(true)}
+          onError={() => setFailedSrc(src)}
           className="h-full w-full object-cover"
         />
-      ) : (
+      ) : pending ? (
         <Shimmer />
+      ) : (
+        <span className="flex h-full w-full items-center justify-center text-app-muted">
+          <ImageOff size={20} />
+        </span>
       )}
     </button>
   );

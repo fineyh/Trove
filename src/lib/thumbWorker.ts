@@ -157,6 +157,7 @@ async function runOne(lib: string, job: ipc.ThumbJob): Promise<void> {
     // Undecodable here (unsupported codec, truncated file…): mark it so the
     // queue moves on. The UI falls back to an icon for it.
     await ipc.thumbsFail(lib, job.mediaId).catch(() => {});
+    useThumbsStore.getState().markFailed(lib, job.mediaId);
   }
 }
 

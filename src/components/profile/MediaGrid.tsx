@@ -5,7 +5,7 @@ import { mediaSrc, openMedia } from "../../ipc/client";
 import { EMPTY_MEDIA, useConvMediaStore } from "../../stores/convMedia";
 import { useLibrariesStore } from "../../stores/libraries";
 import { useSessionStore } from "../../stores/session";
-import { useThumbUrl } from "../../stores/thumbs";
+import { useThumbPending, useThumbUrl } from "../../stores/thumbs";
 import { toast } from "../../stores/toast";
 import { Button } from "../ui/Button";
 import { MessageMenu, type MessageMenuTarget } from "../chat/MessageMenu";
@@ -150,13 +150,16 @@ function GridItem({
   const media = message.media!;
   const thumb = useThumbUrl(lib, media);
   const isImage = isImageMedia(media);
-  const [failed, setFailed] = useState(false);
+  const pending = useThumbPending(lib, media);
   // Before its thumbnail exists, a plain image can show the original.
   const fallback =
     !thumb && isImage && !isHeicExt(media.ext) && lib && media.status === "ok"
       ? mediaSrc(lib, media.id)
       : null;
   const src = thumb ?? fallback;
+  // Per URL, so a thumbnail that arrives after a failed original still shows.
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const failed = src !== null && failedSrc === src;
   const offline = media.status === "offline";
   const missing = media.status === "missing";
   const audio = media.kind === "audio";
@@ -189,7 +192,7 @@ function GridItem({
           loading="lazy"
           decoding="async"
           draggable={false}
-          onError={() => setFailed(true)}
+          onError={() => setFailedSrc(src)}
           className={cn(
             "h-full w-full object-cover transition-opacity duration-fast hover:opacity-90",
             (offline || missing) && "opacity-60 grayscale",
@@ -197,7 +200,7 @@ function GridItem({
         />
       ) : (
         <span className="flex h-full w-full items-center justify-center text-app-muted">
-          {missing || failed ? <ImageOff size={18} /> : offline ? <CloudOff size={18} /> : media.kind === "video" ? <Play size={18} /> : <Loader2 size={16} className="animate-spin" />}
+          {pending && !missing && !offline ? <Loader2 size={16} className="animate-spin" /> : missing || failed ? <ImageOff size={18} /> : offline ? <CloudOff size={18} /> : media.kind === "video" ? <Play size={18} /> : <ImageOff size={18} />}
         </span>
       )}
       {media.kind === "video" && src && !failed && (

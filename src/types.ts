@@ -37,6 +37,8 @@ export interface MediaPayload {
   ext: string;
   status: MediaStatus;
   hasThumb: boolean;
+  /** No thumbnail yet, but the worker will still make one. */
+  thumbPending?: boolean;
   /** Has a GPS position (can be shown on the map). */
   hasGeo: boolean;
   /** Capture time, UTC ms; `takenOffset` is the UTC offset in minutes where it
