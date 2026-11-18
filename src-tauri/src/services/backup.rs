@@ -138,7 +138,7 @@ pub fn stage(src: &Path, data_dir: &Path) -> AppResult<Staged> {
         let mut entry = zip.by_index(i).map_err(zerr)?;
         let name = entry
             .enclosed_name()
-            .ok_or_else(|| AppError::InvalidArg("备份里有不安全的路径".into()))?
+            .ok_or_else(|| AppError::InvalidArg("备份文件包含不安全的路径".into()))?
             .to_path_buf();
         if entry.is_dir() || name.as_os_str().is_empty() {
             continue;
@@ -152,25 +152,25 @@ pub fn stage(src: &Path, data_dir: &Path) -> AppResult<Staged> {
         if name == Path::new(MANIFEST_NAME) {
             manifest = Some(
                 serde_json::from_slice(&buf)
-                    .map_err(|e| AppError::InvalidArg(format!("备份清单无法解析：{e}")))?,
+                    .map_err(|e| AppError::InvalidArg(format!("备份已损坏，无法读取清单：{e}")))?,
             );
         }
         fs::write(&out, &buf)?;
     }
-    let manifest = manifest.ok_or_else(|| AppError::InvalidArg("备份里缺少清单".into()))?;
+    let manifest = manifest.ok_or_else(|| AppError::InvalidArg("备份不完整：缺少清单".into()))?;
     if manifest.format_version != FORMAT_VERSION {
         let _ = fs::remove_dir_all(&scratch);
         return Err(AppError::InvalidArg(format!(
-            "这个备份是旧格式（v{}），当前版本无法导入",
+            "此备份的格式过旧（v{}），无法导入",
             manifest.format_version
         )));
     }
     let kr = Keyring::load(&scratch)
-        .map_err(|e| AppError::InvalidArg(format!("备份里的钥匙环无法读取：{e}")))?
-        .ok_or_else(|| AppError::InvalidArg("备份里缺少钥匙环".into()))?;
+        .map_err(|e| AppError::InvalidArg(format!("备份已损坏，无法读取密钥信息：{e}")))?
+        .ok_or_else(|| AppError::InvalidArg("备份不完整：缺少密钥信息".into()))?;
     if !scratch.join("libraries").join(format!("{}.db", kr.main)).is_file() {
         let _ = fs::remove_dir_all(&scratch);
-        return Err(AppError::InvalidArg("备份里缺少主库".into()));
+        return Err(AppError::InvalidArg("备份不完整：缺少主空间".into()));
     }
     Ok(Staged { manifest, dir: scratch })
 }

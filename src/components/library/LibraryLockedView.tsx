@@ -21,10 +21,10 @@ export function LibraryLockedView({ lib }: { lib: LibraryInfo }) {
           <div className="text-sm text-app-muted">{lib.keyfilePath ? "输入密码，或连接存放密钥文件的磁盘" : "输入密码解锁"}</div>
         </div>
 
-        <UnlockForm key={lib.id} allowRecovery={lib.hasRecovery} passwordPlaceholder="库密码" onUnlock={(s, m) => unlock(lib.id, s, m)} />
+        <UnlockForm key={lib.id} allowRecovery={lib.hasRecovery} passwordPlaceholder="空间密码" onUnlock={(s, m) => unlock(lib.id, s, m)} />
 
         <Button size="sm" variant="ghost" className="text-app-secondary" onClick={() => setLibraryDialog({ mode: "settings", id: lib.id })}>
-          库设置
+          空间设置
         </Button>
       </div>
     </div>

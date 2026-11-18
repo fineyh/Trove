@@ -2,8 +2,11 @@ import { useState } from "react";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import * as ipc from "../../../ipc/client";
 import { useSecurityStore } from "../../../stores/security";
+import { useSettingsStore } from "../../../stores/settings";
+import { toast } from "../../../stores/toast";
+import { Copy, FolderOpen } from "lucide-react";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
-import { Button } from "../../ui/Button";
+import { Button, IconButton } from "../../ui/Button";
 import { TextField } from "../../ui/Field";
 import { Notice } from "../../ui/Notice";
 import { Switch } from "../../ui/Switch";
@@ -16,6 +19,7 @@ import { Group, Page, Row } from "../SettingsKit";
 
 export function BackupPane() {
   const appPassword = useSecurityStore((s) => s.status?.appPassword === true);
+  const dataDir = useSettingsStore((s) => s.dataDir);
 
   const [busy, setBusy] = useState<"export" | "import" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -83,7 +87,7 @@ export function BackupPane() {
 
   return (
     <Page title="备份与恢复">
-      <Group title="备份" footer="包含所有库、会话和缩略图，不含照片和视频原文件。">
+      <Group title="备份" footer="包含所有空间、会话和缩略图，不含原文件。">
         {appPassword ? (
           <Row label="备份密码" description="与应用密码相同" />
         ) : (
@@ -119,7 +123,7 @@ export function BackupPane() {
           label="导出备份"
           description={
             exported
-              ? `已导出 ${formatBytes(exported.bytes)}${exported.passwordProtected ? "，有密码保护" : ""}`
+              ? `已导出 ${formatBytes(exported.bytes)}${exported.passwordProtected ? " · 有密码" : ""}`
               : undefined
           }
         >
@@ -130,10 +134,35 @@ export function BackupPane() {
       </Group>
 
       <Group title="恢复">
-        <Row label="从备份恢复" description="当前数据会先移到数据目录的 backups 文件夹">
+        <Row label="从备份恢复">
           <Button size="sm" onClick={handlePickImport} disabled={busy !== null}>
             选择文件…
           </Button>
+        </Row>
+      </Group>
+
+      <Group title="数据文件夹">
+        <Row label={<span className="selectable block truncate font-mono text-xs">{dataDir ?? "—"}</span>}>
+          <IconButton
+            label="复制路径"
+            size="sm"
+            icon={<Copy size={14} />}
+            disabled={!dataDir}
+            onClick={() =>
+              dataDir &&
+              void navigator.clipboard
+                .writeText(dataDir)
+                .then(() => toast.success("已复制路径"))
+                .catch((e) => toast.error("无法复制", e))
+            }
+          />
+          <IconButton
+            label="在资源管理器中打开"
+            size="sm"
+            icon={<FolderOpen size={14} />}
+            disabled={!dataDir}
+            onClick={() => dataDir && void ipc.openPath(dataDir).catch((e) => toast.error("无法打开文件夹", e))}
+          />
         </Row>
       </Group>
 
@@ -145,7 +174,7 @@ export function BackupPane() {
         title="从备份恢复"
         message={
           <div className="flex flex-col gap-2">
-            <span>当前数据会被替换，Trove 随后重启。</span>
+            <span>将用备份替换当前数据，并重新启动 Trove。现有数据会移到数据文件夹中的 backups 文件夹。</span>
             <span className="selectable break-all font-mono text-xs text-app-muted">{pendingImportPath}</span>
           </div>
         }

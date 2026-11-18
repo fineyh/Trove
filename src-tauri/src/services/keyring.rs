@@ -252,7 +252,7 @@ fn open_slots(owner: &str, slots: &[Slot], secret: &Secret, ak: Option<&SecretKe
 pub enum WrongSecret {
     #[error("密码或恢复密钥不正确")]
     Mismatch,
-    #[error("这个库没有这种解锁方式")]
+    #[error("此空间不支持这种解锁方式")]
     NoSuchSlot,
 }
 
@@ -522,7 +522,7 @@ impl Keyring {
 
     pub fn change_app_password(&mut self, ak: &SecretKey, password: &str) -> Result<()> {
         let AppKey::Sealed { slots } = &mut self.app else {
-            bail!("没有设置启动密码");
+            bail!("未开启应用锁");
         };
         slots.retain(|s| s.kind() != SlotKind::Password);
         slots.insert(0, password_slot(APP_OWNER, password, ak)?);
@@ -531,7 +531,7 @@ impl Keyring {
 
     pub fn reset_app_recovery(&mut self, ak: &SecretKey) -> Result<String> {
         let AppKey::Sealed { slots } = &mut self.app else {
-            bail!("没有设置启动密码");
+            bail!("未开启应用锁");
         };
         slots.retain(|s| s.kind() != SlotKind::Recovery);
         let (rec, code) = recovery_slot(APP_OWNER, ak)?;

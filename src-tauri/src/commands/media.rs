@@ -58,7 +58,7 @@ pub struct ImportFilesArgs {
 }
 
 /// Shown when a second import is attempted while one is still running.
-pub(crate) const BUSY: &str = "已有导入任务正在进行，请先等待完成或取消";
+pub(crate) const BUSY: &str = "正在导入其他文件，请等待完成或先停止";
 
 /// How many files to get through between progress events. One event per file
 /// would flood the IPC channel on a 10k-file folder; 10 keeps the bar smooth.

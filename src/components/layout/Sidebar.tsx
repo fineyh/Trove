@@ -65,7 +65,7 @@ export function Sidebar() {
   if (menu) {
     const l = menu.lib;
     menuItems.push({
-      label: "库设置",
+      label: "空间设置",
       icon: <Settings2 size={15} />,
       onClick: () => {
         setMenu(null);
@@ -81,7 +81,7 @@ export function Sidebar() {
           void useLibrariesStore
             .getState()
             .lock(l.id)
-            .catch((e) => toast.error("锁定失败", e));
+            .catch((e) => toast.error("无法锁定", e));
         },
       });
     }
@@ -105,7 +105,7 @@ export function Sidebar() {
           />
         ))}
         <IconButton
-          label="新建库"
+          label="新建空间"
           tipSide="right"
           size="lg"
           icon={<Plus size={18} />}
@@ -149,7 +149,7 @@ export function Sidebar() {
             tipSide="right"
             size="lg"
             icon={<Lock size={18} />}
-            onClick={() => void lockApp().catch((e) => toast.error("锁定失败", e))}
+            onClick={() => void lockApp().catch((e) => toast.error("无法锁定", e))}
           />
         )}
         <span className="relative">

@@ -50,7 +50,7 @@ export function ProfileDrawer() {
       await rename(conv.id, next);
       setRenaming(null);
     } catch (e) {
-      toast.error("重命名失败", e);
+      toast.error("无法重命名", e);
     } finally {
       setRenameBusy(false);
     }
@@ -105,7 +105,7 @@ export function ProfileDrawer() {
                 filters: [{ name: "图片", extensions: ["jpg", "jpeg", "png", "webp", "gif", "avif", "bmp"] }],
               })
                 .then((p) => (typeof p === "string" ? setAvatar(conv.id, p) : undefined))
-                .catch((e) => toast.error("更换头像失败", e));
+                .catch((e) => toast.error("无法更换头像", e));
             },
           },
           ...(conv.hasAvatar
@@ -115,7 +115,7 @@ export function ProfileDrawer() {
                   icon: <ImageMinus size={15} />,
                   onClick: () => {
                     setMenu(null);
-                    void clearAvatar(conv.id).catch((e) => toast.error("移除头像失败", e));
+                    void clearAvatar(conv.id).catch((e) => toast.error("无法移除头像", e));
                   },
                 },
               ]
@@ -125,12 +125,12 @@ export function ProfileDrawer() {
             icon: conv.pinned ? <PinOff size={15} /> : <Pin size={15} />,
             onClick: () => {
               setMenu(null);
-              void togglePinned(conv.id, !conv.pinned).catch((e) => toast.error("置顶失败", e));
+              void togglePinned(conv.id, !conv.pinned).catch((e) => toast.error("无法置顶", e));
             },
           },
           "separator",
           {
-            label: "移到其他库…",
+            label: "移到其他空间…",
             icon: <ArrowRightLeft size={15} />,
             disabled: libraryCount < 2,
             onClick: () => {

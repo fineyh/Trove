@@ -110,10 +110,6 @@ export async function deleteLegacyCopy(): Promise<void> {
   await invoke("delete_legacy_copy");
 }
 
-export async function scheduleWebviewPurge(): Promise<void> {
-  await invoke("schedule_webview_purge");
-}
-
 export function onSecurityChanged(handler: () => void): Promise<UnlistenFn> {
   return subscribe<null>("security:changed", () => handler());
 }

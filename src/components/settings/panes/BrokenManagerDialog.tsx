@@ -13,13 +13,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import * as ipc from "../../../ipc/client";
 import { useConversationsStore } from "../../../stores/conversations";
-import { currentLib, useLibrariesStore } from "../../../stores/libraries";
+import { stillOn } from "../../../stores/libraries";
+import { useSettingsStore } from "../../../stores/settings";
+import { toast } from "../../../stores/toast";
 import type {
   BrokenGroup,
   BrokenItem,
   RepairOutcome,
   RepairScope,
 } from "../../../types";
+import { Select } from "../../ui/Select";
 import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { Button, IconButton } from "../../ui/Button";
 import { EmptyState } from "../../ui/EmptyState";
@@ -30,9 +33,16 @@ import { cn } from "../../../lib/cn";
 import { errText } from "../../../lib/errors";
 
 interface BrokenManagerDialogProps {
-  scope: RepairScope;
+  /** The space whose missing files to list. */
+  lib: string;
   onClose: () => void;
 }
+
+const SCOPE_OPTIONS: { value: RepairScope; label: string }[] = [
+  { value: "lastFolderOnly", label: "原文件夹" },
+  { value: "lastFolderRecursive", label: "原文件夹及子文件夹" },
+  { value: "allMountedVolumes", label: "所有磁盘" },
+];
 
 type RowTone = "error" | "warn";
 
@@ -41,8 +51,13 @@ interface RowHint {
   text: string;
 }
 
-export function BrokenManagerDialog({ scope, onClose }: BrokenManagerDialogProps) {
-  const refreshConvs = useConversationsStore((s) => s.refresh);
+export function BrokenManagerDialog({ lib, onClose }: BrokenManagerDialogProps) {
+  const refreshConvsNow = useConversationsStore((s) => s.refresh);
+  const refreshConvs = useCallback(async () => {
+    if (stillOn(lib)) await refreshConvsNow();
+  }, [lib, refreshConvsNow]);
+  const scope = useSettingsStore((s) => s.settings.repairDefaultScope);
+  const saveSetting = useSettingsStore((s) => s.save);
 
   const [groups, setGroups] = useState<BrokenGroup[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -61,7 +76,7 @@ export function BrokenManagerDialog({ scope, onClose }: BrokenManagerDialogProps
 
   const loadList = useCallback(async () => {
     try {
-      const list = await ipc.listBrokenPointers(currentLib());
+      const list = await ipc.listBrokenPointers(lib);
       setGroups(list);
       setLoadError(null);
     } catch (e) {
@@ -69,7 +84,7 @@ export function BrokenManagerDialog({ scope, onClose }: BrokenManagerDialogProps
       setLoadError(errText(e));
       setGroups([]);
     }
-  }, []);
+  }, [lib]);
 
   useEffect(() => {
     void loadList();
@@ -128,8 +143,8 @@ export function BrokenManagerDialog({ scope, onClose }: BrokenManagerDialogProps
     // notFound / ambiguous → fanout to all rows sharing this media.
     const text =
       outcome.status === "notFound"
-        ? "未找到匹配文件，请用「手动选」指定路径"
-        : `找到 ${outcome.candidates.length} 个候选文件，请用「手动选」指定`;
+        ? "未找到匹配的文件，请指定新位置"
+        : `找到 ${outcome.candidates.length} 个可能的文件，请指定新位置`;
     const tone: RowTone = outcome.status === "notFound" ? "error" : "warn";
     setRowHints((prev) => {
       const next = new Map(prev);
@@ -155,7 +170,7 @@ export function BrokenManagerDialog({ scope, onClose }: BrokenManagerDialogProps
     });
     setHint(sourceMessageId, null);
     try {
-      const outcome = await ipc.repairMedia(currentLib(), { mediaId, scope, explicitPath });
+      const outcome = await ipc.repairMedia(lib, { mediaId, scope, explicitPath });
       applyRepairOutcome(mediaId, outcome, sourceMessageId);
       if (outcome.status === "repaired") {
         // Conversation messages should refresh too (preview, etc.)
@@ -163,7 +178,7 @@ export function BrokenManagerDialog({ scope, onClose }: BrokenManagerDialogProps
       }
     } catch (e) {
       console.error("repair_media failed", e);
-      setHint(sourceMessageId, { tone: "error", text: `重新链接失败：${errText(e)}` });
+      setHint(sourceMessageId, { tone: "error", text: `无法重新链接：${errText(e)}` });
     } finally {
       setProcessingMedia((prev) => {
         const next = new Set(prev);
@@ -184,7 +199,7 @@ export function BrokenManagerDialog({ scope, onClose }: BrokenManagerDialogProps
       await runRepair(item.mediaId, item.messageId, picked);
     } catch (e) {
       console.error("open dialog failed", e);
-      setHint(item.messageId, { tone: "error", text: `打开文件选择器失败: ${errText(e)}` });
+      setHint(item.messageId, { tone: "error", text: `无法选择文件：${errText(e)}` });
     }
   };
 
@@ -225,7 +240,7 @@ export function BrokenManagerDialog({ scope, onClose }: BrokenManagerDialogProps
     if (!pendingDelete) return;
     setDeleteBusy(true);
     try {
-      await ipc.deleteMessage(currentLib(), pendingDelete.item.messageId);
+      await ipc.deleteMessage(lib, pendingDelete.item.messageId);
       // Reload list — backend may have cascaded media + broken_pointers cleanup.
       await loadList();
       void refreshConvs();
@@ -234,7 +249,7 @@ export function BrokenManagerDialog({ scope, onClose }: BrokenManagerDialogProps
       console.error("delete_message failed", e);
       setHint(pendingDelete.item.messageId, {
         tone: "error",
-        text: `删除失败: ${errText(e)}`,
+        text: `无法删除：${errText(e)}`,
       });
     } finally {
       setDeleteBusy(false);
@@ -257,9 +272,16 @@ export function BrokenManagerDialog({ scope, onClose }: BrokenManagerDialogProps
           <div className="flex flex-1 flex-col">
             <span className="text-base font-semibold">缺失的文件</span>
             <span className="text-xs text-app-muted">
-              {groups === null ? "正在读取…" : `${totalCount} 个 · 自动匹配或手动指定新位置`}
+              {groups === null ? "正在读取…" : `${totalCount} 个`}
             </span>
           </div>
+          <span className="text-xs text-app-muted">查找范围</span>
+          <Select
+            label="查找范围"
+            value={scope}
+            options={SCOPE_OPTIONS}
+            onChange={(v) => void saveSetting("repairDefaultScope", v).catch((e) => toast.error("无法保存设置", e))}
+          />
           <IconButton label="关闭" noTip size="sm" icon={<X size={16} />} onClick={onClose} className="-mr-2" />
         </div>
 
@@ -283,6 +305,7 @@ export function BrokenManagerDialog({ scope, onClose }: BrokenManagerDialogProps
                   batchProgress={batchProgress.get(g.convId)}
                   rowHints={rowHints}
                   onAutoAll={() => void handleAutoAll(g)}
+                  lib={lib}
                   onAuto={handleAuto}
                   onManual={(it) => void handleManual(it)}
                   onDelete={(it) => setPendingDelete({ convName: g.convName, item: it })}
@@ -297,7 +320,7 @@ export function BrokenManagerDialog({ scope, onClose }: BrokenManagerDialogProps
         open={pendingDelete !== null}
         variant="danger"
         title="删除消息"
-        message={pendingDelete ? `从「${pendingDelete.convName}」中删除这条消息。` : ""}
+        message={pendingDelete ? `将从「${pendingDelete.convName}」中删除这条消息，磁盘上的文件不受影响。` : ""}
         confirmText="删除"
         busy={deleteBusy}
         onConfirm={() => void handleDelete()}
@@ -309,6 +332,7 @@ export function BrokenManagerDialog({ scope, onClose }: BrokenManagerDialogProps
 }
 
 interface GroupSectionProps {
+  lib: string;
   group: BrokenGroup;
   expanded: boolean;
   onToggle: () => void;
@@ -322,6 +346,7 @@ interface GroupSectionProps {
 }
 
 function GroupSection({
+  lib,
   group,
   expanded,
   onToggle,
@@ -360,6 +385,7 @@ function GroupSection({
           {group.items.map((it) => (
             <BrokenRow
               key={it.messageId}
+              lib={lib}
               item={it}
               busy={processingMedia.has(it.mediaId)}
               hint={rowHints.get(it.messageId)}
@@ -375,6 +401,7 @@ function GroupSection({
 }
 
 interface BrokenRowProps {
+  lib: string;
   item: BrokenItem;
   busy: boolean;
   hint: RowHint | undefined;
@@ -383,16 +410,15 @@ interface BrokenRowProps {
   onDelete: () => void;
 }
 
-function BrokenRow({ item, busy, hint, onAuto, onManual, onDelete }: BrokenRowProps) {
+function BrokenRow({ lib, item, busy, hint, onAuto, onManual, onDelete }: BrokenRowProps) {
   const Icon = item.kind === "video" ? FileVideo : FileImage;
-  const lib = useLibrariesStore((s) => s.current);
   const displayPath = item.lastKnownRelpath ?? "路径未知";
   const volumeLabel = item.lastKnownVolumeLabel;
   return (
     <li className="group flex items-center gap-3 px-3 py-2">
       {/* The thumbnail outlives the file: it's how you tell what went missing. */}
       <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-app-subtle text-app-muted">
-        {item.hasThumb && lib ? (
+        {item.hasThumb ? (
           <img src={ipc.thumbSrc(lib, item.mediaId)} alt="" className="h-full w-full object-cover" draggable={false} />
         ) : (
           <Icon size={18} />

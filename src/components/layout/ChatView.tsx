@@ -74,7 +74,7 @@ export function ChatView() {
               {conv.sourceOffline ? (
                 <span className="flex items-center gap-1 text-app-warning">
                   <CloudOff size={11} />
-                  磁盘未连接
+                  离线
                 </span>
               ) : (
                 <>

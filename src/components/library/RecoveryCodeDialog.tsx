@@ -30,7 +30,7 @@ export function RecoveryCodeDialog() {
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
     } catch (e) {
-      toast.error("复制失败", e);
+      toast.error("无法复制", e);
     }
   };
 
@@ -42,7 +42,7 @@ export function RecoveryCodeDialog() {
       onClose={() => close(null)}
       width="md"
       title="保存恢复密钥"
-      subtitle={`忘记「${recovery.target}」的密码时用它解锁，只显示这一次`}
+      subtitle={`忘记「${recovery.target}」的密码时，可用它解锁。此密钥仅显示一次`}
       footer={
         <>
           <label className="mr-auto flex items-center gap-2 text-sm">
@@ -52,7 +52,7 @@ export function RecoveryCodeDialog() {
               onChange={(e) => setSaved(e.target.checked)}
               className="h-4 w-4 accent-[rgb(var(--accent))]"
             />
-            已保存在安全的地方
+            我已妥善保存
           </label>
           <Button variant="primary" disabled={!saved} onClick={() => close(null)}>
             完成
@@ -77,7 +77,7 @@ export function RecoveryCodeDialog() {
         >
           {copied ? "已复制" : "复制"}
         </Button>
-        <p className="text-xs text-app-muted">抄在纸上或存进密码管理器，不要和数据放在一起。输入时不区分大小写。</p>
+        <p className="text-xs text-app-muted">请写下或存入密码管理器，并与数据分开保管。输入时不区分大小写。</p>
       </div>
     </Modal>
   );

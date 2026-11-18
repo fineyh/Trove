@@ -58,9 +58,9 @@ export class ErrorBoundary extends Component<Props, State> {
           <div className="flex flex-col gap-1">
             <div className="flex items-center gap-2 text-base font-semibold">
               <AlertTriangle size={18} className="text-app-danger" />
-              界面出错了
+              界面出现问题
             </div>
-            <div className="text-sm text-app-secondary">数据没有受影响。</div>
+            <div className="text-sm text-app-secondary">数据未受影响。</div>
           </div>
 
           <div className="selectable max-h-48 overflow-auto rounded-lg bg-app-subtle px-3 py-2 text-xs">

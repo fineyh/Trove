@@ -86,7 +86,7 @@ export function MapPanel({ lib, items, selected, onBack, onCollapse, onOpen }: M
       </header>
 
       {items.length === 0 ? (
-        <EmptyState className="flex-1" title="这里没有照片或视频" />
+        <EmptyState className="flex-1" title="此区域没有图片或视频" />
       ) : (
         <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
           {groups.map((g, gi) => (

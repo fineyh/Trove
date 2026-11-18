@@ -212,13 +212,13 @@ export function MapPhotoViewer({
               <img src={offlineThumb} alt="" className="max-h-[50vh] rounded-xl opacity-80" draggable={false} />
             )}
             <div className="rounded-full bg-white/10 px-4 py-1.5 text-sm text-white/80">
-              {current.status === "offline" ? "离线 · 磁盘未连接" : "缺失"}
+              {current.status === "offline" ? "离线" : "缺失"}
             </div>
           </div>
         ) : isImage ? (
           image.status === "error" ? (
             <div className="rounded-lg border border-dashed border-white/30 px-6 py-8 text-sm text-white/70">
-              无法预览这个格式
+              无法预览此格式
             </div>
           ) : image.status === "loading" || !image.url ? (
             <Loader2 size={28} className="animate-spin text-white/70" />

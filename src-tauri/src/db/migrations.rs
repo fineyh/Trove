@@ -201,7 +201,7 @@ pub fn run(conn: &Connection) -> AppResult<()> {
     // 全在这个文件里，mod.rs 的 `open_*` 已经 `?`-传播 AppResult，不需要改动。
     if version > SCHEMA_LATEST {
         return Err(AppError::Other(
-            crate::error::NewerData { what: "库 schema", found: version, supported: SCHEMA_LATEST }.into(),
+            crate::error::NewerData { what: "空间数据", found: version, supported: SCHEMA_LATEST }.into(),
         ));
     }
 

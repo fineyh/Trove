@@ -15,11 +15,11 @@ import appIcon from "../../../src-tauri/icons/128x128@2x.png";
 /** One sentence per cause: what happened, then what to do. The raw error
  *  stays under 详细信息. */
 const SUMMARY: Record<BootErrorKind, string> = {
-  keyring_missing: "数据目录中缺少 keyring.json，无法打开库。请将该文件放回原位置，或从备份恢复。",
-  keyring_damaged: "keyring.json 已损坏，自动修复失败。请从备份恢复。",
+  keyring_missing: "数据文件夹中缺少密钥信息（keyring.json），无法打开空间。请将该文件放回原位置，或从备份恢复。",
+  keyring_damaged: "密钥信息（keyring.json）已损坏，且无法自动修复。请从备份恢复。",
   newer_version: "数据由更高版本的 Trove 创建。请安装最新版本后重试。",
-  library_unreadable: "库文件无法打开，可能已损坏。请从备份恢复。",
-  data_dir: "无法访问数据目录。请检查磁盘空间和文件夹权限。",
+  library_unreadable: "空间文件无法打开，可能已损坏。请从备份恢复。",
+  data_dir: "无法访问数据文件夹。请检查磁盘空间和文件夹权限。",
   other: "启动过程中出现错误。",
 };
 
@@ -85,7 +85,7 @@ export function BootErrorScreen() {
         </div>
 
         <div className="flex flex-wrap justify-center gap-2">
-          <Button onClick={openFolder}>打开数据目录</Button>
+          <Button onClick={openFolder}>打开数据文件夹</Button>
           <Button onClick={pickBackup} disabled={busy}>
             从备份恢复…
           </Button>
@@ -119,7 +119,7 @@ export function BootErrorScreen() {
         title="从备份恢复"
         message={
           <div className="flex flex-col gap-2">
-            <span>现有数据将移至数据目录下的 backups 文件夹，随后 Trove 会重新启动。</span>
+            <span>将用备份替换当前数据，并重新启动 Trove。现有数据会移到数据文件夹中的 backups 文件夹。</span>
             <span className="selectable break-all font-mono text-xs text-app-muted">{pendingImport}</span>
           </div>
         }

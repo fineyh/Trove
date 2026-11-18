@@ -1,7 +1,7 @@
-import { ArchiveRestore, HardDrive, Info, ShieldCheck, SlidersHorizontal, type LucideIcon } from "lucide-react";
+import { ArchiveRestore, Info, ShieldCheck, SlidersHorizontal, type LucideIcon } from "lucide-react";
 
 // "account" (Google sign-in) is hidden until it does something (R4.5); AccountPane.tsx is kept for then.
-export type SettingsSection = "general" | "security" | "storage" | "backup" | "about";
+export type SettingsSection = "general" | "security" | "backup" | "about";
 
 export interface NavItem {
   key: SettingsSection;
@@ -12,7 +12,6 @@ export interface NavItem {
 export const NAV_ITEMS: readonly NavItem[] = [
   { key: "general", label: "通用", icon: SlidersHorizontal },
   { key: "security", label: "隐私与安全", icon: ShieldCheck },
-  { key: "storage", label: "存储", icon: HardDrive },
   { key: "backup", label: "备份与恢复", icon: ArchiveRestore },
   { key: "about", label: "关于", icon: Info },
 ];

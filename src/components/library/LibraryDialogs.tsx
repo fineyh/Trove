@@ -16,6 +16,7 @@ import { Notice } from "../ui/Notice";
 import { Segmented } from "../ui/Segmented";
 import { Switch } from "../ui/Switch";
 import { LibraryAvatar } from "./LibraryAvatar";
+import { LibraryDataTab } from "./LibraryDataTab";
 import { LIBRARY_ICONS, iconValue } from "./libraryIcons";
 import { UnlockForm } from "./UnlockForm";
 
@@ -48,7 +49,7 @@ function AppearanceFields({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-end gap-3">
-        <LibraryAvatar name={name || "库"} icon={icon || null} color={color} size={48} />
+        <LibraryAvatar name={name || "空间"} icon={icon || null} color={color} size={48} />
         <div className="flex-1">
           <TextField label="名称" value={name} maxLength={40} autoFocus={autoFocus} onChange={(e) => setName(e.target.value)} />
         </div>
@@ -219,7 +220,7 @@ export function CreateLibraryDialog() {
       open={open}
       busy={busy}
       onClose={() => setDialog(null)}
-      title="新建库"
+      title="新建空间"
       footer={
         <>
           <Button onClick={() => setDialog(null)} disabled={busy}>
@@ -243,7 +244,7 @@ export function CreateLibraryDialog() {
         <Group>
           <Row
             label="密码保护"
-            description="锁定时，库里的内容不会出现在 Trove 中"
+            description="锁定后，此空间的内容不会出现在 Trove 中"
             expanded={encrypt ? <PasswordPair pair={pair} /> : undefined}
           >
             <Switch checked={encrypt} onChange={setEncrypt} label="密码保护" />
@@ -259,9 +260,11 @@ export function CreateLibraryDialog() {
 
 // ─── Settings ───────────────────────────────────────────────────────────────
 
-type Tab = "general" | "security";
+type Tab = "general" | "security" | "data";
 
 function librarySubtitle(lib: LibraryInfo): string {
+  // Named something else, it still says what it is; left as 「主空间」, the title already does.
+  if (lib.isMain) return lib.name === "主空间" ? "随 Trove 解锁" : "主空间";
   if (!lib.encrypted) return "随 Trove 解锁";
   return lib.unlocked ? "密码保护 · 已解锁" : "密码保护 · 已锁定";
 }
@@ -271,13 +274,14 @@ export function LibrarySettingsDialog() {
   const setDialog = useSessionStore((s) => s.setLibraryDialog);
   const libraries = useLibrariesStore((s) => s.list);
   const id = dialog?.mode === "settings" ? dialog.id : null;
+  const initialTab = dialog?.mode === "settings" ? dialog.tab : undefined;
   const lib = useMemo(() => libraries.find((l) => l.id === id) ?? null, [libraries, id]);
   const [tab, setTab] = useState<Tab>("general");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (id) setTab("general");
-  }, [id]);
+    if (id) setTab(initialTab ?? "general");
+  }, [id, initialTab]);
 
   // Re-keyed (password added) or deleted underneath us: close.
   useEffect(() => {
@@ -302,8 +306,9 @@ export function LibrarySettingsDialog() {
           value={tab}
           onChange={setTab}
           options={[
-            { value: "general", label: "外观" },
-            { value: "security", label: "密码" },
+            { value: "general", label: "通用" },
+            { value: "security", label: "安全" },
+            { value: "data", label: "数据" },
           ]}
         />
 
@@ -311,11 +316,13 @@ export function LibrarySettingsDialog() {
           <GeneralTab lib={lib} setBusy={setBusy} />
         ) : !lib.unlocked ? (
           <div className="flex flex-col gap-3">
-            <p className="text-sm text-app-secondary">解锁后才能更改密码。</p>
+            <p className="text-sm text-app-secondary">请先解锁此空间。</p>
             <UnlockForm allowRecovery={lib.hasRecovery} onUnlock={(s, m) => useLibrariesStore.getState().unlock(lib.id, s, m)} />
           </div>
-        ) : (
+        ) : tab === "security" ? (
           <SecurityTab lib={lib} setBusy={setBusy} />
+        ) : (
+          <LibraryDataTab lib={lib} />
         )}
       </div>
     </Modal>
@@ -381,8 +388,8 @@ function GeneralTab({ lib, setBusy }: { lib: LibraryInfo; setBusy: (b: boolean) 
       {!lib.isMain && (
         <Group>
           <Row
-            label="删除库"
-            description={lib.unlocked ? "会话和缩略图一并删除，磁盘上的文件不受影响" : "解锁后才能删除"}
+            label="删除空间"
+            description={lib.unlocked ? "会话和缩略图将一并删除，磁盘上的文件不受影响" : "解锁后才能删除"}
             expanded={
               showDelete ? (
                 <InlineForm
@@ -455,7 +462,7 @@ function SecurityTab({ lib, setBusy }: { lib: LibraryInfo; setBusy: (b: boolean)
   if (lib.isMain) {
     return (
       <div className="flex flex-col items-start gap-3">
-        <p className="text-sm text-app-secondary">这个库随 Trove 解锁。要保护它，请开启应用锁。</p>
+        <p className="text-sm text-app-secondary">主空间随 Trove 解锁。如需保护，请开启应用锁。</p>
         <Button
           size="sm"
           onClick={() => {
@@ -474,7 +481,7 @@ function SecurityTab({ lib, setBusy }: { lib: LibraryInfo; setBusy: (b: boolean)
       <Group>
         <Row
           label="密码保护"
-          description="锁定时，库里的内容不会出现在 Trove 中"
+          description="锁定后，此空间的内容不会出现在 Trove 中"
           expanded={
             action === "set" ? (
               <InlineForm
@@ -573,7 +580,7 @@ function SecurityTab({ lib, setBusy }: { lib: LibraryInfo; setBusy: (b: boolean)
         </Row>
         <Row
           label="恢复密钥"
-          description={lib.hasRecovery ? "忘记密码时用它解锁" : "未生成，忘记密码将无法打开"}
+          description={lib.hasRecovery ? "忘记密码时用它解锁" : "未生成。忘记密码将无法解锁此空间"}
           expanded={
             action === "recovery" ? (
               <InlineForm
@@ -618,7 +625,7 @@ function SecurityTab({ lib, setBusy }: { lib: LibraryInfo; setBusy: (b: boolean)
                 run(async () => {
                   await ipc.removeLibraryKeyfile(lib.id);
                   await useLibrariesStore.getState().refresh();
-                  toast.info("已停用密钥文件", "文件本身仍在原处");
+                  toast.info("已停用密钥文件", "文件仍保留在原位置");
                 })
               }
             >

@@ -272,7 +272,7 @@ export function Lightbox({ convId }: LightboxProps) {
         {isImage ? (
           image.status === "error" ? (
             <div className="rounded-lg border border-dashed border-white/30 px-6 py-8 text-sm text-white/70">
-              无法预览这个格式
+              无法预览此格式
             </div>
           ) : image.status === "loading" || !image.url ? (
             <Loader2 size={28} className="animate-spin text-white/70" />

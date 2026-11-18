@@ -35,7 +35,7 @@ export const useSecurityStore = create<SecurityState>((set, get) => ({
       const status = await ipc.securityStatus();
       set({ status, ready: true });
     } catch (e) {
-      toast.error("读取安全状态失败", e);
+      toast.error("无法读取安全状态", e);
       set({ ready: true });
     }
   },

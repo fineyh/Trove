@@ -74,7 +74,7 @@ export const useConvMediaStore = create<ConvMediaState>((set, get) => ({
       }));
     } catch (e) {
       if (!stillOn(lib)) return;
-      toast.error("加载媒体列表失败", e);
+      toast.error("无法加载内容", e);
       set((s) => ({ loading: { ...s.loading, [convId]: false } }));
     }
   },
@@ -113,7 +113,7 @@ export const useConvMediaStore = create<ConvMediaState>((set, get) => ({
       });
     } catch (e) {
       if (!stillOn(lib)) return;
-      toast.error("加载更早的媒体失败", e);
+      toast.error("无法加载更早的内容", e);
       set((st) => ({ loadingOlder: { ...st.loadingOlder, [convId]: false } }));
     }
   },

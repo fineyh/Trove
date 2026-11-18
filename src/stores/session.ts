@@ -3,7 +3,7 @@ import { create } from "zustand";
 /** Which library dialog is up. */
 export type LibraryDialog =
   | { mode: "create" }
-  | { mode: "settings"; id: string };
+  | { mode: "settings"; id: string; tab?: "general" | "security" | "data" };
 
 /** A recovery code to show once (after setting a password). */
 export interface RecoveryReveal {
@@ -24,6 +24,8 @@ interface SessionState {
   mapFocus: number | null;
   lightboxMessageId: number | null;
   libraryDialog: LibraryDialog | null;
+  /** Missing-files dialog for the current space. */
+  missingFilesOpen: boolean;
   recovery: RecoveryReveal | null;
   /** Conversation whose "move to library" picker is open. */
   movingConversationId: number | null;
@@ -38,6 +40,7 @@ interface SessionState {
   openLightbox: (messageId: number) => void;
   closeLightbox: () => void;
   setLibraryDialog: (d: LibraryDialog | null) => void;
+  setMissingFilesOpen: (open: boolean) => void;
   showRecovery: (r: RecoveryReveal | null) => void;
   setMovingConversation: (id: number | null) => void;
   /** Library switched: nothing on screen belongs to the new one. */
@@ -54,6 +57,7 @@ export const useSessionStore = create<SessionState>((set) => ({
   mapFocus: null,
   lightboxMessageId: null,
   libraryDialog: null,
+  missingFilesOpen: false,
   recovery: null,
   movingConversationId: null,
   setActiveConversation: (id) =>
@@ -72,6 +76,7 @@ export const useSessionStore = create<SessionState>((set) => ({
   openLightbox: (messageId) => set({ lightboxMessageId: messageId }),
   closeLightbox: () => set({ lightboxMessageId: null }),
   setLibraryDialog: (d) => set({ libraryDialog: d }),
+  setMissingFilesOpen: (open) => set({ missingFilesOpen: open }),
   showRecovery: (r) => set({ recovery: r }),
   setMovingConversation: (id) => set({ movingConversationId: id }),
   resetForLibrary: () =>
@@ -82,5 +87,6 @@ export const useSessionStore = create<SessionState>((set) => ({
       mapFocus: null,
       newConversationOpen: false,
       movingConversationId: null,
+      missingFilesOpen: false,
     }),
 }));

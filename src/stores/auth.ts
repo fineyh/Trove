@@ -29,7 +29,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       const status = await ipc.authStatus();
       set({ status, ready: true });
     } catch (e) {
-      toast.error("读取账号状态失败", e);
+      toast.error("无法读取账号状态", e);
       set({ ready: true });
     }
   },

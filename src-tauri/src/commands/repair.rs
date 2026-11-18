@@ -63,11 +63,11 @@ pub async fn repair_media(lib: String, args: RepairMediaArgs) -> AppResult<Repai
 fn repair_with_explicit(lib: &str, target: &Target, path: &Path) -> AppResult<RepairOutcome> {
     if !path.is_file() {
         return Ok(RepairOutcome::Mismatch {
-            reason: "选中的不是一个文件".into(),
+            reason: "所选项目不是文件".into(),
         });
     }
     let meta = std::fs::metadata(path)
-        .map_err(|e| AppError::InvalidArg(format!("无法读取文件: {e}")))?;
+        .map_err(|e| AppError::InvalidArg(format!("无法读取文件：{e}")))?;
     if (meta.len() as i64) != target.size_bytes {
         return Ok(RepairOutcome::Mismatch {
             reason: format!(
@@ -78,10 +78,10 @@ fn repair_with_explicit(lib: &str, target: &Target, path: &Path) -> AppResult<Re
         });
     }
     let hash = hasher::blake3_file(path)
-        .map_err(|e| AppError::InvalidArg(format!("无法读取文件: {e}")))?;
+        .map_err(|e| AppError::InvalidArg(format!("无法读取文件：{e}")))?;
     if hash != target.blake3 {
         return Ok(RepairOutcome::Mismatch {
-            reason: "文件内容（blake3 哈希）与原记录不一致".into(),
+            reason: "文件内容与原文件不一致".into(),
         });
     }
     relocate::relocate_media(lib, target.media_id, path)?;

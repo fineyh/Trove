@@ -20,7 +20,7 @@ pub const LEGACY_DB: &str = "trove.db";
 /// Where the pre-library plaintext database goes after migration. Kept (not
 /// deleted) until the user removes it from the security settings.
 pub const LEGACY_PLAIN_COPY: &str = "trove.db.legacy-plain";
-const DEFAULT_MAIN_NAME: &str = "主库";
+const DEFAULT_MAIN_NAME: &str = "主空间";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -127,7 +127,7 @@ pub fn boot(data_dir: &Path) -> Result<bool, BootFailure> {
             if n > 0 {
                 return Err(BootFailure {
                     kind: K::KeyringMissing,
-                    detail: format!("{} 不存在；libraries 中有 {n} 个库文件", keyring::FILE_NAME),
+                    detail: format!("{} 不存在，但 libraries 文件夹里有 {n} 个空间文件", keyring::FILE_NAME),
                 });
             }
             first_run(data_dir, &mut legacy_problem).map_err(|e| BootFailure::new(K::Other, e))?
@@ -193,7 +193,7 @@ fn migrate_legacy(data_dir: &Path, main: &str, dek: &SecretKey) -> Result<(), St
         .and_then(|mut f| std::io::Read::read_exact(&mut f, &mut header))
         .is_ok();
     if !readable || &header != b"SQLite format 3\0" {
-        return Err("发现无法识别的旧数据库 trove.db（可能是加密格式），已原样保留，没有迁移。".into());
+        return Err("旧版数据无法识别（可能已加密），已原样保留，未迁移。".into());
     }
     db::import_plaintext(&legacy, main, dek).map_err(|e| format!("迁移旧数据库失败：{e}"))?;
     for suffix in ["", "-wal", "-shm"] {
@@ -259,12 +259,17 @@ fn ensure_library_rows() -> AppResult<()> {
     db::with_main(|c| {
         let now = now_ms();
         for (i, id) in ids.iter().enumerate() {
-            let name = if *id == main { DEFAULT_MAIN_NAME.to_string() } else { format!("库 {}", i + 1) };
+            let name = if *id == main { DEFAULT_MAIN_NAME.to_string() } else { format!("空间 {}", i + 1) };
             c.execute(
                 "INSERT OR IGNORE INTO libraries (id, name, sort, created_at) VALUES (?1, ?2, ?3, ?4)",
                 params![id, name, i as i64, now],
             )?;
         }
+        // The default name used to be 「主库」 (ADR-055); a name the user picked stays.
+        c.execute(
+            "UPDATE libraries SET name = ?2 WHERE id = ?1 AND name = '主库'",
+            params![main, DEFAULT_MAIN_NAME],
+        )?;
         let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
         c.execute(
             &format!("DELETE FROM libraries WHERE id NOT IN ({placeholders})"),
@@ -336,7 +341,7 @@ pub fn unlock_app(secret: &Secret) -> AppResult<()> {
 /// meaningful with a startup password (otherwise the AK is on disk anyway).
 pub fn lock_app() -> AppResult<()> {
     if !st().read().keyring.has_app_password() {
-        return Err(AppError::InvalidArg("没有设置启动密码，无法锁定应用".into()));
+        return Err(AppError::InvalidArg("未开启应用锁，无法锁定".into()));
     }
     crate::services::file_watcher::stop_all();
     db::close_all();
@@ -360,7 +365,7 @@ pub fn set_app_password(password: &str) -> AppResult<String> {
     let ak = require_ak()?;
     let mut s = st().write();
     if s.keyring.has_app_password() {
-        return Err(AppError::InvalidArg("已经设置了启动密码".into()));
+        return Err(AppError::InvalidArg("已开启应用锁".into()));
     }
     let mut kr = s.keyring.clone();
     let code = kr.seal_app(&ak, password).map_err(AppError::Other)?;
@@ -469,7 +474,7 @@ pub fn list_libraries() -> AppResult<Vec<LibraryInfo>> {
 fn check_name(name: &str) -> AppResult<String> {
     let n = name.trim();
     if n.is_empty() {
-        return Err(AppError::InvalidArg("库名不能为空".into()));
+        return Err(AppError::InvalidArg("名称不能为空".into()));
     }
     Ok(n.chars().take(40).collect())
 }
@@ -587,7 +592,7 @@ pub fn lock_library(id: &str) -> AppResult<()> {
         .map(|l| l.is_normal())
         .ok_or_else(|| AppError::NotFound(format!("library {id}")))?;
     if normal {
-        return Err(AppError::InvalidArg("这个库没有设置密码，随应用一起打开".into()));
+        return Err(AppError::InvalidArg("此空间没有密码，随 Trove 解锁".into()));
     }
     crate::services::file_watcher::stop_library(id);
     db::close(id);
@@ -611,7 +616,7 @@ fn require_open(id: &str) -> AppResult<SecretKey> {
 /// can't open anything written from now on.
 pub fn set_library_password(id: &str, password: &str) -> AppResult<CreatedLibrary> {
     if id == db::main_id() {
-        return Err(AppError::InvalidArg("主库跟随应用；要保护主库请设置启动密码".into()));
+        return Err(AppError::InvalidArg("主空间随 Trove 解锁。如需保护，请开启应用锁。".into()));
     }
     require_open(id)?;
     let new_id = keyring::random_id();
@@ -707,7 +712,7 @@ pub fn set_library_keyfile(id: &str, dir: &Path) -> AppResult<String> {
         let s = st().read();
         let entry = s.keyring.library(id).ok_or_else(|| AppError::NotFound(id.into()))?;
         if !entry.has(SlotKind::Password) {
-            return Err(AppError::InvalidArg("先给库设置密码，再添加钥匙文件".into()));
+            return Err(AppError::InvalidArg("请先为此空间设置密码，再添加密钥文件".into()));
         }
     }
     if !dir.is_dir() {
@@ -768,7 +773,7 @@ pub fn remove_library_keyfile(id: &str) -> AppResult<()> {
 /// Delete a library for good. It must be open (proof the user can open it).
 pub fn delete_library(id: &str) -> AppResult<()> {
     if id == db::main_id() {
-        return Err(AppError::InvalidArg("主库不能删除".into()));
+        return Err(AppError::InvalidArg("主空间无法删除".into()));
     }
     require_open(id)?;
     crate::services::file_watcher::stop_library(id);

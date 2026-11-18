@@ -18,12 +18,12 @@ import { formatDuration, isImageMedia } from "../../lib/media";
 function openItem(m: Message, view: (id: number) => void) {
   const media = m.media!;
   if (media.status === "offline") {
-    toast.info("文件所在的盘没有连接", "连接后就能打开。");
+    toast.info("文件所在的磁盘未连接");
     return;
   }
   if (media.kind === "other" && !isImageMedia(media)) {
     const lib = useLibrariesStore.getState().current;
-    if (lib) void openMedia(lib, media.id).catch((e) => toast.error("打开失败", e));
+    if (lib) void openMedia(lib, media.id).catch((e) => toast.error("无法打开", e));
     return;
   }
   view(m.id);
@@ -87,7 +87,7 @@ export function MediaGrid({ convId }: MediaGridProps) {
           onChange={setTab}
           options={[
             { value: "all", label: "全部" },
-            { value: "image", label: "照片" },
+            { value: "image", label: "图片" },
             { value: "video", label: "视频" },
             { value: "other", label: "文件" },
           ]}

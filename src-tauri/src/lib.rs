@@ -8,17 +8,25 @@ pub use error::{AppError, AppResult};
 
 use tauri::Manager;
 
-/// Wipe the WebView profile (history, disk cache) if the user asked for it.
+/// Wipe the WebView profile (history, disk cache) once. Versions before the
+/// incognito WebView (ADR-037) left media paths in there; nothing the app
+/// keeps lives in it, so this needs no say from the user (ADR-055).
 /// Must run before any WebView exists: WebView2 keeps the files locked.
-fn purge_webview_profile_if_requested(app: &tauri::App) {
+fn purge_old_webview_profile(app: &tauri::App) {
+    const DONE: &str = "webview-profile-purged";
     let (Ok(data), Ok(local)) = (app.path().app_data_dir(), app.path().app_local_data_dir()) else {
         return;
     };
-    let marker = data.join(commands::security::PURGE_MARKER);
-    if marker.exists() {
-        let _ = std::fs::remove_dir_all(local.join("EBWebView"));
-        let _ = std::fs::remove_file(marker);
+    let done = data.join(DONE);
+    if done.exists() {
+        return;
     }
+    let profile = local.join("EBWebView");
+    if profile.exists() && std::fs::remove_dir_all(&profile).is_err() {
+        return; // try again next start
+    }
+    let _ = std::fs::remove_file(data.join("purge-webview-profile")); // old opt-in marker
+    let _ = std::fs::write(done, b"1");
 }
 
 /// Log file in the OS log dir (6.1, ADR-048): a release build has no console,
@@ -79,7 +87,7 @@ pub fn run() {
                 .app_data_dir()
                 .expect("failed to resolve app data dir");
             log::info!("Trove {} starting", app.package_info().version);
-            purge_webview_profile_if_requested(app);
+            purge_old_webview_profile(app);
             events::init(app.handle().clone());
             // A failed boot must not end the process: a release build has no
             // console, so the user would see nothing at all. Open the window
@@ -130,7 +138,6 @@ pub fn run() {
             commands::security::app_remove_password,
             commands::security::app_reset_recovery,
             commands::security::delete_legacy_copy,
-            commands::security::schedule_webview_purge,
             commands::libraries::list_libraries,
             commands::libraries::create_library,
             commands::libraries::update_library,

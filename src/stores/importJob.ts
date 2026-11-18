@@ -24,14 +24,14 @@ export const useImportJobStore = create<ImportJobState>((set) => ({
       // 进度条消失原本是唯一的「结束」信号，而单文件失败只进了后端
       // 的 eprintln!。三种结局各给一个回执。
       if (payload.cancelled) {
-        toast.info("导入已取消");
+        toast.info("已停止导入");
       } else if (payload.failed > 0) {
         toast.error(
-          `导入完成，有 ${payload.failed} 个文件失败`,
-          "这些文件已跳过，其余已正常导入。",
+          `${payload.failed} 个文件未能导入`,
+          "其余文件已导入。",
         );
       } else if (payload.total > 0) {
-        toast.success("导入完成", `共 ${payload.total} 个文件`);
+        toast.success("已导入", `${payload.total} 个文件`);
       }
       return;
     }
@@ -42,7 +42,7 @@ export const useImportJobStore = create<ImportJobState>((set) => ({
     try {
       await ipc.cancelImport();
     } catch (e) {
-      toast.error("取消导入失败", e);
+      toast.error("无法停止导入", e);
       set({ cancelling: false });
     }
   },

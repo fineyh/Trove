@@ -62,7 +62,7 @@ export function MessageMenu({ menu, onClose }: MessageMenuProps) {
     items.push({
       label: "复制",
       icon: <Copy size={15} />,
-      onClick: act(() => navigator.clipboard.writeText(message.caption ?? ""), "复制失败"),
+      onClick: act(() => navigator.clipboard.writeText(message.caption ?? ""), "无法复制"),
     });
   }
   if (message && media && lib) {
@@ -70,7 +70,7 @@ export function MessageMenu({ menu, onClose }: MessageMenuProps) {
       items.push({
         label: "在新窗口打开",
         icon: <PictureInPicture2 size={15} />,
-        onClick: act(() => openPlayerWindow(message), "打开窗口失败"),
+        onClick: act(() => openPlayerWindow(message), "无法打开窗口"),
       });
     }
     if (media.hasGeo && mapEnabled) {
@@ -88,13 +88,13 @@ export function MessageMenu({ menu, onClose }: MessageMenuProps) {
         label: "用默认应用打开",
         icon: <ExternalLink size={15} />,
         disabled: !reachable,
-        onClick: act(() => ipc.openMedia(lib, media.id), "打开失败"),
+        onClick: act(() => ipc.openMedia(lib, media.id), "无法打开"),
       },
       {
         label: "在资源管理器中显示",
         icon: <FolderSearch size={15} />,
         disabled: !reachable,
-        onClick: act(() => ipc.revealMedia(lib, media.id), "打开文件夹失败"),
+        onClick: act(() => ipc.revealMedia(lib, media.id), "无法打开文件夹"),
       },
       "separator",
       {
@@ -104,7 +104,7 @@ export function MessageMenu({ menu, onClose }: MessageMenuProps) {
           const p = await ipc.mediaPathForCopy(lib, media.id);
           await navigator.clipboard.writeText(p);
           toast.success("已复制路径");
-        }, "复制失败"),
+        }, "无法复制"),
       },
     );
     if (isImage || isVideo) {
@@ -114,7 +114,7 @@ export function MessageMenu({ menu, onClose }: MessageMenuProps) {
         onClick: act(async () => {
           await setAvatar(message.convId, `media:${media.id}`);
           toast.success("已设为会话头像");
-        }, "设置头像失败"),
+        }, "无法设置头像"),
       });
     }
   }
@@ -145,7 +145,7 @@ export function MessageMenu({ menu, onClose }: MessageMenuProps) {
       await remove(confirmFor.id, confirmFor.convId, confirmReachable && deleteFile);
       setConfirmFor(null);
     } catch (err) {
-      toast.error("删除失败", err);
+      toast.error("无法删除", err);
     } finally {
       setBusy(false);
     }
@@ -167,7 +167,7 @@ export function MessageMenu({ menu, onClose }: MessageMenuProps) {
         }}
         message={
           <div className="flex flex-col gap-3">
-            <p>{confirmReachable ? "磁盘上的文件默认保留。" : "只删除这条消息。"}</p>
+            <p>{confirmReachable ? "磁盘上的文件默认保留。" : "将删除这条消息。"}</p>
             {confirmReachable && (
               <label className="flex items-center gap-2 text-sm text-app-fg">
                 <input
@@ -176,7 +176,7 @@ export function MessageMenu({ menu, onClose }: MessageMenuProps) {
                   onChange={(e) => setDeleteFile(e.target.checked)}
                   className="h-4 w-4 accent-[rgb(var(--danger))]"
                 />
-                同时把文件移到回收站
+                同时将文件移到回收站
               </label>
             )}
           </div>

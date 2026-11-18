@@ -9,6 +9,7 @@ import { toast } from "../../../stores/toast";
 import type { IdleLockMinutes } from "../../../types";
 import { MIN_PASSWORD } from "../../library/LibraryDialogs";
 import { Button } from "../../ui/Button";
+import { ConfirmDialog } from "../../ui/ConfirmDialog";
 import { TextField } from "../../ui/Field";
 import { Notice } from "../../ui/Notice";
 import { Select } from "../../ui/Select";
@@ -38,7 +39,7 @@ export function SecurityPane() {
   const [pw2, setPw2] = useState("");
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [purgeScheduled, setPurgeScheduled] = useState(false);
+  const [confirmLegacy, setConfirmLegacy] = useState(false);
 
   if (!status) return null;
   const has = status.appPassword;
@@ -191,12 +192,12 @@ export function SecurityPane() {
             </Button>
           </Row>
         )}
-        <Row label="自动锁定" description={has ? "一段时间无操作后锁定" : "应用锁关闭时，只锁定有密码的库"}>
+        <Row label="自动锁定" description={has ? undefined : "应用锁关闭时，只锁定有密码的空间"}>
           <Select
             label="自动锁定"
             value={idle}
             options={IDLE_OPTIONS}
-            onChange={(v) => void save("idleLockMinutes", v).catch((e) => toast.error("设置没有保存", e))}
+            onChange={(v) => void save("idleLockMinutes", v).catch((e) => toast.error("无法保存设置", e))}
           />
         </Row>
       </Group>
@@ -207,39 +208,34 @@ export function SecurityPane() {
         </Notice>
       )}
 
-      <Group title="清理">
-        {status.legacyPlainCopy && (
-          <Row label="升级前的明文数据库" description="确认数据完整后可以删除">
-            <Button
-              size="sm"
-              variant="danger-secondary"
-              onClick={() =>
-                void ipc
-                  .deleteLegacyCopy()
-                  .then(() => sec().refresh())
-                  .then(() => toast.success("已删除"))
-                  .catch((e) => toast.error("删除失败", e))
-              }
-            >
-              删除
+      {status.legacyPlainCopy && (
+        <Group>
+          <Row label="升级前的未加密副本" description="确认数据完整后建议删除">
+            <Button size="sm" variant="danger-secondary" onClick={() => setConfirmLegacy(true)}>
+              删除…
             </Button>
           </Row>
-        )}
-        <Row label="界面缓存" description="旧版本在这里记录过媒体路径">
-          <Button
-            size="sm"
-            disabled={purgeScheduled}
-            onClick={() =>
-              void ipc
-                .scheduleWebviewPurge()
-                .then(() => setPurgeScheduled(true))
-                .catch((e) => toast.error("操作失败", e))
-            }
-          >
-            {purgeScheduled ? "将在下次启动时清除" : "下次启动时清除"}
-          </Button>
-        </Row>
-      </Group>
+        </Group>
+      )}
+
+      <ConfirmDialog
+        open={confirmLegacy}
+        variant="danger"
+        title="删除未加密副本"
+        message="将永久删除升级前保留的未加密数据。此操作无法撤销。"
+        confirmText="删除"
+        onConfirm={() =>
+          void ipc
+            .deleteLegacyCopy()
+            .then(() => sec().refresh())
+            .then(() => {
+              setConfirmLegacy(false);
+              toast.success("已删除");
+            })
+            .catch((e) => toast.error("无法删除", e))
+        }
+        onCancel={() => setConfirmLegacy(false)}
+      />
     </Page>
   );
 }

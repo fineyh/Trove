@@ -62,7 +62,7 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
       }));
     } catch (e) {
       if (!stillOn(lib)) return;
-      toast.error("加载消息失败", e);
+      toast.error("无法加载消息", e);
       set((s) => ({ loading: { ...s.loading, [convId]: false } }));
     }
   },
@@ -97,7 +97,7 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
       });
     } catch (e) {
       if (!stillOn(lib)) return;
-      toast.error("加载消息失败", e);
+      toast.error("无法加载消息", e);
     }
   },
   loadOlder: async (convId) => {
@@ -128,7 +128,7 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
       });
     } catch (e) {
       if (!stillOn(lib)) return;
-      toast.error("加载更早的消息失败", e);
+      toast.error("无法加载更早的消息", e);
       set((st) => ({ loadingOlder: { ...st.loadingOlder, [convId]: false } }));
     }
   },

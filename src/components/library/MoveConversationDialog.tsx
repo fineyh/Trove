@@ -54,8 +54,8 @@ export function MoveConversationDialog() {
       open
       busy={busy}
       onClose={() => close(null)}
-      title="移到其他库"
-      subtitle={`「${conv.name}」及其缩略图会移到目标库，磁盘上的文件不动`}
+      title="移到其他空间"
+      subtitle={`「${conv.name}」及其缩略图将移到所选空间，磁盘上的文件不受影响`}
       footer={
         <>
           <Button onClick={() => close(null)} disabled={busy}>
@@ -68,7 +68,7 @@ export function MoveConversationDialog() {
       }
     >
       {others.length === 0 ? (
-        <Notice>还没有其他库</Notice>
+        <Notice>没有其他空间</Notice>
       ) : (
         <div className="divide-y divide-app-border overflow-hidden rounded-xl border border-app-border">
           {others.map((l) => {

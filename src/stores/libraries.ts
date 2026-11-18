@@ -64,7 +64,7 @@ export const useLibrariesStore = create<LibrariesState>((set, get) => ({
         ready: true,
       });
     } catch (e) {
-      toast.error("读取库列表失败", e);
+      toast.error("无法读取空间列表", e);
       set({ ready: true });
     }
   },
@@ -90,7 +90,7 @@ export const useLibrariesStore = create<LibrariesState>((set, get) => ({
  *  yet, which only happens before the app is unlocked. */
 export function currentLib(): string {
   const id = useLibrariesStore.getState().current;
-  if (id === null) throw new Error("没有打开的库");
+  if (id === null) throw new Error("没有打开的空间");
   return id;
 }
 

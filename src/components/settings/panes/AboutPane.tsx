@@ -126,11 +126,11 @@ export function AboutPane() {
       await navigator.clipboard.writeText(envLine(env));
       toast.success("已复制");
     } catch (e) {
-      toast.error("复制失败", e);
+      toast.error("无法复制", e);
     }
   };
 
-  const open = (url: string) => void ipc.openUrl(url).catch((e) => toast.error("打不开浏览器", e));
+  const open = (url: string) => void ipc.openUrl(url).catch((e) => toast.error("无法打开浏览器", e));
 
   return (
     <Page title="关于">
@@ -180,7 +180,7 @@ export function AboutPane() {
           <Switch
             label="自动检查更新"
             checked={auto}
-            onChange={(on) => void setAuto(on).catch((e) => toast.error("设置没有保存", e))}
+            onChange={(on) => void setAuto(on).catch((e) => toast.error("无法保存设置", e))}
           />
         </Row>
         <Row label="更新通道">
@@ -188,7 +188,7 @@ export function AboutPane() {
             value={channel}
             onChange={(v) => {
               if (busy || v === channel) return;
-              void setChannel(v).catch((e) => toast.error("设置没有保存", e));
+              void setChannel(v).catch((e) => toast.error("无法保存设置", e));
             }}
             options={[
               { value: "stable", label: "正式版" },
@@ -205,7 +205,7 @@ export function AboutPane() {
         <Row label="反馈问题" onClick={() => open(issueUrl(env))} />
         <Row
           label="日志文件夹"
-          onClick={() => ipc.openLogDir().catch((e) => toast.error("打不开日志文件夹", e))}
+          onClick={() => ipc.openLogDir().catch((e) => toast.error("无法打开日志文件夹", e))}
         />
         <Row label="版本信息" description={env ? envLine(env) : "—"}>
           <Button size="sm" onClick={() => void copyEnv()} disabled={!env}>

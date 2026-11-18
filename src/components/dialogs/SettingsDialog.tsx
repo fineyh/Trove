@@ -8,7 +8,6 @@ import { useEscapeLayer } from "../ui/Modal";
 import { SettingsNav } from "../settings/SettingsNav";
 import { DEFAULT_SECTION, isSection, type SettingsSection } from "../settings/types";
 import { GeneralPane } from "../settings/panes/GeneralPane";
-import { StoragePane } from "../settings/panes/StoragePane";
 import { SecurityPane } from "../settings/panes/SecurityPane";
 import { BackupPane } from "../settings/panes/BackupPane";
 import { AboutPane } from "../settings/panes/AboutPane";
@@ -66,8 +65,6 @@ function PaneSwitch({ section }: { section: SettingsSection }) {
   switch (section) {
     case "general":
       return <GeneralPane />;
-    case "storage":
-      return <StoragePane />;
     case "security":
       return <SecurityPane />;
     case "backup":

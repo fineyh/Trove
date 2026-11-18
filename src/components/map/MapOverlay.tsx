@@ -169,7 +169,7 @@ export default function MapOverlay({ lib }: { lib: string }) {
               <EmptyState
                 className="rounded-2xl bg-app-panel/90 px-8 py-6 shadow-md backdrop-blur"
                 icon={<MapPin size={28} strokeWidth={1.5} />}
-                title="没有带位置信息的照片或视频"
+                title="没有带位置信息的图片或视频"
               />
             </div>
           )}
@@ -177,7 +177,7 @@ export default function MapOverlay({ lib }: { lib: string }) {
           {basemapFailed && (
             <div className="pointer-events-none absolute left-1/2 top-3 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-lg border border-app-border bg-app-panel px-2.5 py-1.5 text-xs text-app-secondary shadow-md">
               <WifiOff size={13} className="text-app-warning" />
-              底图加载失败，请检查网络
+              无法加载地图，请检查网络连接
             </div>
           )}
 

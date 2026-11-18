@@ -117,7 +117,7 @@ pub async fn delete_library(id: String, confirm_name: String) -> AppResult<()> {
         .map(|l| l.name)
         .ok_or_else(|| AppError::NotFound(id.clone()))?;
     if name.trim() != confirm_name.trim() {
-        return Err(AppError::InvalidArg("输入的库名不一致".into()));
+        return Err(AppError::InvalidArg("输入的名称不一致".into()));
     }
     super::run_blocking(move || session::delete_library(&id)).await
 }

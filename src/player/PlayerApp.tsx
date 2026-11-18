@@ -121,7 +121,7 @@ export function PlayerApp() {
             onVideo={setVideoEl}
           />
         ) : image.status === "error" ? (
-          <div className="text-sm text-app-secondary">无法预览这个格式</div>
+          <div className="text-sm text-app-secondary">无法预览此格式</div>
         ) : image.status === "loading" || !image.url ? (
           <Loader2 size={28} className="animate-spin text-app-fg/70" />
         ) : (

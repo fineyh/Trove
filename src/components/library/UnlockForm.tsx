@@ -38,7 +38,7 @@ export function UnlockForm({ onUnlock, allowRecovery, passwordPlaceholder = "密
       await onUnlock(method === "recovery" ? secret.trim() : secret, method);
       setSecret("");
     } catch (err) {
-      setError(errText(err, "解锁失败"));
+      setError(errText(err, "无法解锁"));
       setShakeKey((k) => k + 1);
       inputRef.current?.select();
     } finally {

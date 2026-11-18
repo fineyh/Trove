@@ -13,7 +13,7 @@ export function installGlobalErrorHandlers() {
 
   window.addEventListener("unhandledrejection", (e) => {
     if (isNoTauriError(e.reason)) return;
-    toast.error("操作失败", e.reason);
+    toast.error("操作未能完成", e.reason);
   });
 
   window.addEventListener(
@@ -23,7 +23,7 @@ export function installGlobalErrorHandlers() {
       // 是那个元素而不是 window。这类错误由 broken 状态机负责，不该弹 toast。
       if (e.target && e.target !== window) return;
       if (isNoTauriError(e.error ?? e.message)) return;
-      toast.error("出现未预期的错误", e.error ?? e.message);
+      toast.error("发生意外错误", e.error ?? e.message);
     },
     true,
   );

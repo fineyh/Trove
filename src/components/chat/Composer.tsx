@@ -39,7 +39,7 @@ export function Composer({ convId }: { convId: number }) {
       await sendText(convId, value);
       setText("");
     } catch (e) {
-      toast.error("发送失败", e);
+      toast.error("无法发送", e);
     } finally {
       setBusy(false);
       ref.current?.focus();
@@ -52,7 +52,7 @@ export function Composer({ convId }: { convId: number }) {
       const picked = await openDialog({
         multiple: true,
         filters: [
-          { name: "照片和视频", extensions: MEDIA_EXTENSIONS },
+          { name: "图片和视频", extensions: MEDIA_EXTENSIONS },
           { name: "所有文件", extensions: ["*"] },
         ],
       });
@@ -62,7 +62,7 @@ export function Composer({ convId }: { convId: number }) {
       setBusy(true);
       await importFiles(convId, paths);
     } catch (e) {
-      toast.error("导入失败", e);
+      toast.error("无法导入", e);
     } finally {
       setBusy(false);
     }
@@ -75,7 +75,7 @@ export function Composer({ convId }: { convId: number }) {
       <ImportProgressBar convId={convId} />
       <div className="px-4 pb-4 pt-1">
         <div className="flex items-end gap-1 rounded-xl border border-app-border bg-app-panel p-1 transition-colors duration-fast focus-within:border-app-accent/60 focus-within:ring-2 focus-within:ring-app-accent/15">
-          <IconButton label="添加照片或视频" icon={<Plus size={18} />} onClick={handlePick} disabled={busy} tipSide="top" />
+          <IconButton label="添加图片或视频" icon={<Plus size={18} />} onClick={handlePick} disabled={busy} tipSide="top" />
           <textarea
             ref={ref}
             rows={1}

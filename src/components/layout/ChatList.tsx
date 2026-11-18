@@ -73,7 +73,7 @@ function ConversationRow({ c, onContextMenu }: ConversationRowProps) {
           {c.sourceOffline ? (
             <span className="flex min-w-0 items-center gap-1 text-app-warning">
               <CloudOff size={13} className="shrink-0" />
-              <span className="truncate">磁盘未连接</span>
+              <span className="truncate">离线</span>
             </span>
           ) : (
             <>
@@ -117,14 +117,14 @@ function LibraryHeader() {
       <span className="min-w-0 flex-1 truncate text-base font-semibold">{lib.name}</span>
       {lib.encrypted && lib.unlocked && (
         <IconButton
-          label="锁定这个库"
+          label="锁定此空间"
           size="sm"
           icon={<Lock size={15} />}
-          onClick={() => void lock(lib.id).catch((e) => toast.error("锁定失败", e))}
+          onClick={() => void lock(lib.id).catch((e) => toast.error("无法锁定", e))}
         />
       )}
       <IconButton
-        label="库设置"
+        label="空间设置"
         size="sm"
         icon={<Settings2 size={15} />}
         onClick={() => setLibraryDialog({ mode: "settings", id: lib.id })}
@@ -164,7 +164,7 @@ export function ChatList() {
         if (!cancelled && stillOn(lib)) setHits(res);
       })
       .catch((e) => {
-        if (!cancelled) toast.error("搜索失败", e);
+        if (!cancelled) toast.error("无法搜索", e);
       });
     return () => {
       cancelled = true;
@@ -210,7 +210,7 @@ export function ChatList() {
       if (wasActive) setActive(null);
       setConfirmDeleteId(null);
     } catch (e) {
-      toast.error("删除会话失败", e);
+      toast.error("无法删除会话", e);
     } finally {
       setDeleteBusy(false);
     }
@@ -247,7 +247,7 @@ export function ChatList() {
             className="py-16"
             icon={<MessageSquare size={28} strokeWidth={1.5} />}
             title="还没有会话"
-            description="导入照片、视频，或同步一个文件夹"
+            description="导入图片和视频，或同步一个文件夹"
             action={
               <Button size="sm" icon={<Plus size={14} />} onClick={() => setNewConvOpen(true)}>
                 新建会话
@@ -285,14 +285,14 @@ export function ChatList() {
             onClick: () => {
               if (menuTarget) {
                 void togglePinned(menuTarget.id, !menuTarget.pinned).catch((e) =>
-                  toast.error("置顶失败", e),
+                  toast.error("无法置顶", e),
                 );
               }
               setMenu(null);
             },
           },
           {
-            label: "移到其他库…",
+            label: "移到其他空间…",
             icon: <ArrowRightLeft size={15} />,
             disabled: libraryCount < 2,
             onClick: () => {
@@ -322,7 +322,7 @@ export function ChatList() {
         message={
           confirmTarget ? (
             <>
-              「<span className="font-medium text-app-fg">{confirmTarget.name}</span>」中的消息会一并删除，磁盘上的文件不受影响。
+              「<span className="font-medium text-app-fg">{confirmTarget.name}</span>」中的消息将一并删除，磁盘上的文件不受影响。
             </>
           ) : (
             ""

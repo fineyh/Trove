@@ -386,7 +386,7 @@ fn delete_source(c: &Connection, conv_id: i64) -> AppResult<()> {
 /// Returns the conversation's id in the target library.
 pub fn move_conversation(from: &str, conv_id: i64, to: &str) -> AppResult<i64> {
     if from == to {
-        return Err(AppError::InvalidArg("源库和目标库相同".into()));
+        return Err(AppError::InvalidArg("会话已在此空间中".into()));
     }
     if !db::is_open(to) {
         return Err(AppError::Locked(to.to_string()));

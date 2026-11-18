@@ -38,6 +38,7 @@ import { isTauri } from "./hooks/useIsTauri";
 import { useIdleLock } from "./hooks/useIdleLock";
 import { usePresenceTracker } from "./lib/viewTracker";
 import { closeAllPlayerWindows } from "./lib/playerWindow";
+import { BrokenManagerDialog } from "./components/settings/panes/BrokenManagerDialog";
 import { startThumbWorker, kickThumbs } from "./lib/thumbWorker";
 
 export default function App() {
@@ -141,15 +142,22 @@ function Shell() {
       <LibrarySettingsDialog />
       <MoveConversationDialog />
       <RecoveryCodeDialog />
+      {lib && open && <MissingFilesDialog lib={lib.id} />}
     </div>
   );
+}
+
+/** 「重新链接」on a missing message opens this straight away. */
+function MissingFilesDialog({ lib }: { lib: string }) {
+  const open = useSessionStore((s) => s.missingFilesOpen);
+  const setOpen = useSessionStore((s) => s.setMissingFilesOpen);
+  return open ? <BrokenManagerDialog lib={lib} onClose={() => setOpen(false)} /> : null;
 }
 
 function resetLibraryCaches() {
   useMessagesStore.getState().reset();
   useConvMediaStore.getState().reset();
   useConversationsStore.getState().reset();
-  useSettingsStore.getState().resetLibraryData();
 }
 
 const currentLibOrNull = () => useLibrariesStore.getState().current;
@@ -189,7 +197,6 @@ function useBackendEvents() {
       onVolumesChanged((lib) => {
         if (!isCurrent(lib)) return;
         void useConversationsStore.getState().refresh();
-        void useSettingsStore.getState().loadVolumes();
         const activeId = useSessionStore.getState().activeConversationId;
         if (activeId !== null) {
           useConvMediaStore.getState().invalidate(activeId);

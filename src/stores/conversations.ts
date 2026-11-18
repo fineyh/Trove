@@ -73,7 +73,7 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
       }
     } catch (e) {
       if (stillOn(lib)) {
-        toast.error("加载会话列表失败", e);
+        toast.error("无法加载会话列表", e);
         set({ loading: false });
       }
     }

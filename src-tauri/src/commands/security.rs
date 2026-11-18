@@ -90,15 +90,3 @@ pub async fn app_reset_recovery(password: String) -> AppResult<String> {
 pub fn delete_legacy_copy() -> AppResult<()> {
     session::delete_legacy_copy()
 }
-
-/// Ask for the WebView's profile directory (history, cache) to be wiped on
-/// the next start — it can't be deleted while the WebView is running. Older
-/// versions left media paths in there (ADR-037).
-#[tauri::command]
-pub fn schedule_webview_purge() -> AppResult<()> {
-    let marker = session::data_dir().join(PURGE_MARKER);
-    std::fs::write(marker, b"1")?;
-    Ok(())
-}
-
-pub const PURGE_MARKER: &str = "purge-webview-profile";

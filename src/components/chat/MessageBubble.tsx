@@ -213,7 +213,7 @@ function OfflineMedia({ message, tile }: MessageBubbleProps) {
   const notify = () => toast.info("文件所在的磁盘未连接");
 
   if (!thumb) {
-    return <Card tone="warning" icon={<CloudOff size={18} />} title={message.caption ?? kindLabel(media)} meta="离线 · 磁盘未连接" onClick={notify} />;
+    return <Card tone="warning" icon={<CloudOff size={18} />} title={message.caption ?? kindLabel(media)} meta="离线" onClick={notify} />;
   }
   return (
     <button
@@ -236,14 +236,14 @@ function MissingMedia({ message }: MessageBubbleProps) {
   const lib = useLib();
   const media = message.media!;
   const thumb = useThumbUrl(lib, media);
-  const openSettings = useSessionStore((s) => s.setSettingsOpen);
+  const openMissing = useSessionStore((s) => s.setMissingFilesOpen);
   return (
     <Card
       tone="danger"
       icon={thumb ? <img src={thumb} alt="" className="h-full w-full object-cover opacity-50 grayscale" draggable={false} /> : <ImageOff size={18} />}
       title={message.caption ?? kindLabel(media)}
       meta={<span>缺失 · <span className="text-app-accent">重新链接</span></span>}
-      onClick={() => openSettings(true, "storage")}
+      onClick={() => openMissing(true)}
     />
   );
 }
@@ -261,7 +261,7 @@ function FileMessage({ message }: MessageBubbleProps) {
       }
       title={message.caption ?? "文件"}
       meta={formatBytes(media.sizeBytes)}
-      onClick={() => lib && void ipc.openMedia(lib, media.id).catch((e) => toast.error("打开失败", e))}
+      onClick={() => lib && void ipc.openMedia(lib, media.id).catch((e) => toast.error("无法打开", e))}
     />
   );
 }

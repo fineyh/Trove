@@ -96,7 +96,7 @@ fn media_path(lib: &str, media_id: i64) -> AppResult<PathBuf> {
     let p = db::with_lib(lib, |c| super::messages::media_abs_path(c, media_id))?
         .ok_or_else(|| AppError::NotFound(format!("media #{media_id}")))?;
     if !p.exists() {
-        return Err(AppError::NotFound("文件不在原位置（所在的盘没连接，或文件已被移走）".into()));
+        return Err(AppError::NotFound("找不到文件。磁盘可能未连接，或文件已被移动。".into()));
     }
     Ok(p)
 }

@@ -92,7 +92,7 @@ fn connect(path: &Path, key: &SecretKey) -> AppResult<Connection> {
         OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
     )?;
     apply_key(&conn, key)?;
-    smoke_test(&conn).map_err(|_| AppError::InvalidArg("库文件无法用这把钥匙打开".into()))?;
+    smoke_test(&conn).map_err(|_| AppError::InvalidArg("空间文件无法用这把密钥打开".into()))?;
     apply_pragmas(&conn)?;
     Ok(conn)
 }

@@ -102,7 +102,7 @@ export function TextEditMenu() {
         await navigator.clipboard.writeText(selected);
         restore(menu);
         document.execCommand("delete");
-      }, "剪切失败"),
+      }, "无法剪切"),
     });
   }
   items.push({
@@ -112,7 +112,7 @@ export function TextEditMenu() {
     onClick: run(async () => {
       await navigator.clipboard.writeText(selected);
       restore(menu);
-    }, "复制失败"),
+    }, "无法复制"),
   });
   if (field) {
     items.push(
@@ -124,7 +124,7 @@ export function TextEditMenu() {
           const text = await navigator.clipboard.readText();
           restore(menu);
           if (text) document.execCommand("insertText", false, text);
-        }, "粘贴失败"),
+        }, "无法粘贴"),
       },
       "separator",
       {
@@ -134,7 +134,7 @@ export function TextEditMenu() {
         onClick: run(() => {
           field.focus();
           field.select();
-        }, "全选失败"),
+        }, "无法全选"),
       },
     );
   }
