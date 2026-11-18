@@ -313,6 +313,35 @@ export interface StatsOverview {
   hasHistory: boolean;
 }
 
+// ─── Recap (ADR-057) ────────────────────────────────────────────────────────
+
+export interface RecapCover {
+  messageId: number;
+  mediaId: number;
+  convId: number;
+  kind: "image" | "video";
+}
+
+export interface RecapPlace {
+  lat: number;
+  lon: number;
+  count: number;
+  cover: RecapCover | null;
+}
+
+export interface Recap {
+  /** Images and videos taken, one per day. */
+  taken: number[];
+  dayCovers: (RecapCover | null)[];
+  covers: RecapCover[];
+  busiest: { day: number; count: number; covers: RecapCover[] } | null;
+  places: RecapPlace[];
+  placeCount: number;
+  geoCount: number;
+  addedBytes: number;
+  newConvs: number;
+}
+
 export interface ViewEntry {
   startedAt: number;
   tzOffset: number;

@@ -1,6 +1,6 @@
 //! Viewing history (ADR-054). Called by every viewer, the popup windows too.
 
-use crate::services::{stats, stats_report};
+use crate::services::{stats, stats_recap, stats_report};
 use crate::{db, events, AppError, AppResult};
 
 /// Start a view. `None` when nothing is recorded (switched off, or not an
@@ -71,4 +71,21 @@ pub fn stats_overview(lib: String, edges: Vec<i64>, utc_edges: Vec<i64>) -> AppR
 #[tauri::command]
 pub fn stats_item_history(lib: String, message_id: i64) -> AppResult<stats_report::ItemHistory> {
     db::with_lib(&lib, |c| stats_report::item_history(c, message_id))
+}
+
+/// Month / year recap (ADR-057). `days`: day boundaries over the period as
+/// wall-clock ms; `utc_days`: the same in real time; `tz_offset`: minutes
+/// assumed for capture times without an offset.
+#[tauri::command]
+pub fn stats_recap(
+    lib: String,
+    days: Vec<i64>,
+    utc_days: Vec<i64>,
+    tz_offset: i64,
+) -> AppResult<stats_recap::Recap> {
+    if days.len() < 2 || days.len() != utc_days.len() || days.len() > 400 {
+        return Err(AppError::InvalidArg("bad day edges".into()));
+    }
+    let hide = super::conversations::hide_offline(&lib)?;
+    db::with_lib(&lib, |c| stats_recap::recap(c, &days, &utc_days, tz_offset, hide))
 }

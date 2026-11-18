@@ -256,3 +256,26 @@ export function periodRange(p: Period, now = new Date()): string | null {
   }
   return null;
 }
+
+/** Day boundaries over the whole period (the recap's day grid), as wall-clock
+ *  ms and as real instants, like `bucketEdges`. */
+export function dayEdges(p: Period): { edges: number[]; utcEdges: number[] } {
+  const end = shift(p, 1);
+  const days = Math.round((Date.UTC(end.y, end.m, end.d) - Date.UTC(p.y, p.m, p.d)) / 86_400_000);
+  const parts = Array.from({ length: days + 1 }, (_, i) => [p.y, p.m, p.d + i] as const);
+  return {
+    edges: parts.map(([y, m, d]) => Date.UTC(y, m, d)),
+    utcEdges: parts.map(([y, m, d]) => new Date(y, m, d).getTime()),
+  };
+}
+
+/** The local date of day `i` of the period. */
+export function dayOf(p: Period, i: number): Date {
+  return new Date(p.y, p.m, p.d + i);
+}
+
+/** 10月3日 周五 (the year only when it isn't this one). */
+export function formatDay(d: Date, now = new Date()): string {
+  const md = `${d.getMonth() + 1}月${d.getDate()}日`;
+  return `${d.getFullYear() === now.getFullYear() ? md : `${d.getFullYear()}年${md}`} 周${WEEKDAYS[d.getDay()]}`;
+}

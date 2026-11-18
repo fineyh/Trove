@@ -1,6 +1,7 @@
 import { Channel, invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
+  Recap,
   AppEnvironment,
   AppSettings,
   AuthStatus,
@@ -370,6 +371,13 @@ export async function statsOverview(lib: string, edges: number[], utcEdges: numb
 
 export async function statsItemHistory(lib: string, messageId: number): Promise<ItemHistory> {
   return invoke<ItemHistory>("stats_item_history", { lib, messageId });
+}
+
+/** Month / year recap: `days` are day boundaries over the period in
+ *  wall-clock ms, `utcDays` the same instants in real time. */
+export async function statsRecap(lib: string, days: number[], utcDays: number[]): Promise<Recap> {
+  const tzOffset = -new Date().getTimezoneOffset();
+  return invoke<Recap>("stats_recap", { lib, days, utcDays, tzOffset });
 }
 
 /** A video reached "one play", in any window. */

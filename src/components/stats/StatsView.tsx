@@ -7,6 +7,7 @@ import {
   Film,
   Image as ImageIcon,
   Loader2,
+  GalleryVerticalEnd,
   TrendingDown,
   TrendingUp,
 } from "lucide-react";
@@ -40,9 +41,10 @@ import { useSessionStore } from "../../stores/session";
 import { useSettingsStore } from "../../stores/settings";
 import { useThumbUrl } from "../../stores/thumbs";
 import type { StatsOverview, StatsTopConv, StatsTopItem } from "../../types";
-import { IconButton } from "../ui/Button";
+import { Button, IconButton } from "../ui/Button";
 import { ConvAvatar } from "../ui/ConvAvatar";
 import { Segmented } from "../ui/Segmented";
+import { RecapView } from "./RecapView";
 
 const KINDS: readonly { value: PeriodKind; label: string }[] = [
   { value: "day", label: "日" },
@@ -79,6 +81,7 @@ function StatsPage({ lib }: { lib: string }) {
   const [period, setPeriod] = useState<Period>(() => currentPeriod("week"));
   const [data, setData] = useState<Loaded | null>(null);
   const [failed, setFailed] = useState(false);
+  const [recap, setRecap] = useState<Period | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -139,6 +142,11 @@ function StatsPage({ lib }: { lib: string }) {
             {range && <span className="min-w-0 truncate text-xs text-app-muted">{range}</span>}
             {loading && <Loader2 size={14} className="shrink-0 animate-spin text-app-muted" />}
             <span className="flex-1" />
+            {(period.kind === "month" || period.kind === "year") && (
+              <Button size="sm" variant="ghost" icon={<GalleryVerticalEnd size={14} />} onClick={() => setRecap(period)}>
+                回顾
+              </Button>
+            )}
             <div className="flex items-center">
               <IconButton label={STEP[period.kind][0]} size="sm" icon={<ChevronLeft size={16} />} onClick={() => setPeriod((p) => shift(p, -1))} />
               <IconButton
@@ -159,6 +167,8 @@ function StatsPage({ lib }: { lib: string }) {
           ) : null}
         </div>
       </div>
+
+      {recap && <RecapView lib={lib} period={recap} onClose={() => setRecap(null)} />}
     </div>
   );
 }

@@ -203,6 +203,35 @@ function install() {
         itemsBefore: 2000, hasHistory: !cleared,
       };
     },
+    // Recap: seeded per day, a few places around Kansai and beyond.
+    stats_recap: (a) => {
+      const days: number[] = a.days;
+      const n = days.length - 1;
+      const wallNow = now - new Date().getTimezoneOffset() * 60_000;
+      const hash = (x: number) => { let h = (x / 60_000) | 0; h = Math.imul(h ^ (h >>> 15), 2246822519); h = Math.imul(h ^ (h >>> 13), 3266489917); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+      const cover = (id: number) => ({ messageId: id, mediaId: id, convId: 1 + (id % 5), kind: id % 7 === 0 ? "video" : "image" });
+      const taken = Array.from({ length: n }, (_, i) => {
+        if (days[i] > wallNow) return 0;
+        const r = hash(days[i] + 3);
+        const trip = i % 97 > 60 && i % 97 < 68;
+        return r < 0.45 && !trip ? 0 : Math.round(r * (trip ? 90 : 14));
+      });
+      const dayCovers = taken.map((k, i) => (k > 0 ? cover(200 + i) : null));
+      let busy = -1;
+      taken.forEach((k, i) => { if (busy < 0 || k > taken[busy]) busy = i; });
+      const withCover = dayCovers.filter(Boolean) as any[];
+      const step = Math.max(1, Math.floor(withCover.length / 12));
+      const covers = withCover.filter((_, i) => i % step === 0).slice(0, 12);
+      const city = [[35.01, 135.76, 412], [34.69, 135.5, 96], [35.68, 139.76, 61], [31.23, 121.47, 28], [34.99, 135.9, 17], [-33.87, 151.21, 9], [43.06, 141.35, 4]];
+      const geo = taken.reduce((x, y) => x + y, 0) > 0;
+      return {
+        taken, dayCovers, covers,
+        busiest: busy >= 0 && taken[busy] > 0 ? { day: busy, count: taken[busy], covers: [0, 1, 2, 3, 4, 5].map((j) => cover(600 + busy * 6 + j)) } : null,
+        places: geo ? city.map(([lat, lon, count], i) => ({ lat, lon, count, cover: cover(900 + i) })) : [],
+        placeCount: geo ? 9 : 0, geoCount: geo ? 627 : 0,
+        addedBytes: geo ? 41_800_000_000 * (n / 365) : 0, newConvs: n > 40 ? 6 : 1,
+      };
+    },
     stats_item_history: (a) => {
       const m = messages.find((x) => x.id === a.messageId);
       if (!m || !m.media) return { totalMs: 0, plays: 0, views: [], viewCount: 0 };

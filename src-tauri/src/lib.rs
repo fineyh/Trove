@@ -167,6 +167,7 @@ pub fn run() {
             commands::stats::stats_clear,
             commands::stats::stats_overview,
             commands::stats::stats_item_history,
+            commands::stats::stats_recap,
             commands::messages::delete_message,
             commands::media::import_files,
             commands::media::cancel_import,
