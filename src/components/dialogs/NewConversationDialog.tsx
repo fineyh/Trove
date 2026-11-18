@@ -16,7 +16,7 @@ type Mode = "manual" | "folder_bulk" | "folder_watch";
 
 const MODES: { value: Mode; icon: React.ReactNode; title: string; desc: string }[] = [
   { value: "manual", icon: <MessageSquarePlus size={18} />, title: "空白会话", desc: "之后再添加内容" },
-  { value: "folder_bulk", icon: <FolderInput size={18} />, title: "导入文件夹", desc: "导入文件夹中的图片和视频" },
+  { value: "folder_bulk", icon: <FolderInput size={18} />, title: "导入文件夹", desc: "导入文件夹中的图片、视频、录音" },
   { value: "folder_watch", icon: <FolderSync size={18} />, title: "同步文件夹", desc: "随文件夹的增删自动更新" },
 ];
 

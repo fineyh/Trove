@@ -48,7 +48,7 @@ const MESSAGE_COLUMNS: &str = "
     md.id, md.kind, md.width, md.height, md.duration_ms, md.size_bytes,
     md.relpath, md.state, COALESCE(v.online, 0),
     EXISTS (SELECT 1 FROM thumbs t WHERE t.media_id = md.id),
-    md.lat IS NOT NULL AND md.lon IS NOT NULL,
+    md.kind IN ('image', 'video') AND md.lat IS NOT NULL AND md.lon IS NOT NULL,
     md.taken_at, md.taken_offset, md.peaks";
 
 const MESSAGE_FROM: &str = "

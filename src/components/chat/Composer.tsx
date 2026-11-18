@@ -11,6 +11,8 @@ import { cn } from "../../lib/cn";
 const MEDIA_EXTENSIONS = [
   "jpg", "jpeg", "png", "gif", "webp", "heic", "heif", "avif", "bmp", "tif", "tiff", "jfif",
   "mp4", "mov", "webm", "mkv", "m4v", "avi", "ts",
+  // Same list as `AUDIO_EXTS` in src-tauri/src/services/audio.rs.
+  "mp3", "m4a", "aac", "wav", "flac", "ogg", "oga", "opus", "amr", "wma", "aif", "aiff",
 ];
 
 /** Taller than this and the text box scrolls. */
@@ -52,7 +54,7 @@ export function Composer({ convId }: { convId: number }) {
       const picked = await openDialog({
         multiple: true,
         filters: [
-          { name: "图片和视频", extensions: MEDIA_EXTENSIONS },
+          { name: "图片、视频、录音", extensions: MEDIA_EXTENSIONS },
           { name: "所有文件", extensions: ["*"] },
         ],
       });
@@ -75,7 +77,7 @@ export function Composer({ convId }: { convId: number }) {
       <ImportProgressBar convId={convId} />
       <div className="px-4 pb-4 pt-1">
         <div className="flex items-end gap-1 rounded-xl border border-app-border bg-app-panel p-1 transition-colors duration-fast focus-within:border-app-accent/60 focus-within:ring-2 focus-within:ring-app-accent/15">
-          <IconButton label="添加图片或视频" icon={<Plus size={18} />} onClick={handlePick} disabled={busy} tipSide="top" />
+          <IconButton label="添加文件" icon={<Plus size={18} />} onClick={handlePick} disabled={busy} tipSide="top" />
           <textarea
             ref={ref}
             rows={1}

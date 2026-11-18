@@ -250,7 +250,7 @@ export function ChatList() {
             className="py-16"
             icon={<MessageSquare size={28} strokeWidth={1.5} />}
             title="还没有会话"
-            description="导入图片和视频，或同步一个文件夹"
+            description="导入文件，或同步一个文件夹"
             action={
               <Button size="sm" icon={<Plus size={14} />} onClick={() => setNewConvOpen(true)}>
                 新建会话

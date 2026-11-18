@@ -46,6 +46,7 @@ pub fn list_geotagged_media(lib: String) -> AppResult<Vec<GeotaggedMedia>> {
              JOIN messages m ON m.media_id = md.id
              JOIN conversations c ON c.id = m.conv_id
              WHERE md.lat IS NOT NULL AND md.lon IS NOT NULL
+               AND md.kind IN ('image', 'video')
                AND c.archived = 0
              ORDER BY md.id ASC, m.id ASC",
         )?;
