@@ -139,7 +139,7 @@ fn create_conversation_blocking(lib: &str, args: CreateConversationArgs) -> AppR
     let now = now_ms();
 
     let watch_root: Option<PathBuf>;
-    let (source_volume_id, source_relpath) = if args.kind == "folder_watch" {
+    let source = if args.kind == "folder_watch" {
         let path = args
             .source_path
             .as_ref()
@@ -149,15 +149,19 @@ fn create_conversation_blocking(lib: &str, args: CreateConversationArgs) -> AppR
             return Err(AppError::InvalidArg(format!("not a directory: {}", raw.display())));
         }
         let resolved = services::volume_resolver::resolve(raw).map_err(AppError::InvalidArg)?;
-        let vid = ensure_volume(lib, &resolved.platform_id, &resolved.label, &resolved.mount_point)?;
         watch_root = Some(services::volume_resolver::absolute_for(&resolved.mount_point, &resolved.relpath));
-        (Some(vid), Some(resolved.relpath))
+        Some(resolved)
     } else {
         watch_root = None;
-        (None, None)
+        None
     };
 
     let conv_id = db::with_lib(lib, |conn| {
+        // Same lock as the insert, so a prune can't drop the volume between.
+        let (source_volume_id, source_relpath) = match &source {
+            Some(r) => (Some(ensure_volume(conn, &r.platform_id, &r.label, &r.mount_point)?), Some(r.relpath.clone())),
+            None => (None, None),
+        };
         conn.execute(
             "INSERT INTO conversations
                 (name, avatar_path, kind, source_volume_id, source_relpath,
@@ -184,15 +188,17 @@ fn create_conversation_blocking(lib: &str, args: CreateConversationArgs) -> AppR
     Ok(conv_id)
 }
 
+/// Run inside the same `with_lib` as the rows that will point at the volume,
+/// so `volume_monitor::prune_unused` can't drop it in between.
 pub(crate) fn ensure_volume(
-    lib: &str,
+    conn: &rusqlite::Connection,
     platform_id: &str,
     label: &str,
     mount_point: &std::path::Path,
 ) -> AppResult<i64> {
     let mount_str = mount_point.to_string_lossy().to_string();
     let now = now_ms();
-    db::with_lib(lib, |conn| {
+    {
         let existing: Option<i64> = conn
             .query_row(
                 "SELECT id FROM volumes WHERE platform_id = ?1",
@@ -213,7 +219,7 @@ pub(crate) fn ensure_volume(
             params![platform_id, label, mount_str, now],
         )?;
         Ok(conn.last_insert_rowid())
-    })
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -334,6 +340,7 @@ pub fn delete_conversation(lib: String, id: i64) -> AppResult<()> {
             [],
         )?;
         tx.execute("DELETE FROM _gone", [])?;
+        services::volume_monitor::prune_unused(&tx)?;
         tx.commit()?;
         Ok(())
     })

@@ -16,7 +16,7 @@ use crate::services::volume_resolver::{self, VolumeInfo};
 use crate::{db, AppResult};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -110,6 +110,7 @@ fn scan_library_inner(lib: &str) -> AppResult<()> {
     let mounted = mounted_now();
     *LAST_MOUNTED.lock() = mounted.clone();
     upgrade_legacy_platform_ids(lib)?;
+    db::with_lib(lib, |c| Ok(prune_unused(c)?))?;
 
     let volumes: Vec<(i64, String)> = db::with_lib(lib, |c| {
         let mut st = c.prepare("SELECT id, platform_id FROM volumes")?;
@@ -246,6 +247,20 @@ fn conversations_using_volume(lib: &str, volume_id: i64) -> AppResult<HashSet<i6
     })
 }
 
+/// Drop volume rows nothing points at any more: no file on it, no sync
+/// folder on it. Volumes are only ever added (import, sync folder, relink,
+/// moving a conversation in), so without this every disk a file once came
+/// from stays in the list after its files are gone.
+pub fn prune_unused(c: &Connection) -> rusqlite::Result<usize> {
+    c.execute(
+        "DELETE FROM volumes
+          WHERE NOT EXISTS (SELECT 1 FROM media WHERE volume_id = volumes.id)
+            AND NOT EXISTS (SELECT 1 FROM conversations WHERE source_volume_id = volumes.id)
+            AND NOT EXISTS (SELECT 1 FROM broken_pointers WHERE last_known_volume = volumes.id)",
+        [],
+    )
+}
+
 /// Older builds stored a weaker platform id; when the volume is mounted we
 /// can compute the real one and fold duplicates together.
 fn upgrade_legacy_platform_ids(lib: &str) -> AppResult<()> {
@@ -319,5 +334,34 @@ pub fn try_start_watcher(lib: &str, conv_id: i64) {
     }
     if let Err(e) = file_watcher::start(lib, conv_id, root) {
         log::warn!("volume_monitor: watcher {lib}#{conv_id}: {e}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::prune_unused;
+    use rusqlite::Connection;
+
+    #[test]
+    fn prune_keeps_only_volumes_in_use() {
+        let c = Connection::open_in_memory().unwrap();
+        crate::db::run_migrations_for_test(&c);
+        c.execute_batch(
+            "PRAGMA foreign_keys = ON;
+             INSERT INTO volumes (id, platform_id, created_at) VALUES (1, 'files', 0), (2, 'sync', 0), (3, 'gone', 0);
+             INSERT INTO media (id, volume_id, relpath, size_bytes, mtime, blake3, kind) VALUES (1, 1, 'a.jpg', 1, 0, 'h', 'image');
+             INSERT INTO conversations (id, name, kind, source_volume_id, created_at, updated_at)
+               VALUES (1, 'empty sync folder', 'folder_watch', 2, 0, 0);",
+        )
+        .unwrap();
+        assert_eq!(prune_unused(&c).unwrap(), 1);
+        let left: Vec<i64> = c
+            .prepare("SELECT id FROM volumes ORDER BY id")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(left, vec![1, 2]);
     }
 }

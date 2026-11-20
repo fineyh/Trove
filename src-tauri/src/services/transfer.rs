@@ -383,6 +383,7 @@ fn delete_source(c: &Connection, conv_id: i64) -> AppResult<()> {
             [mid],
         )?;
     }
+    crate::services::volume_monitor::prune_unused(&tx)?;
     tx.commit()?;
     Ok(())
 }

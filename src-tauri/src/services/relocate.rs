@@ -46,7 +46,7 @@ pub fn relocate_media(lib: &str, media_id: i64, new_path: &Path) -> AppResult<Re
     let now = chrono::Utc::now().timestamp_millis();
     let mount_str = resolved.mount_point.to_string_lossy().to_string();
 
-    db::with_lib(lib, |conn| -> AppResult<RelocateOutcome> {
+    let outcome = db::with_lib(lib, |conn| -> AppResult<RelocateOutcome> {
         // Snapshot old row.
         type OldRow = (i64, String, i64, String);
         let old: OldRow = conn
@@ -153,5 +153,8 @@ pub fn relocate_media(lib: &str, media_id: i64, new_path: &Path) -> AppResult<Re
             params![media_id],
         )?;
         Ok(RelocateOutcome::Moved)
-    })
+    })?;
+    // The old volume may have lost its last file.
+    db::with_lib(lib, |conn| Ok(crate::services::volume_monitor::prune_unused(conn)?))?;
+    Ok(outcome)
 }

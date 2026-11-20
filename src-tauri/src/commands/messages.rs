@@ -330,6 +330,7 @@ pub fn delete_message(lib: String, message_id: i64, delete_file: bool) -> AppRes
                 }
                 // CASCADE clears broken_pointers and thumbs.
                 conn.execute("DELETE FROM media WHERE id = ?1", params![mid])?;
+                crate::services::volume_monitor::prune_unused(conn)?;
             }
         }
         Ok(())

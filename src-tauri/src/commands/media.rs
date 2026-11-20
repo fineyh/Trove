@@ -303,12 +303,6 @@ pub(crate) fn ingest_one(
     file_time: bool,
 ) -> AppResult<Option<ImportedMessage>> {
     let resolved = services::volume_resolver::resolve(path).map_err(AppError::InvalidArg)?;
-    let volume_id = super::conversations::ensure_volume(
-        lib,
-        &resolved.platform_id,
-        &resolved.label,
-        &resolved.mount_point,
-    )?;
 
     let metadata = std::fs::metadata(path)?;
     let size_bytes = metadata.len() as i64;
@@ -327,6 +321,8 @@ pub(crate) fn ingest_one(
     let created_at = if file_time { taken_at.unwrap_or(mtime) } else { now_ms() };
 
     let result = db::with_lib(lib, |conn| -> AppResult<Option<(i64, i64)>> {
+        let volume_id =
+            super::conversations::ensure_volume(conn, &resolved.platform_id, &resolved.label, &resolved.mount_point)?;
         let existing: Option<i64> = conn
             .query_row(
                 "SELECT id FROM media WHERE volume_id = ?1 AND relpath = ?2",
