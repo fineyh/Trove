@@ -90,6 +90,28 @@ export function formatTakenTime(at: number, offset: number): string {
   return `${d.getUTCFullYear()}年${d.getUTCMonth() + 1}月${d.getUTCDate()}日 ${hh}:${mm}`;
 }
 
+/**
+ * 查看器左上角两行（ADR-062）：日期一行、钟点一行。有拍摄时间用拍摄地的钟面，
+ * 否则用导入时间（本地时区）。`zone` 只在拍摄时间上有。
+ */
+export function viewerTime(m: { takenAt: number | null; takenOffset: number | null; createdAt: number }): {
+  date: string;
+  time: string;
+  zone: string | null;
+} {
+  const taken = m.takenAt != null;
+  const offset = m.takenOffset ?? 0;
+  // Read every field as UTC: for the taken time that's the wall clock there,
+  // for the import time the local wall clock.
+  const d = taken
+    ? takenWall(m.takenAt!, offset)
+    : new Date(m.createdAt - new Date(m.createdAt).getTimezoneOffset() * 60_000);
+  const thisYear = d.getUTCFullYear() === new Date().getFullYear();
+  const date = `${thisYear ? "" : `${d.getUTCFullYear()}年`}${d.getUTCMonth() + 1}月${d.getUTCDate()}日 ${WEEKDAYS[d.getUTCDay()]}`;
+  const time = `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+  return { date, time, zone: taken ? formatUtcOffset(offset) : null };
+}
+
 /** 时区：UTC+9 / UTC+5:30 / UTC-4 / UTC。 */
 export function formatUtcOffset(offset: number): string {
   if (offset === 0) return "UTC";

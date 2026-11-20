@@ -12,7 +12,7 @@ import { MessageMenu, type MessageMenuTarget } from "../chat/MessageMenu";
 import { Segmented } from "../ui/Segmented";
 import { cn } from "../../lib/cn";
 import { isHeicExt } from "../../lib/heic";
-import { formatDuration, isImageMedia } from "../../lib/media";
+import { formatDuration, isImageMedia, messageTitle } from "../../lib/media";
 import { trackOf, useAudioStore } from "../../stores/audio";
 
 /** Grid click: view what can be viewed, explain what can't. */
@@ -182,7 +182,7 @@ function GridItem({
       {audio ? (
         <span className="flex h-full w-full flex-col items-center justify-center gap-1 px-1.5">
           <AudioLines size={20} className={playing ? "text-app-accent" : "text-app-secondary"} />
-          <span className="w-full truncate text-center text-2xs leading-4 text-app-secondary">{message.caption ?? "录音"}</span>
+          <span className="w-full truncate text-center text-2xs leading-4 text-app-secondary">{messageTitle(message) || "录音"}</span>
           {media.durationMs ? <span className="text-2xs leading-3 tabular-nums text-app-muted">{formatDuration(media.durationMs)}</span> : null}
         </span>
       ) : src && !failed ? (

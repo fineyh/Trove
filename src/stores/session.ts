@@ -26,6 +26,9 @@ interface SessionState {
   /** Media the map should fly to once it has loaded ("show on map"). */
   mapFocus: number | null;
   lightboxMessageId: number | null;
+  /** The info panel docked beside the chat, for this message (ADR-062).
+   *  Takes the place of the conversation info. */
+  infoMessageId: number | null;
   libraryDialog: LibraryDialog | null;
   /** Missing-files dialog for the current space. */
   missingFilesOpen: boolean;
@@ -42,6 +45,8 @@ interface SessionState {
   clearMapFocus: () => void;
   openLightbox: (messageId: number) => void;
   closeLightbox: () => void;
+  openInfo: (messageId: number) => void;
+  closeInfo: () => void;
   setLibraryDialog: (d: LibraryDialog | null) => void;
   setMissingFilesOpen: (open: boolean) => void;
   showRecovery: (r: RecoveryReveal | null) => void;
@@ -59,6 +64,7 @@ export const useSessionStore = create<SessionState>((set) => ({
   view: "chats",
   mapFocus: null,
   lightboxMessageId: null,
+  infoMessageId: null,
   libraryDialog: null,
   missingFilesOpen: false,
   recovery: null,
@@ -68,8 +74,10 @@ export const useSessionStore = create<SessionState>((set) => ({
       activeConversationId: id,
       profileDrawerOpen: false,
       lightboxMessageId: null,
+      infoMessageId: null,
     }),
-  setProfileDrawerOpen: (open) => set({ profileDrawerOpen: open }),
+  setProfileDrawerOpen: (open) =>
+    set(open ? { profileDrawerOpen: true, infoMessageId: null } : { profileDrawerOpen: false }),
   setNewConversationOpen: (open) => set({ newConversationOpen: open }),
   setSettingsOpen: (open, section) =>
     set({ settingsOpen: open, settingsSection: open ? (section ?? null) : null }),
@@ -78,6 +86,8 @@ export const useSessionStore = create<SessionState>((set) => ({
   clearMapFocus: () => set({ mapFocus: null }),
   openLightbox: (messageId) => set({ lightboxMessageId: messageId }),
   closeLightbox: () => set({ lightboxMessageId: null }),
+  openInfo: (messageId) => set({ infoMessageId: messageId, profileDrawerOpen: false }),
+  closeInfo: () => set({ infoMessageId: null }),
   setLibraryDialog: (d) => set({ libraryDialog: d }),
   setMissingFilesOpen: (open) => set({ missingFilesOpen: open }),
   showRecovery: (r) => set({ recovery: r }),
@@ -87,6 +97,7 @@ export const useSessionStore = create<SessionState>((set) => ({
       activeConversationId: null,
       profileDrawerOpen: false,
       lightboxMessageId: null,
+      infoMessageId: null,
       mapFocus: null,
       newConversationOpen: false,
       movingConversationId: null,

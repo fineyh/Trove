@@ -314,10 +314,6 @@ pub(crate) fn ingest_one(
     let meta = services::exif::read_meta(path, kind);
     let (lat, lon) = (meta.geo.map(|g| g.0), meta.geo.map(|g| g.1));
     let (taken_at, taken_offset) = (meta.taken.map(|t| t.at), meta.taken.map(|t| t.offset));
-    let filename_caption = path
-        .file_stem()
-        .map(|s| s.to_string_lossy().to_string())
-        .unwrap_or_default();
     let created_at = if file_time { taken_at.unwrap_or(mtime) } else { now_ms() };
 
     let result = db::with_lib(lib, |conn| -> AppResult<Option<(i64, i64)>> {
@@ -382,9 +378,10 @@ pub(crate) fn ingest_one(
         }
 
         conn.execute(
+            // No caption: it's the user's to write (the file name shows meanwhile).
             "INSERT INTO messages (conv_id, media_id, caption, play_count, created_at)
-             VALUES (?1, ?2, ?3, 0, ?4)",
-            params![conv_id, media_id, filename_caption, created_at],
+             VALUES (?1, ?2, NULL, 0, ?3)",
+            params![conv_id, media_id, created_at],
         )?;
         let msg_id = conn.last_insert_rowid();
         Ok(Some((media_id, msg_id)))

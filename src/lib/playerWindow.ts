@@ -6,7 +6,7 @@ import type { Message } from "../types";
 import { mediaSrc, thumbSrc } from "../ipc/client";
 import { currentLib } from "../stores/libraries";
 import { isHeicExt } from "./heic";
-import { isImageMedia } from "./media";
+import { isImageMedia, messageTitle } from "./media";
 import { PLAYER_TITLEBAR_HEIGHT } from "../player/layout";
 
 /** Label prefix for every media (video/image) popup window. */
@@ -50,7 +50,7 @@ export async function openPlayerWindow(message: Message): Promise<void> {
   // An id-only trove:// URL: no path ever reaches the popup (ADR-037).
   const src = mediaSrc(lib, message.media.id);
   const title =
-    message.caption?.trim() || (kind === "image" ? "Trove 图片" : "Trove 视频");
+    messageTitle(message) || (kind === "image" ? "Trove 图片" : "Trove 视频");
   // lib + message id let the popup record its own viewing (ADR-054).
   const params = new URLSearchParams({ src, title, kind, lib, mid: String(message.id) });
   // Flag HEIC so the player decodes it (WebView can't show HEIC natively).

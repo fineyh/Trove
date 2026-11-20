@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Copy, ExternalLink, FolderSearch, History, MapPin, PictureInPicture2, Trash2, UserSquare2 } from "lucide-react";
+import { Copy, ExternalLink, FolderSearch, Info, PictureInPicture2, Trash2, UserSquare2 } from "lucide-react";
 import type { Message } from "../../types";
 import * as ipc from "../../ipc/client";
 import { useSessionStore } from "../../stores/session";
@@ -11,8 +11,6 @@ import { ContextMenu, type ContextMenuEntry } from "../ui/ContextMenu";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { openPlayerWindow } from "../../lib/playerWindow";
 import { isImageMedia } from "../../lib/media";
-import { useMapEnabled } from "../map/MapView";
-import { ViewHistoryDialog } from "../stats/ViewHistoryDialog";
 
 export interface MessageMenuTarget {
   x: number;
@@ -24,6 +22,10 @@ interface MessageMenuProps {
   /** Where the menu is open and for which message; null = closed. */
   menu: MessageMenuTarget | null;
   onClose: () => void;
+  /** Opened from a viewer's "more" button: the viewer has its own info panel. */
+  inViewer?: boolean;
+  /** The message was deleted (a viewer moves on to another item). */
+  onDeleted?: (message: Message) => void;
 }
 
 /**
@@ -31,7 +33,7 @@ interface MessageMenuProps {
  * profile drawer's media grid so both offer the same actions. Owns the delete
  * confirmation, which outlives the menu itself.
  */
-export function MessageMenu({ menu, onClose }: MessageMenuProps) {
+export function MessageMenu({ menu, onClose, inViewer, onDeleted }: MessageMenuProps) {
   const lib = useLibrariesStore((s) => s.current);
   const remove = useMessagesStore((s) => s.remove);
   const setAvatar = useConversationsStore((s) => s.setAvatar);
@@ -42,11 +44,9 @@ export function MessageMenu({ menu, onClose }: MessageMenuProps) {
   const isFolderWatch = useConversationsStore(
     (s) => convId != null && s.list.find((c) => c.id === convId)?.kind === "folder_watch",
   );
-  const mapEnabled = useMapEnabled();
   const [confirmFor, setConfirmFor] = useState<Message | null>(null);
   const [deleteFile, setDeleteFile] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [historyFor, setHistoryFor] = useState<Message | null>(null);
 
   const items: ContextMenuEntry[] = [];
   const message = menu?.message;
@@ -68,6 +68,17 @@ export function MessageMenu({ menu, onClose }: MessageMenuProps) {
     });
   }
   if (message && media && lib) {
+    // Position, viewing history and the rest are in the info panel (ADR-062).
+    if (!inViewer) {
+      items.push({
+        label: "信息",
+        icon: <Info size={15} />,
+        onClick: () => {
+          onClose();
+          useSessionStore.getState().openInfo(message.id);
+        },
+      });
+    }
     if (reachable && (isVideo || isImage)) {
       items.push({
         label: "在新窗口打开",
@@ -75,17 +86,7 @@ export function MessageMenu({ menu, onClose }: MessageMenuProps) {
         onClick: act(() => openPlayerWindow(message), "无法打开窗口"),
       });
     }
-    if (media.hasGeo && mapEnabled) {
-      items.push({
-        label: "在地图上显示",
-        icon: <MapPin size={15} />,
-        onClick: () => {
-          onClose();
-          useSessionStore.getState().showOnMap(media.id);
-        },
-      });
-    }
-    items.push(
+    items.push("separator",
       {
         label: "用默认应用打开",
         icon: <ExternalLink size={15} />,
@@ -119,16 +120,6 @@ export function MessageMenu({ menu, onClose }: MessageMenuProps) {
         }, "无法设置头像"),
       });
     }
-    if (isImage || isVideo || media.kind === "audio") {
-      items.push({
-        label: "观看记录",
-        icon: <History size={15} />,
-        onClick: () => {
-          onClose();
-          setHistoryFor(message);
-        },
-      });
-    }
   }
   if (message && !isFolderWatch) {
     items.push("separator", {
@@ -156,6 +147,10 @@ export function MessageMenu({ menu, onClose }: MessageMenuProps) {
     try {
       await remove(confirmFor.id, confirmFor.convId, confirmReachable && deleteFile);
       setConfirmFor(null);
+      onDeleted?.(confirmFor);
+      // The docked info panel was about this one.
+      const s = useSessionStore.getState();
+      if (s.infoMessageId === confirmFor.id) s.closeInfo();
     } catch (err) {
       toast.error("无法删除", err);
     } finally {
@@ -166,8 +161,6 @@ export function MessageMenu({ menu, onClose }: MessageMenuProps) {
   return (
     <>
       <ContextMenu open={menu !== null && !empty} x={menu?.x ?? 0} y={menu?.y ?? 0} onClose={onClose} items={items} />
-
-      {lib && <ViewHistoryDialog lib={lib} message={historyFor} onClose={() => setHistoryFor(null)} />}
 
       <ConfirmDialog
         open={confirmFor !== null}

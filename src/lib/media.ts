@@ -13,6 +13,14 @@ export function kindLabel(m: Pick<MediaPayload, "kind" | "ext">): string {
   return "文件";
 }
 
+/**
+ * What a message is called: the caption the user wrote, else the file's name
+ * (ADR-062). Text messages are their caption.
+ */
+export function messageTitle(m: { caption: string | null; media: Pick<MediaPayload, "name"> | null }): string {
+  return m.caption?.trim() || m.media?.name || "";
+}
+
 export function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   const units = ["KB", "MB", "GB", "TB"];

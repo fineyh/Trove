@@ -5,6 +5,7 @@
 import { create } from "zustand";
 import * as ipc from "../ipc/client";
 import { toast } from "./toast";
+import { messageTitle } from "../lib/media";
 
 export interface AudioTrack {
   lib: string;
@@ -146,7 +147,7 @@ export const useAudioStore = create<AudioState>((set, get) => ({
   },
 }));
 
-export function trackOf(lib: string, m: { id: number; convId: number; caption: string | null; media: { id: number; durationMs: number | null } | null }): AudioTrack | null {
+export function trackOf(lib: string, m: { id: number; convId: number; caption: string | null; media: { id: number; name: string; durationMs: number | null } | null }): AudioTrack | null {
   if (!m.media) return null;
-  return { lib, messageId: m.id, mediaId: m.media.id, convId: m.convId, title: m.caption ?? "录音", durationMs: m.media.durationMs };
+  return { lib, messageId: m.id, mediaId: m.media.id, convId: m.convId, title: messageTitle(m) || "录音", durationMs: m.media.durationMs };
 }

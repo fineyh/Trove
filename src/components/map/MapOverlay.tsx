@@ -3,6 +3,7 @@ import { ArrowLeft, Focus, Loader2, MapPin, Minus, PanelRightOpen, Plus, WifiOff
 import { listGeotaggedMedia, onGeoBackfillDone } from "../../ipc/client";
 import { photoTime } from "../../lib/datetime";
 import { cn } from "../../lib/cn";
+import { useIsDark } from "../../lib/useIsDark";
 import { useLibrariesStore } from "../../stores/libraries";
 import { useMessagesStore } from "../../stores/messages";
 import { useSessionStore } from "../../stores/session";
@@ -17,16 +18,6 @@ import { ATTRIBUTION } from "./mapStyle";
 
 const EMPTY: GeotaggedMedia[] = [];
 
-function useIsDark(): boolean {
-  const [dark, setDark] = useState(() => document.documentElement.classList.contains("dark"));
-  useEffect(() => {
-    const root = document.documentElement;
-    const mo = new MutationObserver(() => setDark(root.classList.contains("dark")));
-    mo.observe(root, { attributes: true, attributeFilter: ["class"] });
-    return () => mo.disconnect();
-  }, []);
-  return dark;
-}
 
 interface Selection {
   items: GeotaggedMedia[];

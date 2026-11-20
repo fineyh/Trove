@@ -96,6 +96,9 @@ export interface ViewerTransformOptions {
    *  it. Used by the player window, whose picture follows the window size.
    *  Omitted: the overlay viewers' 90vw × 85vh caps, which only shrink. */
   fill?: { width: string; height: string };
+  /** Pixels taken from the right of the window by a side panel (the info
+   *  panel, ADR-062): the caps measure the width that's left. */
+  inset?: number;
 }
 
 interface Rendered {
@@ -271,7 +274,8 @@ export function useViewerTransform(
     animate();
   }, [rotation, animate]);
 
-  // Window / fullscreen size changes move the pan limits.
+  // Window / fullscreen size changes move the pan limits, and so does the
+  // stage alone narrowing (a side panel opening).
   useEffect(() => {
     const onResize = () => {
       const c = cur.current;
@@ -281,8 +285,13 @@ export function useViewerTransform(
       publish();
     };
     window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, [clampOffset, write, publish]);
+    const ro = stage ? new ResizeObserver(onResize) : null;
+    if (stage) ro?.observe(stage);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      ro?.disconnect();
+    };
+  }, [stage, clampOffset, write, publish]);
 
   // Wheel: non-passive (React's `onWheel` is passive) so the WebView doesn't
   // also scroll. Re-attached whenever the stage element changes.
@@ -388,6 +397,8 @@ export function useViewerTransform(
   // size constraints too — the rotated media stays inside the viewport.
   const quarterTurned = isQuarterTurn(rotation);
   const fill = options?.fill;
+  const inset = options?.inset ?? 0;
+  const across = inset > 0 ? `calc((100vw - ${inset}px) * 0.9)` : "90vw";
   const fit: CSSProperties = fill
     ? {
         width: quarterTurned ? fill.height : fill.width,
@@ -396,8 +407,8 @@ export function useViewerTransform(
         maxHeight: "none",
       }
     : {
-        maxWidth: quarterTurned ? "85vh" : "90vw",
-        maxHeight: quarterTurned ? "90vw" : "85vh",
+        maxWidth: quarterTurned ? "85vh" : across,
+        maxHeight: quarterTurned ? across : "85vh",
       };
   const zoomed = goalScale > MIN_SCALE;
 

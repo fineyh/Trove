@@ -7,7 +7,7 @@ const SCHEMA_SQL: &str = include_str!("schema.sql");
 
 /// 当前代码能理解的最高 schema 版本。改 `schema.sql` 时必须同时 bump 这个常量
 /// 并补一条 `V{N}_TO_V{N+1}`，否则老库升不上来、新库会被下面的守卫拒绝。
-pub const SCHEMA_LATEST: i64 = 10;
+pub const SCHEMA_LATEST: i64 = 11;
 
 const V1_TO_V2: &str = "
 ALTER TABLE conversations ADD COLUMN enc_kdf_salt BLOB;
@@ -242,6 +242,32 @@ CREATE INDEX idx_views_conv ON views(conv_id);
     )
 }
 
+/// v11 (2026-11): a media message's caption is what the user wrote about it
+/// (the info panel). Imports used to store the file name there; those are
+/// cleared, and the name now comes from the file itself.
+fn v10_to_v11(conn: &Connection) -> AppResult<()> {
+    let tx = conn.unchecked_transaction()?;
+    let rows: Vec<(i64, String, String)> = tx
+        .prepare(
+            "SELECT m.id, m.caption, md.relpath FROM messages m
+             JOIN media md ON md.id = m.media_id
+             WHERE m.caption IS NOT NULL",
+        )?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    {
+        let mut clear = tx.prepare("UPDATE messages SET caption = NULL WHERE id = ?1")?;
+        for (id, caption, relpath) in rows {
+            if caption == crate::commands::messages::file_stem_of(&relpath) {
+                clear.execute([id])?;
+            }
+        }
+    }
+    tx.execute_batch("PRAGMA user_version = 11;")?;
+    tx.commit()?;
+    Ok(())
+}
+
 /// [step] for a rebuild: foreign keys off around it (a no-op inside a
 /// transaction, so it has to be here), then checked before they come back on.
 fn rebuild_step(conn: &Connection, to_version: i64, sql: &str) -> AppResult<()> {
@@ -336,6 +362,9 @@ pub fn run(conn: &Connection) -> AppResult<()> {
     if version < 10 {
         rebuild_step(conn, 10, &v9_to_v10())?;
     }
+    if version < 11 {
+        v10_to_v11(conn)?;
+    }
     Ok(())
 }
 
@@ -411,7 +440,7 @@ mod tests {
         )
         .unwrap();
         run(&conn).unwrap();
-        assert_eq!(user_version(&conn), 10);
+        assert_eq!(user_version(&conn), SCHEMA_LATEST);
         let fk: i64 = conn.query_row("PRAGMA foreign_keys", [], |r| r.get(0)).unwrap();
         assert_eq!(fk, 1, "foreign keys back on");
 
@@ -439,6 +468,29 @@ mod tests {
                VALUES (2, 2, 1, 'audio', 'inline', 1, 0);",
         )
         .unwrap();
+    }
+
+    /// Only captions that are the file name go; anything else was typed.
+    #[test]
+    fn v11_clears_file_name_captions_only() {
+        let conn = v5_db();
+        conn.execute_batch(
+            "INSERT INTO media (id, volume_id, relpath, size_bytes, mtime, blake3, kind, thumb_scanned, state, geo_scanned)
+               VALUES (2, 1, '2024/05/IMG_9.HEIC', 10, 0, 'h2', 'image', 0, 'live', 0),
+                      (3, 1, 'b.mov', 10, 0, 'h3', 'video', 0, 'live', 0);
+             INSERT INTO messages (id, conv_id, media_id, caption, created_at)
+               VALUES (2, 1, 2, 'IMG_9', 0), (3, 1, 3, '湖边', 0), (4, 1, NULL, 'b', 0);",
+        )
+        .unwrap();
+        run(&conn).unwrap();
+        let caps: Vec<Option<String>> = conn
+            .prepare("SELECT caption FROM messages ORDER BY id")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        assert_eq!(caps, vec![None, None, Some("湖边".into()), Some("b".into())]);
     }
 
     #[test]
@@ -492,7 +544,7 @@ mod tests {
         ] {
             assert!(!has_column(&conn, t, c), "{t}.{c} 应当已删除");
         }
-        let (name, caption, scanned): (String, String, i64) = conn
+        let (name, caption, scanned): (String, Option<String>, i64) = conn
             .query_row(
                 "SELECT c.name, m.caption, md.thumb_scanned FROM messages m
                  JOIN conversations c ON c.id = m.conv_id JOIN media md ON md.id = m.media_id",
@@ -500,7 +552,8 @@ mod tests {
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .unwrap();
-        assert_eq!((name.as_str(), caption.as_str(), scanned), ("旅行", "a", 0));
+        // The caption was the file name ('a.jpg'): v11 clears it.
+        assert_eq!((name.as_str(), caption, scanned), ("旅行", None, 0));
         let meta: i64 = conn
             .query_row("SELECT meta_scanned FROM media WHERE id = 1", [], |r| r.get(0))
             .unwrap();

@@ -35,6 +35,8 @@ interface MessagesState {
   importFiles: (convId: number, paths: string[]) => Promise<void>;
   /** The backend counted a play (`stats:played`, ADR-054). */
   applyPlayed: (messageId: number, playCount: number) => void;
+  /** Save a media message's caption; blank clears it (ADR-062). */
+  setCaption: (convId: number, messageId: number, caption: string) => Promise<void>;
   remove: (
     messageId: number,
     convId: number,
@@ -166,6 +168,22 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
       }
       return changed ? { byConv: out } : {};
     });
+  },
+  setCaption: async (convId, messageId, caption) => {
+    const lib = currentLib();
+    await ipc.setCaption(lib, messageId, caption);
+    if (!stillOn(lib)) return;
+    const next = caption.trim() || null;
+    set((s) => {
+      const held = s.byConv[convId];
+      if (!held?.some((m) => m.id === messageId)) return {};
+      return {
+        byConv: { ...s.byConv, [convId]: held.map((m) => (m.id === messageId ? { ...m, caption: next } : m)) },
+      };
+    });
+    useConvMediaStore.getState().patchCaption(convId, messageId, next);
+    // The list's preview line may be this message.
+    void useConversationsStore.getState().refresh();
   },
   remove: async (messageId, convId, deleteFile = false) => {
     await ipc.deleteMessage(currentLib(), messageId, deleteFile);

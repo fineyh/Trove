@@ -9,7 +9,7 @@ import { isHeicExt } from "../../lib/heic";
 import { toast } from "../../stores/toast";
 import { MessageMenu, type MessageMenuTarget } from "./MessageMenu";
 import { AudioMessage } from "./AudioMessage";
-import { formatBytes, formatDuration, isImageMedia, kindLabel } from "../../lib/media";
+import { formatBytes, formatDuration, isImageMedia, kindLabel, messageTitle } from "../../lib/media";
 import { cn } from "../../lib/cn";
 
 /** Longest side of a single preview, CSS px. Matches the stored thumbnail. */
@@ -219,7 +219,7 @@ function OfflineMedia({ message, tile }: MessageBubbleProps) {
   const notify = () => toast.info("文件所在的磁盘未连接");
 
   if (!thumb) {
-    return <Card tone="warning" icon={<CloudOff size={18} />} title={message.caption ?? kindLabel(media)} meta="离线" onClick={notify} />;
+    return <Card tone="warning" icon={<CloudOff size={18} />} title={messageTitle(message) || kindLabel(media)} meta="离线" onClick={notify} />;
   }
   return (
     <button
@@ -247,7 +247,7 @@ function MissingMedia({ message }: MessageBubbleProps) {
     <Card
       tone="danger"
       icon={thumb ? <img src={thumb} alt="" className="h-full w-full object-cover opacity-50 grayscale" draggable={false} /> : <ImageOff size={18} />}
-      title={message.caption ?? kindLabel(media)}
+      title={messageTitle(message) || kindLabel(media)}
       meta={<span>缺失 · <span className="text-app-accent">重新链接</span></span>}
       onClick={() => openMissing(true)}
     />
@@ -265,7 +265,7 @@ function FileMessage({ message }: MessageBubbleProps) {
           {media.ext && <span className="mt-0.5 text-[8px] font-bold uppercase leading-none">{media.ext.slice(0, 4)}</span>}
         </>
       }
-      title={message.caption ?? "文件"}
+      title={messageTitle(message) || "文件"}
       meta={formatBytes(media.sizeBytes)}
       onClick={() => lib && void ipc.openMedia(lib, media.id).catch((e) => toast.error("无法打开", e))}
     />

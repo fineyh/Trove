@@ -65,7 +65,7 @@ pub fn list_conversations(lib: String) -> AppResult<Vec<Conversation>> {
                     LEFT JOIN media md ON md.id = m.media_id
                     LEFT JOIN volumes v ON v.id = md.volume_id
                     WHERE m.conv_id = c.id AND {VISIBLE}) AS msg_count,
-                (SELECT m.caption FROM messages m
+                (SELECT COALESCE(m.caption, {file_name}) FROM messages m
                     LEFT JOIN media md ON md.id = m.media_id
                     LEFT JOIN volumes v ON v.id = md.volume_id
                     WHERE m.conv_id = c.id AND {VISIBLE}
@@ -81,7 +81,8 @@ pub fn list_conversations(lib: String) -> AppResult<Vec<Conversation>> {
              FROM conversations c
              LEFT JOIN volumes sv ON sv.id = c.source_volume_id
              WHERE c.archived = 0
-             ORDER BY c.pinned DESC, c.updated_at DESC"
+             ORDER BY c.pinned DESC, c.updated_at DESC",
+            file_name = super::messages::sql_file_name("md.relpath"),
         );
         let mut stmt = conn.prepare(&sql)?;
         let rows = stmt

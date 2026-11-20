@@ -4,6 +4,7 @@ pub mod conversations;
 pub mod folders;
 pub mod geo;
 pub mod health;
+pub mod info;
 pub mod libraries;
 pub mod media;
 pub mod messages;

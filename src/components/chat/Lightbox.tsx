@@ -1,26 +1,20 @@
-import {
-  ChevronLeft,
-  ChevronRight,
-  Loader2,
-  MapPin,
-  RotateCcw,
-  RotateCw,
-  X,
-} from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Message } from "../../types";
 import { mediaSrc, thumbSrc } from "../../ipc/client";
 import { useLibrariesStore } from "../../stores/libraries";
 import { EMPTY_MEDIA, useConvMediaStore } from "../../stores/convMedia";
+import { INFO_PANEL_WIDTH, useInfoPanelStore } from "../../stores/infoPanel";
 import { useSessionStore } from "../../stores/session";
 import { isImageMedia } from "../../lib/media";
 import { previewStyle, useDisplayableImageUrl } from "../../lib/useDisplayableImageUrl";
 import { useViewerTransform } from "../../lib/useViewerTransform";
 import { useViewTracker } from "../../lib/viewTracker";
 import { RotatableVideo } from "../ui/RotatableVideo";
-import { TakenTime } from "../ui/TakenTime";
 import { useEscapeLayer } from "../ui/Modal";
-import { useMapEnabled } from "../map/MapView";
+import { InfoPanel } from "../info/InfoPanel";
+import { ViewerBar, viewerKey } from "../info/ViewerBar";
+import { MessageMenu, type MessageMenuTarget } from "./MessageMenu";
 
 /** Things this viewer can show: reachable images and videos. */
 function viewable(m: Message): boolean {
@@ -51,8 +45,9 @@ export function Lightbox({ convId }: LightboxProps) {
   const close = useSessionStore((s) => s.closeLightbox);
   const lib = useLibrariesStore((s) => s.current) ?? "";
   const open = useSessionStore((s) => s.openLightbox);
-  const showOnMap = useSessionStore((s) => s.showOnMap);
-  const mapEnabled = useMapEnabled();
+  const panelOpen = useInfoPanelStore((s) => s.open);
+  const togglePanel = useInfoPanelStore((s) => s.toggle);
+  const [menu, setMenu] = useState<MessageMenuTarget | null>(null);
 
   // The clicked item may sit older than the media pages held so far (opened
   // from a chat message the user had scrolled back to); page until it's here.
@@ -107,7 +102,7 @@ export function Lightbox({ convId }: LightboxProps) {
     mediaRef,
     mediaStyle,
     mediaHandlers,
-  } = useViewerTransform(current?.id);
+  } = useViewerTransform(current?.id, { inset: panelOpen ? INFO_PANEL_WIDTH : 0 });
 
   // Topmost layer while open: Esc closes the viewer, not the info panel
   // behind it. While fullscreen, Esc only leaves fullscreen.
@@ -118,15 +113,17 @@ export function Lightbox({ convId }: LightboxProps) {
   useEffect(() => {
     if (activeId === null) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "ArrowLeft") goPrev();
-      else if (e.key === "ArrowRight") goNext();
-      else if (e.key === "+" || e.key === "=") zoomIn();
-      else if (e.key === "-" || e.key === "_") zoomOut();
-      else if (e.key === "0") resetView();
+      const key = viewerKey(e);
+      if (key === "ArrowLeft") goPrev();
+      else if (key === "ArrowRight") goNext();
+      else if (key === "+" || key === "=") zoomIn();
+      else if (key === "-" || key === "_") zoomOut();
+      else if (key === "0") resetView();
+      else if (key === "i" || key === "I") togglePanel();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [activeId, close, goPrev, goNext, zoomIn, zoomOut, resetView]);
+  }, [activeId, goPrev, goNext, zoomIn, zoomOut, resetView, togglePanel]);
 
   const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
   useViewTracker(
@@ -151,7 +148,7 @@ export function Lightbox({ convId }: LightboxProps) {
     return (
       <div
         data-immersive
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/90"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/90"
         onClick={close}
       >
         <Loader2 size={28} className="animate-spin text-white/70" />
@@ -160,153 +157,110 @@ export function Lightbox({ convId }: LightboxProps) {
   }
 
   const isImage = isImageMedia(current.media);
+  // After a delete from the menu: the next item, else the one before, else out.
+  const neighbour = playable[idx + 1]?.id ?? playable[idx - 1]?.id ?? null;
+  const caption = current.caption?.trim();
 
   return (
-    <div
-      ref={stageRef}
-      data-immersive
-      className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-black/90"
-      onClick={close}
-    >
-      <div className="absolute left-4 top-[60px] z-10">
-        <TakenTime at={current.media.takenAt} offset={current.media.takenOffset} />
-      </div>
+    <div data-immersive className="dark fixed inset-0 z-50 flex bg-black/90 text-app-fg">
+      <div className="flex min-w-0 flex-1 flex-col" onClick={close}>
+        <ViewerBar
+          when={{ takenAt: current.media.takenAt, takenOffset: current.media.takenOffset, createdAt: current.createdAt }}
+          percent={percent}
+          zoomed={zoomed}
+          onResetZoom={resetView}
+          onRotateLeft={rotateLeft}
+          onRotateRight={rotateRight}
+          onMore={(r) => setMenu({ x: r.right - 180, y: r.bottom + 4, message: current })}
+          onClose={close}
+        />
 
-      <div className="absolute right-4 top-[60px] z-10 flex items-center gap-2">
-        {zoomed && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              resetView();
-            }}
-            className="flex h-9 items-center rounded-full bg-white/10 px-3 text-xs font-medium tabular-nums text-white transition-colors duration-fast hover:bg-white/20"
-            data-tip="适应窗口  0"
-          >
-            {percent}%
-          </button>
-        )}
-        {current.media.hasGeo && mapEnabled && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              showOnMap(current.media!.id);
-            }}
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white transition-colors duration-fast hover:bg-white/20"
-            data-tip="在地图上显示"
-          >
-            <MapPin size={18} />
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            rotateLeft();
-          }}
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white transition-colors duration-fast hover:bg-white/20"
-          data-tip="向左旋转"
-        >
-          <RotateCcw size={18} />
-        </button>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            rotateRight();
-          }}
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white transition-colors duration-fast hover:bg-white/20"
-          data-tip="向右旋转"
-        >
-          <RotateCw size={18} />
-        </button>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            close();
-          }}
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white transition-colors duration-fast hover:bg-white/20"
-          data-tip="关闭  Esc"
-        >
-          <X size={20} />
-        </button>
-      </div>
-
-      {canPrev && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            goPrev();
-          }}
-          className="absolute left-4 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white transition-colors duration-fast hover:bg-white/20"
-          data-tip="上一个  ←"
-        >
-          {loadingOlder && idx === 0 ? (
-            <Loader2 size={20} className="animate-spin" />
-          ) : (
-            <ChevronLeft size={24} />
+        <div ref={stageRef} className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden">
+          {canPrev && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                goPrev();
+              }}
+              className="absolute left-4 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white transition-colors duration-fast hover:bg-white/20"
+              data-tip="上一个  ←"
+            >
+              {loadingOlder && idx === 0 ? (
+                <Loader2 size={20} className="animate-spin" />
+              ) : (
+                <ChevronLeft size={24} />
+              )}
+            </button>
           )}
-        </button>
-      )}
-      {canNext && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            goNext();
-          }}
-          className="absolute right-4 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white transition-colors duration-fast hover:bg-white/20"
-          data-tip="下一个  →"
-        >
-          <ChevronRight size={24} />
-        </button>
-      )}
+          {canNext && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                goNext();
+              }}
+              className="absolute right-4 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white transition-colors duration-fast hover:bg-white/20"
+              data-tip="下一个  →"
+            >
+              <ChevronRight size={24} />
+            </button>
+          )}
 
-      <div
-        className="flex flex-col items-center gap-3"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {isImage ? (
-          image.status === "error" ? (
-            <div className="rounded-lg border border-dashed border-white/30 px-6 py-8 text-sm text-white/70">
-              无法预览此格式
-            </div>
-          ) : image.status === "loading" || !image.url ? (
-            <Loader2 size={28} className="animate-spin text-white/70" />
-          ) : (
-            <img
-              ref={mediaRef}
-              src={image.url}
-              alt={current.caption ?? ""}
-              className="object-contain"
-              style={image.preview ? previewStyle(mediaStyle) : mediaStyle}
-              onLoad={image.onLoad}
-              draggable={false}
-              {...mediaHandlers}
-            />
-          )
-        ) : (
-          <RotatableVideo
-            src={url}
-            autoPlay
-            style={mediaStyle}
-            rotation={rotation}
-            onVideo={setVideoEl}
-            frameRef={mediaRef}
-            onFramePointerDown={mediaHandlers.onPointerDown}
-          />
-        )}
-        {/* Always rendered: hiding it while zoomed would change the image's
-            layout box mid-gesture and throw off the cursor anchoring. */}
-        {current.caption && (
-          <div className="max-w-2xl text-center text-sm text-white/80">
-            {current.caption}
+          <div
+            className="flex flex-col items-center gap-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {isImage ? (
+              image.status === "error" ? (
+                <div className="rounded-lg border border-dashed border-white/30 px-6 py-8 text-sm text-white/70">
+                  无法预览此格式
+                </div>
+              ) : image.status === "loading" || !image.url ? (
+                <Loader2 size={28} className="animate-spin text-white/70" />
+              ) : (
+                <img
+                  ref={mediaRef}
+                  src={image.url}
+                  alt={caption ?? ""}
+                  className="object-contain"
+                  style={image.preview ? previewStyle(mediaStyle) : mediaStyle}
+                  onLoad={image.onLoad}
+                  draggable={false}
+                  {...mediaHandlers}
+                />
+              )
+            ) : (
+              <RotatableVideo
+                src={url}
+                autoPlay
+                style={mediaStyle}
+                rotation={rotation}
+                onVideo={setVideoEl}
+                frameRef={mediaRef}
+                onFramePointerDown={mediaHandlers.onPointerDown}
+              />
+            )}
+            {/* What the user wrote travels with the picture; with the panel
+                open it's there instead. It only changes with the panel, never
+                mid-gesture, so the zoom anchoring isn't thrown off. */}
+            {!panelOpen && caption && (
+              <div className="selectable line-clamp-2 max-w-2xl px-6 text-center text-sm leading-[22px] text-white/80">
+                {caption}
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
+
+      {panelOpen && <InfoPanel lib={lib} message={current} place="viewer" />}
+
+      <MessageMenu
+        menu={menu}
+        onClose={() => setMenu(null)}
+        inViewer
+        onDeleted={() => (neighbour !== null ? open(neighbour) : close())}
+      />
     </div>
   );
 }

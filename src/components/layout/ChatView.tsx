@@ -18,7 +18,9 @@ import { cn } from "../../lib/cn";
 export function ChatView() {
   const activeId = useSessionStore((s) => s.activeConversationId);
   const setDrawer = useSessionStore((s) => s.setProfileDrawerOpen);
-  const drawerOpen = useSessionStore((s) => s.profileDrawerOpen);
+  const profileOpen = useSessionStore((s) => s.profileDrawerOpen);
+  // Either right-hand dock takes the window buttons' corner.
+  const drawerOpen = useSessionStore((s) => s.profileDrawerOpen || s.infoMessageId !== null);
   const lightboxId = useSessionStore((s) => s.lightboxMessageId);
   const conv = useConversationsStore((s) =>
     activeId ? (s.list.find((c) => c.id === activeId) ?? null) : null,
@@ -101,8 +103,8 @@ export function ChatView() {
         <IconButton
           label="会话信息"
           icon={<PanelRight size={18} />}
-          active={drawerOpen}
-          onClick={() => setDrawer(!drawerOpen)}
+          active={profileOpen}
+          onClick={() => setDrawer(!profileOpen)}
         />
       </header>
 

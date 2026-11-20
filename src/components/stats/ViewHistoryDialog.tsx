@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { statsItemHistory } from "../../ipc/client";
 import { formatViewTime, formatWatch } from "../../lib/statsPeriod";
+import { messageTitle } from "../../lib/media";
 import type { ItemHistory, Message } from "../../types";
 import { Modal } from "../ui/Modal";
 
@@ -37,7 +38,7 @@ export function ViewHistoryDialog({
   const last = history?.views[0];
 
   return (
-    <Modal open={message !== null} onClose={onClose} title="观看记录" subtitle={message?.caption ?? undefined} width="sm">
+    <Modal open={message !== null} onClose={onClose} title="观看记录" subtitle={message ? messageTitle(message) : undefined} width="sm" layer="top">
       {failed ? (
         <p className="py-6 text-center text-sm text-app-muted">无法读取观看记录</p>
       ) : !history ? (

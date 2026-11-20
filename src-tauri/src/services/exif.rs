@@ -216,6 +216,88 @@ fn gps_coord(exif: &exif::Exif, coord_tag: Tag, ref_tag: Tag, neg_ref: u8) -> Op
     Some(dec)
 }
 
+// --- camera (info panel) ---------------------------------------------------
+
+/// What took a photo and how, for the info panel. Read when the panel opens,
+/// never stored: nothing in the library depends on it.
+#[derive(Debug, Default, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Camera {
+    /// "iPhone 15 Pro", or make + model when the model doesn't name the maker.
+    pub model: Option<String>,
+    pub lens: Option<String>,
+    /// Focal length in mm, as the 35 mm equivalent when the file gives one.
+    pub focal_mm: Option<f64>,
+    pub f_number: Option<f64>,
+    /// "1/120" or "2.5".
+    pub exposure: Option<String>,
+    pub iso: Option<u32>,
+}
+
+pub fn read_camera(path: &Path) -> Option<Camera> {
+    let exif = File::open(path).ok().and_then(|f| {
+        exif::Reader::new()
+            .read_from_container(&mut BufReader::new(f))
+            .ok()
+    })?;
+    let text = |tag| {
+        ascii(&exif, tag)
+            .and_then(|b| std::str::from_utf8(b).ok())
+            .map(|s| s.trim_matches(|c: char| c == '\0' || c.is_whitespace()).to_string())
+            .filter(|s| !s.is_empty())
+    };
+    let rational = |tag| match &exif.get_field(tag, In::PRIMARY)?.value {
+        Value::Rational(v) => v.first().map(|r| r.to_f64()).filter(|x| x.is_finite() && *x > 0.0),
+        _ => None,
+    };
+    let uint = |tag| exif.get_field(tag, In::PRIMARY)?.value.get_uint(0);
+
+    let model = match (text(Tag::Make), text(Tag::Model)) {
+        (Some(make), Some(model)) => {
+            // "Apple" + "iPhone 15 Pro" reads fine as the model alone;
+            // "Canon" + "Canon EOS R6" already names it.
+            let first = make.split_whitespace().next().unwrap_or("").to_lowercase();
+            if make == "Apple" || model.to_lowercase().contains(&first) {
+                Some(model)
+            } else {
+                Some(format!("{make} {model}"))
+            }
+        }
+        (make, model) => model.or(make),
+    };
+    let exposure = exif.get_field(Tag::ExposureTime, In::PRIMARY).and_then(|f| match &f.value {
+        Value::Rational(v) => v.first().and_then(|r| exposure_text(r.num, r.denom)),
+        _ => None,
+    });
+    let cam = Camera {
+        model,
+        lens: text(Tag::LensModel),
+        focal_mm: uint(Tag::FocalLengthIn35mmFilm)
+            .filter(|&f| f > 0)
+            .map(f64::from)
+            .or_else(|| rational(Tag::FocalLength)),
+        f_number: rational(Tag::FNumber),
+        exposure,
+        iso: uint(Tag::PhotographicSensitivity).filter(|&i| i > 0),
+    };
+    (cam != Camera::default()).then_some(cam)
+}
+
+/// Shutter time as people write it: 1/120 below a second, 2.5 above.
+fn exposure_text(num: u32, denom: u32) -> Option<String> {
+    if num == 0 || denom == 0 {
+        return None;
+    }
+    let secs = num as f64 / denom as f64;
+    Some(if secs < 1.0 {
+        format!("1/{}", (1.0 / secs).round() as u64)
+    } else if secs.fract() < 0.05 {
+        format!("{}", secs.round() as u64)
+    } else {
+        format!("{secs:.1}")
+    })
+}
+
 // --- videos (MOV/MP4 atoms) ------------------------------------------------
 
 fn read_video_meta(path: &Path) -> FileMeta {
@@ -422,6 +504,15 @@ mod tests {
 
     fn wall(s: &str) -> NaiveDateTime {
         NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S").unwrap()
+    }
+
+    #[test]
+    fn exposure_reads_like_a_camera() {
+        assert_eq!(exposure_text(1, 120).as_deref(), Some("1/120"));
+        assert_eq!(exposure_text(10, 1200).as_deref(), Some("1/120"));
+        assert_eq!(exposure_text(5, 2).as_deref(), Some("2.5"));
+        assert_eq!(exposure_text(30, 1).as_deref(), Some("30"));
+        assert_eq!(exposure_text(0, 1), None);
     }
 
     #[test]

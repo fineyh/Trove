@@ -18,6 +18,7 @@ import type {
   IdleLockMinutes,
   ImportProgressEvent,
   LibraryInfo,
+  MediaDetails,
   Message,
   RepairOutcome,
   RepairScope,
@@ -417,6 +418,20 @@ export async function search(lib: string, query: string): Promise<SearchHit[]> {
   return invoke<SearchHit[]>("search", { lib, query });
 }
 
+/** Specific messages by id (the map's viewer, which holds only positions). */
+export async function getMessages(lib: string, ids: number[]): Promise<Message[]> {
+  return invoke<Message[]>("get_messages", { lib, ids });
+}
+
+/** A media message's caption; blank clears it (ADR-062). */
+export async function setCaption(lib: string, messageId: number, caption: string): Promise<void> {
+  await invoke("set_caption", { lib, messageId, caption });
+}
+
+export async function mediaDetails(lib: string, mediaId: number): Promise<MediaDetails> {
+  return invoke<MediaDetails>("media_details", { lib, mediaId });
+}
+
 // ─── Media file actions (by id; the path stays in Rust) ─────────────────────
 
 export async function openMedia(lib: string, mediaId: number): Promise<void> {
@@ -586,6 +601,8 @@ export interface UiPrefs {
   updateAuto: boolean;
   /** Unix ms of the last successful update check, 0 if never. */
   updateLastCheck: number;
+  /** The viewer's info panel was left open (ADR-062). */
+  infoPanel: boolean;
 }
 
 export async function getUiPrefs(): Promise<UiPrefs> {
@@ -596,12 +613,14 @@ export async function getUiPrefs(): Promise<UiPrefs> {
     updateChannel: raw["update_channel"] === "beta" ? "beta" : "stable",
     updateAuto: raw["update_auto"] !== "off",
     updateLastCheck: Number(raw["update_last_check"]) || 0,
+    infoPanel: raw["info_panel"] === "on",
   };
 }
 
 export function setUiPref(key: "theme", value: ThemePref): Promise<void>;
 export function setUiPref(key: "update_channel", value: UpdateChannel): Promise<void>;
 export function setUiPref(key: "update_auto", value: "on" | "off"): Promise<void>;
+export function setUiPref(key: "info_panel", value: "on" | "off"): Promise<void>;
 export function setUiPref(key: string, value: string): Promise<void> {
   if (!isTauri()) return Promise.resolve();
   return invoke("set_ui_pref", { key, value });

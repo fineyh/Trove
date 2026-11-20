@@ -1,23 +1,19 @@
-import {
-  ChevronLeft,
-  ChevronRight,
-  Loader2,
-  MessageSquare,
-  RotateCcw,
-  RotateCw,
-  X,
-} from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, MessageSquare } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import type { GeotaggedMedia } from "../../types";
-import { mediaSrc, thumbSrc } from "../../ipc/client";
+import type { GeotaggedMedia, Message } from "../../types";
+import { getMessages, mediaSrc, thumbSrc } from "../../ipc/client";
 import { useLibrariesStore } from "../../stores/libraries";
+import { INFO_PANEL_WIDTH, useInfoPanelStore } from "../../stores/infoPanel";
 import { isImageMedia } from "../../lib/media";
 import { previewStyle, useDisplayableImageUrl } from "../../lib/useDisplayableImageUrl";
 import { useViewerTransform } from "../../lib/useViewerTransform";
 import { useViewTracker } from "../../lib/viewTracker";
 import { RotatableVideo } from "../ui/RotatableVideo";
-import { TakenTime } from "../ui/TakenTime";
+import { IconButton } from "../ui/Button";
 import { useEscapeLayer } from "../ui/Modal";
+import { InfoPanel } from "../info/InfoPanel";
+import { ViewerBar, viewerKey } from "../info/ViewerBar";
+import { MessageMenu, type MessageMenuTarget } from "../chat/MessageMenu";
 
 interface MapPhotoViewerProps {
   items: GeotaggedMedia[];
@@ -41,6 +37,24 @@ export function MapPhotoViewer({
 }: MapPhotoViewerProps) {
   const current = items[index] ?? null;
   const lib = useLibrariesStore((s) => s.current) ?? "";
+  const panelOpen = useInfoPanelStore((s) => s.open);
+  const togglePanel = useInfoPanelStore((s) => s.toggle);
+  const [menu, setMenu] = useState<MessageMenuTarget | null>(null);
+
+  // The map holds positions only; the info panel and the menu want the message.
+  const [message, setMessage] = useState<Message | null>(null);
+  const messageId = current?.messageId ?? null;
+  useEffect(() => {
+    setMessage(null);
+    if (messageId === null || !lib) return;
+    let live = true;
+    getMessages(lib, [messageId])
+      .then((list) => live && setMessage(list[0] ?? null))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [lib, messageId]);
 
   const goPrev = useCallback(() => {
     if (index > 0) onIndexChange(index - 1);
@@ -62,7 +76,7 @@ export function MapPhotoViewer({
     mediaRef,
     mediaStyle,
     mediaHandlers,
-  } = useViewerTransform(index);
+  } = useViewerTransform(index, { inset: panelOpen ? INFO_PANEL_WIDTH : 0 });
 
   // Topmost layer while open: Esc closes the viewer, not the selection behind
   // it. While fullscreen, Esc only leaves fullscreen.
@@ -72,15 +86,17 @@ export function MapPhotoViewer({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "ArrowLeft") goPrev();
-      else if (e.key === "ArrowRight") goNext();
-      else if (e.key === "+" || e.key === "=") zoomIn();
-      else if (e.key === "-" || e.key === "_") zoomOut();
-      else if (e.key === "0") resetView();
+      const key = viewerKey(e);
+      if (key === "ArrowLeft") goPrev();
+      else if (key === "ArrowRight") goNext();
+      else if (key === "+" || key === "=") zoomIn();
+      else if (key === "-" || key === "_") zoomOut();
+      else if (key === "0") resetView();
+      else if (key === "i" || key === "I") togglePanel();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [goPrev, goNext, zoomIn, zoomOut, resetView]);
+  }, [goPrev, goNext, zoomIn, zoomOut, resetView, togglePanel]);
 
   const canPreview = current?.status === "ok";
   // Must run unconditionally (before the early return) — an empty url is a no-op.
@@ -102,150 +118,129 @@ export function MapPhotoViewer({
   const isImage = isImageMedia(current);
   // Offline: the stored thumbnail is still something to look at.
   const offlineThumb = !canPreview && current.hasThumb && lib ? thumbSrc(lib, current.mediaId) : null;
+  const shown = message?.media?.id === current.mediaId ? message : null;
+  const caption = shown?.caption?.trim();
 
   return (
-    <div
-      ref={stageRef}
-      data-immersive
-      className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-black/90"
-      onClick={onClose}
-    >
-      <div className="absolute left-4 top-[60px] z-10 flex items-center gap-3">
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onJump(current);
-          }}
-          className="flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/20"
-          data-tip="在会话中打开"
-        >
-          <MessageSquare size={16} />
-          在会话中打开
-        </button>
-        <TakenTime at={current.takenAt} offset={current.takenOffset} />
-      </div>
-
-      <div className="absolute right-4 top-[60px] z-10 flex items-center gap-2">
-        {zoomed && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              resetView();
-            }}
-            className="flex h-9 items-center rounded-full bg-white/10 px-3 text-xs font-medium tabular-nums text-white transition-colors duration-fast hover:bg-white/20"
-            data-tip="适应窗口  0"
-          >
-            {percent}%
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            rotateLeft();
-          }}
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white transition-colors duration-fast hover:bg-white/20"
-          data-tip="向左旋转"
-        >
-          <RotateCcw size={18} />
-        </button>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            rotateRight();
-          }}
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white transition-colors duration-fast hover:bg-white/20"
-          data-tip="向右旋转"
-        >
-          <RotateCw size={18} />
-        </button>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onClose();
-          }}
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white transition-colors duration-fast hover:bg-white/20"
-          data-tip="关闭  Esc"
-        >
-          <X size={20} />
-        </button>
-      </div>
-
-      {index > 0 && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            goPrev();
-          }}
-          className="absolute left-4 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white transition-colors duration-fast hover:bg-white/20"
-          data-tip="上一个  ←"
-        >
-          <ChevronLeft size={24} />
-        </button>
-      )}
-      {index < items.length - 1 && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            goNext();
-          }}
-          className="absolute right-4 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white transition-colors duration-fast hover:bg-white/20"
-          data-tip="下一个  →"
-        >
-          <ChevronRight size={24} />
-        </button>
-      )}
-
-      <div
-        className="flex flex-col items-center gap-3"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {!canPreview ? (
-          <div className="flex flex-col items-center gap-3">
-            {offlineThumb && (
-              <img src={offlineThumb} alt="" className="max-h-[50vh] rounded-xl opacity-80" draggable={false} />
-            )}
-            <div className="rounded-full bg-white/10 px-4 py-1.5 text-sm text-white/80">
-              {current.status === "offline" ? "离线" : "缺失"}
-            </div>
-          </div>
-        ) : isImage ? (
-          image.status === "error" ? (
-            <div className="rounded-lg border border-dashed border-white/30 px-6 py-8 text-sm text-white/70">
-              无法预览此格式
-            </div>
-          ) : image.status === "loading" || !image.url ? (
-            <Loader2 size={28} className="animate-spin text-white/70" />
-          ) : (
-            <img
-              ref={mediaRef}
-              src={image.url}
-              alt=""
-              className="object-contain"
-              style={image.preview ? previewStyle(mediaStyle) : mediaStyle}
-              onLoad={image.onLoad}
-              draggable={false}
-              {...mediaHandlers}
+    <div data-immersive className="dark fixed inset-0 z-50 flex bg-black/90 text-app-fg">
+      <div className="flex min-w-0 flex-1 flex-col" onClick={onClose}>
+        <ViewerBar
+          when={current}
+          percent={percent}
+          zoomed={zoomed}
+          onResetZoom={resetView}
+          onRotateLeft={rotateLeft}
+          onRotateRight={rotateRight}
+          onMore={shown ? (r) => setMenu({ x: r.right - 180, y: r.bottom + 4, message: shown }) : undefined}
+          onClose={onClose}
+          extra={
+            <IconButton
+              label="在会话中打开"
+              tipSide="bottom"
+              icon={<MessageSquare size={18} />}
+              onClick={(e) => {
+                e.stopPropagation();
+                onJump(current);
+              }}
             />
-          )
-        ) : (
-          <RotatableVideo
-            src={url}
-            autoPlay
-            style={mediaStyle}
-            rotation={rotation}
-            onVideo={setVideoEl}
-            frameRef={mediaRef}
-            onFramePointerDown={mediaHandlers.onPointerDown}
-          />
-        )}
+          }
+        />
+
+        <div ref={stageRef} className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden">
+          {index > 0 && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                goPrev();
+              }}
+              className="absolute left-4 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white transition-colors duration-fast hover:bg-white/20"
+              data-tip="上一个  ←"
+            >
+              <ChevronLeft size={24} />
+            </button>
+          )}
+          {index < items.length - 1 && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                goNext();
+              }}
+              className="absolute right-4 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white transition-colors duration-fast hover:bg-white/20"
+              data-tip="下一个  →"
+            >
+              <ChevronRight size={24} />
+            </button>
+          )}
+
+          <div
+            className="flex flex-col items-center gap-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {!canPreview ? (
+              <div className="flex flex-col items-center gap-3">
+                {offlineThumb && (
+                  <img src={offlineThumb} alt="" className="max-h-[50vh] rounded-xl opacity-80" draggable={false} />
+                )}
+                <div className="rounded-full bg-white/10 px-4 py-1.5 text-sm text-white/80">
+                  {current.status === "offline" ? "离线" : "缺失"}
+                </div>
+              </div>
+            ) : isImage ? (
+              image.status === "error" ? (
+                <div className="rounded-lg border border-dashed border-white/30 px-6 py-8 text-sm text-white/70">
+                  无法预览此格式
+                </div>
+              ) : image.status === "loading" || !image.url ? (
+                <Loader2 size={28} className="animate-spin text-white/70" />
+              ) : (
+                <img
+                  ref={mediaRef}
+                  src={image.url}
+                  alt={caption ?? ""}
+                  className="object-contain"
+                  style={image.preview ? previewStyle(mediaStyle) : mediaStyle}
+                  onLoad={image.onLoad}
+                  draggable={false}
+                  {...mediaHandlers}
+                />
+              )
+            ) : (
+              <RotatableVideo
+                src={url}
+                autoPlay
+                style={mediaStyle}
+                rotation={rotation}
+                onVideo={setVideoEl}
+                frameRef={mediaRef}
+                onFramePointerDown={mediaHandlers.onPointerDown}
+              />
+            )}
+            {!panelOpen && caption && (
+              <div className="selectable line-clamp-2 max-w-2xl px-6 text-center text-sm leading-[22px] text-white/80">
+                {caption}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
+
+      {panelOpen &&
+        (shown ? (
+          <InfoPanel
+            lib={lib}
+            message={shown}
+            place="viewer"
+            // Already on the map: close the viewer onto this photo.
+            onShowOnMap={onClose}
+            onCaptionSaved={(c) => setMessage((m) => (m ? { ...m, caption: c } : m))}
+          />
+        ) : (
+          <div className="w-[320px] shrink-0 border-l border-app-border bg-app-panel" />
+        ))}
+
+      <MessageMenu menu={menu} onClose={() => setMenu(null)} inViewer onDeleted={onClose} />
     </div>
   );
 }

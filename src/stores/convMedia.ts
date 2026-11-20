@@ -51,6 +51,8 @@ interface ConvMediaState {
   /** Drop one item locally, the way `messages.remove` does, so the grid and
    *  viewer don't snap back to the newest page after a delete. */
   removeLocal: (convId: number, messageId: number) => void;
+  /** A caption was edited (ADR-062). */
+  patchCaption: (convId: number, messageId: number, caption: string | null) => void;
 }
 
 export const useConvMediaStore = create<ConvMediaState>((set, get) => ({
@@ -149,6 +151,18 @@ export const useConvMediaStore = create<ConvMediaState>((set, get) => ({
         byConv: {
           ...s.byConv,
           [convId]: held.filter((m) => m.id !== messageId),
+        },
+      };
+    }),
+
+  patchCaption: (convId, messageId, caption) =>
+    set((s) => {
+      const held = s.byConv[convId];
+      if (!held?.some((m) => m.id === messageId)) return {};
+      return {
+        byConv: {
+          ...s.byConv,
+          [convId]: held.map((m) => (m.id === messageId ? { ...m, caption } : m)),
         },
       };
     }),

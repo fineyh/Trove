@@ -35,6 +35,8 @@ export interface MediaPayload {
   sizeBytes: number;
   /** Lower-case extension. Paths never reach the WebView (ADR-037). */
   ext: string;
+  /** File name with extension, no folders: the title until a caption is written. */
+  name: string;
   status: MediaStatus;
   hasThumb: boolean;
   /** No thumbnail yet, but the worker will still make one. */
@@ -56,6 +58,20 @@ export interface Message {
   playCount: number;
   createdAt: number;
   media: MediaPayload | null;
+}
+
+/** What the info panel reads on demand (ADR-062). */
+export interface MediaDetails {
+  lat: number | null;
+  lon: number | null;
+  camera: {
+    model: string | null;
+    lens: string | null;
+    focalMm: number | null;
+    fNumber: number | null;
+    exposure: string | null;
+    iso: number | null;
+  } | null;
 }
 
 export interface GeotaggedMedia {

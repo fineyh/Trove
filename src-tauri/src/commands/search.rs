@@ -41,15 +41,17 @@ pub fn search(lib: String, query: String) -> AppResult<Vec<SearchHit>> {
             hits.push(row?);
         }
 
-        // Messages by caption (the file name, unless edited).
-        let mut msg_stmt = conn.prepare(
-            "SELECT m.id, m.conv_id, m.caption, m.created_at, c.name
+        // Messages by caption or, for media, by file name.
+        let name = super::messages::sql_file_name("md.relpath");
+        let mut msg_stmt = conn.prepare(&format!(
+            "SELECT m.id, m.conv_id, COALESCE(m.caption, {name}), m.created_at, c.name
              FROM messages m
              JOIN conversations c ON c.id = m.conv_id
+             LEFT JOIN media md ON md.id = m.media_id
              WHERE c.archived = 0
-               AND m.caption IS NOT NULL AND lower(m.caption) LIKE ?1
-             ORDER BY m.created_at DESC LIMIT 50",
-        )?;
+               AND (lower(m.caption) LIKE ?1 OR lower({name}) LIKE ?1)
+             ORDER BY m.created_at DESC LIMIT 50"
+        ))?;
         for row in msg_stmt.query_map(params![pattern], |r| {
             let caption: String = r.get(2)?;
             Ok(SearchHit {

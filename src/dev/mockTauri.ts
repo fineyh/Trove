@@ -47,18 +47,18 @@ function install() {
   ];
 
   let mid = 1000;
-  const img = (w: number, h: number, ago: number, caption: string, status = "ok") => ({
+  const img = (w: number, h: number, ago: number, name: string, status = "ok", caption: string | null = null) => ({
     id: ++mid, convId: 1, caption, playCount: 0, createdAt: now - ago,
-    media: { id: mid, kind: "image", width: w, height: h, durationMs: null, sizeBytes: 3_400_000, ext: "jpg", status, hasThumb: true, hasGeo: true, takenAt: now - ago - 400 * D, takenOffset: 540 },
+    media: { id: mid, kind: "image", width: w, height: h, durationMs: null, sizeBytes: 3_400_000, ext: "jpg", name: `${name}.jpg`, status, hasThumb: true, hasGeo: true, takenAt: now - ago - 400 * D, takenOffset: 540 },
   });
-  const vid = (ago: number, caption: string, plays = 0) => ({
-    id: ++mid, convId: 1, caption, playCount: plays, createdAt: now - ago,
-    media: { id: mid, kind: "video", width: 1920, height: 1080, durationMs: 42_000, sizeBytes: 48_000_000, ext: "mp4", status: "ok", hasThumb: true, hasGeo: true, takenAt: now - ago - 400 * D, takenOffset: 540 },
+  const vid = (ago: number, name: string, plays = 0) => ({
+    id: ++mid, convId: 1, caption: null as string | null, playCount: plays, createdAt: now - ago,
+    media: { id: mid, kind: "video", width: 1920, height: 1080, durationMs: 42_000, sizeBytes: 48_000_000, ext: "mp4", name: `${name}.mp4`, status: "ok", hasThumb: true, hasGeo: true, takenAt: now - ago - 400 * D, takenOffset: 540 },
   });
   const text = (ago: number, caption: string) => ({ id: ++mid, convId: 1, caption, playCount: 0, createdAt: now - ago, media: null });
-  const file = (ago: number, caption: string) => ({
-    id: ++mid, convId: 1, caption, playCount: 0, createdAt: now - ago,
-    media: { id: mid, kind: "other", width: null, height: null, durationMs: null, sizeBytes: 820_000, ext: "pdf", status: "ok", hasThumb: false, hasGeo: false, takenAt: null, takenOffset: null },
+  const file = (ago: number, name: string) => ({
+    id: ++mid, convId: 1, caption: null as string | null, playCount: 0, createdAt: now - ago,
+    media: { id: mid, kind: "other", width: null, height: null, durationMs: null, sizeBytes: 820_000, ext: "pdf", name, status: "ok", hasThumb: false, hasGeo: false, takenAt: null, takenOffset: null },
   });
   // Speech-like bars: syllables with pauses between phrases.
   const speech = (n: number, k: number) =>
@@ -66,12 +66,12 @@ function install() {
       const phrase = Math.sin(i / 7 + k) > -0.6 ? 1 : 0.08;
       return Math.round(255 * phrase * (0.25 + 0.75 * Math.abs(Math.sin(i * 1.7 + k) * Math.cos(i * 0.45))));
     });
-  const audio = (ago: number, caption: string, durationMs: number | null, ext = "m4a", peaks: number[] | null = speech(100, 1)) => ({
+  const audio = (ago: number, caption: string | null, durationMs: number | null, ext = "m4a", peaks: number[] | null = speech(100, 1)) => ({
     id: ++mid, convId: 1, caption, playCount: 0, createdAt: now - ago,
-    media: { id: mid, kind: "audio", width: null, height: null, durationMs, sizeBytes: 2_100_000, ext, status: "ok", hasThumb: false, hasGeo: false, takenAt: now - ago, takenOffset: 480, peaks: peaks ?? undefined },
+    media: { id: mid, kind: "audio", width: null, height: null, durationMs, sizeBytes: 2_100_000, ext, name: `录音 ${mid}.${ext}`, status: "ok", hasThumb: false, hasGeo: false, takenAt: now - ago, takenOffset: 480, peaks: peaks ?? undefined },
   });
   const messages = [
-    img(4000, 3000, 3 * D + 3 * H, "IMG_3990"),
+    img(4000, 3000, 3 * D + 3 * H, "IMG_3990", "ok", "千本鸟居，从山脚一路走上去"),
     img(3000, 4000, 3 * D + 3 * H - 20_000, "IMG_3991"),
     img(4000, 3000, 3 * D + 3 * H - 40_000, "IMG_3992"),
     text(3 * D + 2 * H, "伏见稻荷，早上人还不多"),
@@ -81,7 +81,7 @@ function install() {
     file(D + 2 * H, "行程单.pdf"),
     audio(D + H, "寺里的钟声", 47_000, "m4a", speech(100, 3)),
     audio(D + H - 60_000, "导游讲解", 1_512_000),
-    audio(D + H - 120_000, "新录音 12", null, "opus", null),
+    audio(D + H - 120_000, null, null, "opus", null),
     img(1080, 1920, 50 * 60_000, "IMG_4020"),
     img(4000, 3000, 12 * 60_000, "IMG_4021"),
     text(10 * 60_000, "晚上去鸭川散步，灯笼一路亮到四条"),
@@ -245,6 +245,31 @@ function install() {
         placeCount: geo ? 9 : 0, geoCount: geo ? 627 : 0,
         addedBytes: geo ? 41_800_000_000 * (n / 365) : 0, newConvs: n > 40 ? 6 : 1,
       };
+    },
+    get_messages: (a) =>
+      a.ids.map((id: number) => {
+        const m = messages.find((x) => x.id === id);
+        if (m) return m;
+        // The map's scattered points have no message of their own here.
+        const g = Object.values(geo).flat().find((x) => x.messageId === id);
+        return {
+          id, convId: 1, caption: null, playCount: 0, createdAt: g?.createdAt ?? now,
+          media: { id: g?.mediaId ?? id, kind: g?.kind ?? "image", width: 4032, height: 3024, durationMs: g?.kind === "video" ? 18_000 : null, sizeBytes: 2_900_000, ext: g?.ext ?? "jpg", name: `IMG_${id}.${g?.ext ?? "jpg"}`, status: g?.status ?? "ok", hasThumb: true, hasGeo: true, takenAt: g?.takenAt ?? null, takenOffset: g?.takenOffset ?? null },
+        };
+      }),
+    media_details: (a) => {
+      const m = messages.find((x) => x.media?.id === a.mediaId);
+      const g = Object.values(geo).flat().find((x) => x.mediaId === a.mediaId);
+      const kind = m?.media?.kind ?? g?.kind;
+      return {
+        lat: g?.lat ?? null,
+        lon: g?.lon ?? null,
+        camera: kind === "image" ? { model: "iPhone 15 Pro", lens: "iPhone 15 Pro back triple camera 6.765mm f/1.78", focalMm: 24, fNumber: 1.78, exposure: "1/120", iso: 80 } : null,
+      };
+    },
+    set_caption: (a) => {
+      const m = messages.find((x) => x.id === a.messageId);
+      if (m) m.caption = a.caption.trim() || null;
     },
     stats_item_history: (a) => {
       const m = messages.find((x) => x.id === a.messageId);

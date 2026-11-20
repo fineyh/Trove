@@ -110,6 +110,8 @@ pub fn set_ui_pref(key: String, value: String) -> AppResult<()> {
         "theme" => matches!(value.as_str(), "system" | "light" | "dark"),
         "update_channel" => matches!(value.as_str(), "stable" | "beta"),
         "update_auto" => matches!(value.as_str(), "on" | "off"),
+        // The viewer's info panel, left open or closed (ADR-062).
+        "info_panel" => matches!(value.as_str(), "on" | "off"),
         _ => false,
     };
     if !ok {

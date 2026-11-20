@@ -8,6 +8,7 @@ import { BootErrorScreen } from "./components/layout/BootErrorScreen";
 import { NewConversationDialog } from "./components/dialogs/NewConversationDialog";
 import { SettingsDialog } from "./components/dialogs/SettingsDialog";
 import { ProfileDrawer } from "./components/profile/ProfileDrawer";
+import { InfoDock } from "./components/info/InfoDock";
 import { MapView } from "./components/map/MapView";
 import { StatsView } from "./components/stats/StatsView";
 import { AudioTracker } from "./components/chat/AudioMessage";
@@ -136,6 +137,7 @@ function Shell() {
           <ChatList />
           <ChatView />
           <ProfileDrawer />
+          <InfoDock />
           <MapView />
           <StatsView />
         </>

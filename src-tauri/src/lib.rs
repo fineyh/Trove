@@ -161,6 +161,8 @@ pub fn run() {
             commands::messages::list_conv_media,
             commands::messages::get_messages,
             commands::messages::send_text,
+            commands::messages::set_caption,
+            commands::info::media_details,
             commands::stats::stats_view_begin,
             commands::stats::stats_view_tick,
             commands::stats::stats_resume_pos,

@@ -15,6 +15,9 @@ pub struct MediaPayload {
     /// ever seeing the path. Paths stay in Rust: media reaches the WebView
     /// through `trove://` by id (ADR-037).
     pub ext: String,
+    /// The file's name with its extension, no folders. What a media message
+    /// is called when the user hasn't written a caption.
+    pub name: String,
     /// "ok" | "offline" (volume not mounted) | "missing" (volume mounted,
     /// file gone) — ADR-035.
     pub status: String,
@@ -70,6 +73,30 @@ pub(crate) fn media_status(state: &str, online: bool) -> &'static str {
     }
 }
 
+/// The last part of a stored relpath, whichever separator it was stored with.
+pub(crate) fn file_name_of(relpath: &str) -> &str {
+    relpath.rsplit(['/', '\\']).next().unwrap_or(relpath)
+}
+
+/// [file_name_of] in SQL, for queries that fall back to the file name where
+/// a media message has no caption.
+pub(crate) fn sql_file_name(col: &str) -> String {
+    let p = format!("replace({col}, '\\', '/')");
+    // rtrim strips the name's own characters, leaving the folders (up to the
+    // last '/'); what's left after removing them is the name.
+    format!("replace({p}, rtrim({p}, replace({p}, '/', '')), '')")
+}
+
+/// The file name without its extension: what imports used to store as the
+/// caption (cleared in v11).
+pub(crate) fn file_stem_of(relpath: &str) -> &str {
+    let name = file_name_of(relpath);
+    match name.rfind('.') {
+        Some(i) if i > 0 => &name[..i],
+        _ => name,
+    }
+}
+
 pub(crate) fn ext_of(relpath: &str) -> String {
     std::path::Path::new(relpath)
         .extension()
@@ -92,6 +119,7 @@ fn row_to_message(row: &rusqlite::Row) -> rusqlite::Result<MessagePayload> {
                 duration_ms: row.get(9)?,
                 size_bytes: row.get(10)?,
                 ext: ext_of(&relpath),
+                name: file_name_of(&relpath).to_string(),
                 status: media_status(&state, online).to_string(),
                 has_thumb: row.get::<_, i64>(14)? != 0,
                 has_geo: row.get::<_, i64>(15)? != 0,
@@ -271,6 +299,35 @@ pub fn send_text(lib: String, args: SendTextArgs) -> AppResult<MessagePayload> {
             params![now, args.conv_id],
         )?;
         load_message_row(conn, id)
+    })
+}
+
+/// The caption a media message carries: what the user wrote about it.
+/// Blank clears it, and the file name shows in its place. A text message
+/// *is* its caption, so it can't be emptied this way.
+#[tauri::command]
+pub fn set_caption(lib: String, message_id: i64, caption: String) -> AppResult<()> {
+    let text = caption.trim();
+    db::with_lib(&lib, |conn| {
+        let has_media: Option<bool> = conn
+            .query_row(
+                "SELECT media_id IS NOT NULL FROM messages WHERE id = ?1",
+                params![message_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        match has_media {
+            None => return Err(AppError::NotFound(format!("message {message_id}"))),
+            Some(false) if text.is_empty() => {
+                return Err(AppError::InvalidArg("text is empty".into()))
+            }
+            _ => {}
+        }
+        conn.execute(
+            "UPDATE messages SET caption = ?1 WHERE id = ?2",
+            params![(!text.is_empty()).then_some(text), message_id],
+        )?;
+        Ok(())
     })
 }
 
@@ -495,6 +552,27 @@ mod tests {
     }
 
     #[test]
+    fn file_names_from_either_separator() {
+        use super::{file_name_of, file_stem_of};
+        assert_eq!(file_name_of("2024/05/IMG_1.HEIC"), "IMG_1.HEIC");
+        assert_eq!(file_name_of(r"2024\05\IMG_1.HEIC"), "IMG_1.HEIC");
+        assert_eq!(file_stem_of("a/b.tar.gz"), "b.tar");
+        assert_eq!(file_stem_of(".hidden"), ".hidden");
+        assert_eq!(file_stem_of("noext"), "noext");
+    }
+
+    #[test]
+    fn sql_file_name_matches_rust() {
+        let conn = Connection::open_in_memory().unwrap();
+        for p in ["2024/05/IMG_1.HEIC", r"a\b\c.jpg", "top.png", "a/aa/a.a"] {
+            let got: String = conn
+                .query_row(&format!("SELECT {}", super::sql_file_name("?1")), [p], |r| r.get(0))
+                .unwrap();
+            assert_eq!(got, super::file_name_of(p), "{p}");
+        }
+    }
+
+    #[test]
     fn other_conversations_never_leak_in() {
         assert!(!page(&fixture(), false, None, 10).contains(&99));
     }
@@ -523,6 +601,7 @@ mod tests {
             (m.status.as_str(), m.ext.as_str(), m.has_thumb),
             ("offline", "heic", false)
         );
+        assert_eq!(m.name, "a.HEIC");
         // Whether it has a position travels with the row; the position doesn't.
         assert!(m.has_geo);
         assert_eq!((m.taken_at, m.taken_offset), (Some(1556881200000), Some(540)));

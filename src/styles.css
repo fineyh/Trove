@@ -373,6 +373,14 @@ input[type="range"].trove-volume::-webkit-slider-thumb {
     transform: scale(0.8);
   }
 }
+/* The info panel's map: one smaller pin, nothing to hover (ADR-062). */
+.map-pin.map-pin-mini {
+  width: 40px;
+  height: 40px;
+}
+.map-pin.map-pin-mini:hover .map-pin-card {
+  transform: none;
+}
 /* The canvas takes the arrow like the rest of the app, the hand only while dragging. */
 .maplibregl-canvas-container.maplibregl-interactive {
   cursor: default;

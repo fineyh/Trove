@@ -7,7 +7,7 @@ import type { Message } from "../../types";
 import { audioElement, trackOf, useAudioStore } from "../../stores/audio";
 import { useLibrariesStore } from "../../stores/libraries";
 import { useViewTracker } from "../../lib/viewTracker";
-import { formatDuration } from "../../lib/media";
+import { formatDuration, messageTitle } from "../../lib/media";
 import { cn } from "../../lib/cn";
 import { IconButton } from "../ui/Button";
 
@@ -105,7 +105,7 @@ export function AudioMessage({ message }: { message: Message }) {
           {(isCurrent || duration) && (
             <span className="shrink-0 tabular-nums">{formatDuration(isCurrent ? posMs : duration!)}</span>
           )}
-          <span className="min-w-0 flex-1 truncate">{message.caption}</span>
+          <span className="min-w-0 flex-1 truncate">{messageTitle(message)}</span>
           {isCurrent && (
             <button
               type="button"
