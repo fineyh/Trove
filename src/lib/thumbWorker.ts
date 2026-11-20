@@ -34,25 +34,31 @@ function fit(w: number, h: number): [number, number] {
   return [Math.max(1, Math.round(w * s)), Math.max(1, Math.round(h * s))];
 }
 
-async function encode(
-  source: CanvasImageSource,
-  w: number,
-  h: number,
-): Promise<{ bytes: Uint8Array; mime: string; width: number; height: number }> {
+function draw(source: CanvasImageSource, w: number, h: number): OffscreenCanvas {
   const [tw, th] = fit(w, h);
   const canvas = new OffscreenCanvas(tw, th);
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) throw new Error("no 2d context");
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
   ctx.drawImage(source, 0, 0, tw, th);
+  return canvas;
+}
+
+async function toWebp(
+  canvas: OffscreenCanvas,
+): Promise<{ bytes: Uint8Array; mime: string; width: number; height: number }> {
   const blob = await canvas.convertToBlob({ type: "image/webp", quality: QUALITY });
   return {
     bytes: new Uint8Array(await blob.arrayBuffer()),
     mime: blob.type || "image/webp",
-    width: tw,
-    height: th,
+    width: canvas.width,
+    height: canvas.height,
   };
+}
+
+function encode(source: CanvasImageSource, w: number, h: number) {
+  return toWebp(draw(source, w, h));
 }
 
 async function makeImage(lib: string, job: ipc.ThumbJob): Promise<Made> {
@@ -105,34 +111,116 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   ]);
 }
 
+// Where to look for a video cover, in seconds. People tell videos apart by
+// how they open, so stay in the first few seconds and only move on while the
+// frame is blank (black, white, one flat colour, or not painted at all).
+const COVER_TIMES = [1, 2, 3, 5];
+
+interface Look {
+  /** The frame came back transparent: the decoder hadn't painted it yet. */
+  unpainted: boolean;
+  blank: boolean;
+  /** Luma spread; more detail = a better cover when every frame is blank. */
+  detail: number;
+}
+
+function look(canvas: OffscreenCanvas): Look {
+  const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+  const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  let n = 0;
+  let alpha = 0;
+  let sum = 0;
+  let sq = 0;
+  // Every 4th pixel is plenty for a 320px frame.
+  for (let i = 0; i < data.length; i += 16) {
+    const y = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    alpha += data[i + 3];
+    sum += y;
+    sq += y * y;
+    n++;
+  }
+  const mean = sum / n;
+  const detail = Math.sqrt(Math.max(0, sq / n - mean * mean));
+  const unpainted = alpha / n < 250;
+  return { unpainted, blank: unpainted || mean < 24 || mean > 235 || detail < 10, detail };
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+/** Resolve once the seeked frame has reached the compositor (or soon after). */
+function presented(video: HTMLVideoElement): Promise<void> {
+  const v = video as HTMLVideoElement & { requestVideoFrameCallback?: (cb: () => void) => number };
+  if (!v.requestVideoFrameCallback) return sleep(50);
+  return Promise.race([new Promise<void>((r) => v.requestVideoFrameCallback!(() => r())), sleep(300)]);
+}
+
+async function frameAt(video: HTMLVideoElement, t: number): Promise<{ canvas: OffscreenCanvas; look: Look }> {
+  const seeked = once(video, "seeked");
+  video.currentTime = t;
+  await withTimeout(seeked, VIDEO_TIMEOUT_MS);
+  await presented(video);
+  const w = video.videoWidth;
+  const h = video.videoHeight;
+  if (!w || !h) throw new Error("no video frame");
+  let canvas = draw(video, w, h);
+  let l = look(canvas);
+  // A transparent frame means "not decoded yet", not a dark scene: give the
+  // decoder a moment before calling it blank.
+  for (let i = 0; l.unpainted && i < 3; i++) {
+    await sleep(150);
+    canvas = draw(video, w, h);
+    l = look(canvas);
+  }
+  return { canvas, look: l };
+}
+
 async function makeVideo(lib: string, job: ipc.ThumbJob): Promise<Made> {
   const video = document.createElement("video");
   video.crossOrigin = "anonymous";
   video.muted = true;
   video.preload = "metadata";
   video.playsInline = true;
+  // In the document (invisible) so the decoder paints frames for it.
+  video.style.cssText = "position:fixed;left:0;top:0;width:2px;height:2px;opacity:0.01;pointer-events:none;";
+  document.body.appendChild(video);
   try {
     const meta = once(video, "loadedmetadata");
     video.src = ipc.mediaSrc(lib, job.mediaId);
     await withTimeout(meta, VIDEO_TIMEOUT_MS);
     const duration = Number.isFinite(video.duration) ? video.duration : 0;
-    // Skip the black first frame most cameras write, but stay early.
-    const seeked = once(video, "seeked");
-    video.currentTime = Math.min(1, duration * 0.1);
-    await withTimeout(seeked, VIDEO_TIMEOUT_MS);
-    const w = video.videoWidth;
-    const h = video.videoHeight;
-    if (!w || !h) throw new Error("no video frame");
-    const out = await encode(video, w, h);
+    // The very first frame is often black; short clips start at 10% instead.
+    const first = Math.min(COVER_TIMES[0], duration * 0.1);
+    const times = [first, ...COVER_TIMES.slice(1).filter((t) => t < duration * 0.9)];
+    let best: { canvas: OffscreenCanvas; look: Look } | null = null;
+    for (const t of times) {
+      const f = await frameAt(video, t);
+      if (!f.look.blank) {
+        best = f;
+        break;
+      }
+      // All blank so far: keep the earliest painted one with clearly more detail.
+      if (
+        !best ||
+        (best.look.unpainted && !f.look.unpainted) ||
+        (f.look.unpainted === best.look.unpainted && f.look.detail > best.look.detail + 4)
+      ) {
+        best = f;
+      }
+    }
+    if (!best || best.look.unpainted) throw new Error("no painted video frame");
+    const out = await toWebp(best.canvas);
     return {
       ...out,
-      origWidth: w,
-      origHeight: h,
+      origWidth: video.videoWidth,
+      origHeight: video.videoHeight,
       durationMs: duration > 0 ? duration * 1000 : undefined,
     };
   } finally {
     video.removeAttribute("src");
     video.load();
+    video.remove();
   }
 }
 

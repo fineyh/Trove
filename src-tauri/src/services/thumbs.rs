@@ -51,6 +51,28 @@ pub fn next_batch(lib: &str, limit: i64) -> AppResult<Vec<ThumbJob>> {
     })
 }
 
+/// Bumped whenever video covers are picked differently, so covers made the
+/// old way are remade once (old ones keep showing until the new one lands).
+const VIDEO_COVER_REV: &str = "2";
+
+/// Run on open: requeue finished video covers if they predate `VIDEO_COVER_REV`.
+pub fn requeue_stale_video_covers(c: &rusqlite::Connection) -> rusqlite::Result<()> {
+    use rusqlite::OptionalExtension;
+    let have: Option<String> = c
+        .query_row("SELECT value FROM settings WHERE key = 'video_cover_rev'", [], |r| r.get(0))
+        .optional()?;
+    if have.as_deref() == Some(VIDEO_COVER_REV) {
+        return Ok(());
+    }
+    let tx = c.unchecked_transaction()?;
+    tx.execute("UPDATE media SET thumb_scanned = 0 WHERE kind = 'video' AND thumb_scanned = 1", [])?;
+    tx.execute(
+        "INSERT OR REPLACE INTO settings(key, value) VALUES ('video_cover_rev', ?1)",
+        [VIDEO_COVER_REV],
+    )?;
+    tx.commit()
+}
+
 pub fn remaining(lib: &str) -> AppResult<i64> {
     db::with_lib(lib, |c| {
         Ok(c.query_row(
@@ -127,4 +149,31 @@ pub struct ThumbsStatus {
 #[allow(dead_code)]
 pub fn status(lib: &str) -> AppResult<ThumbsStatus> {
     Ok(ThumbsStatus { remaining: remaining(lib)? })
+}
+
+#[cfg(test)]
+mod tests {
+    use rusqlite::Connection;
+
+    #[test]
+    fn video_covers_are_requeued_once() {
+        let c = Connection::open_in_memory().unwrap();
+        crate::db::run_migrations_for_test(&c);
+        c.execute_batch(
+            "INSERT INTO volumes (id, platform_id, online, created_at) VALUES (1, 'v', 1, 0);
+             INSERT INTO media (id, volume_id, relpath, size_bytes, mtime, blake3, kind, thumb_scanned)
+               VALUES (1, 1, 'a.mp4', 1, 0, 'a', 'video', 1),
+                      (2, 1, 'b.jpg', 1, 0, 'b', 'image', 1),
+                      (3, 1, 'c.mp4', 1, 0, 'c', 'video', 2);",
+        )
+        .unwrap();
+        let scanned = |id: i64| -> i64 {
+            c.query_row("SELECT thumb_scanned FROM media WHERE id = ?1", [id], |r| r.get(0)).unwrap()
+        };
+        super::requeue_stale_video_covers(&c).unwrap();
+        assert_eq!((scanned(1), scanned(2), scanned(3)), (0, 1, 2));
+        c.execute("UPDATE media SET thumb_scanned = 1 WHERE id = 1", []).unwrap();
+        super::requeue_stale_video_covers(&c).unwrap();
+        assert_eq!(scanned(1), 1);
+    }
 }

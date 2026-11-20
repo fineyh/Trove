@@ -104,6 +104,9 @@ pub fn open(id: &str, key: &SecretKey) -> AppResult<()> {
     }
     let conn = connect(&lib_path(id), key)?;
     migrations::run(&conn)?;
+    if let Err(e) = crate::services::thumbs::requeue_stale_video_covers(&conn) {
+        log::warn!("requeue video covers: {e}");
+    }
     OPEN.write().insert(id.to_string(), Arc::new(Library { conn: Mutex::new(conn) }));
     Ok(())
 }
