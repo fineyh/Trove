@@ -275,6 +275,8 @@ function install() {
       return {
         lat: g?.lat ?? null,
         lon: g?.lon ?? null,
+        width: m?.media?.width ?? null,
+        height: m?.media?.height ?? null,
         camera: kind === "image" ? { model: "iPhone 15 Pro", lens: "iPhone 15 Pro back triple camera 6.765mm f/1.78", focalMm: 24, fNumber: 1.78, exposure: "1/120", iso: 80 } : null,
       };
     },

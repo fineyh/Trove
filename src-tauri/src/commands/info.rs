@@ -10,6 +10,10 @@ use serde::Serialize;
 pub struct MediaDetails {
     pub lat: Option<f64>,
     pub lon: Option<f64>,
+    /// As displayed. Written when the thumbnail is made, which may be after
+    /// the message rows the panel was opened from were loaded.
+    pub width: Option<i64>,
+    pub height: Option<i64>,
     /// Images only, and only while the file is reachable: read from the file
     /// each time the panel asks, not stored.
     pub camera: Option<Camera>,
@@ -19,25 +23,34 @@ pub struct MediaDetails {
 pub async fn media_details(lib: String, media_id: i64) -> AppResult<MediaDetails> {
     super::run_blocking(move || {
         let row = db::with_lib(&lib, |conn| {
-            let row: Option<(Option<f64>, Option<f64>, String)> = conn
+            let row: Option<(MediaDetails, String)> = conn
                 .query_row(
-                    "SELECT lat, lon, kind FROM media WHERE id = ?1",
+                    "SELECT lat, lon, width, height, kind FROM media WHERE id = ?1",
                     params![media_id],
-                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                    |r| {
+                        let d = MediaDetails {
+                            lat: r.get(0)?,
+                            lon: r.get(1)?,
+                            width: r.get(2)?,
+                            height: r.get(3)?,
+                            camera: None,
+                        };
+                        Ok((d, r.get(4)?))
+                    },
                 )
                 .optional()?;
             let path = match &row {
-                Some((_, _, kind)) if kind == "image" => super::messages::media_abs_path(conn, media_id)?,
+                Some((_, kind)) if kind == "image" => super::messages::media_abs_path(conn, media_id)?,
                 _ => None,
             };
-            Ok(row.map(|r| (r, path)))
+            Ok(row.map(|(d, _)| (d, path)))
         })?;
-        let Some(((lat, lon, _), path)) = row else {
+        let Some((mut details, path)) = row else {
             return Err(crate::AppError::NotFound(format!("media #{media_id}")));
         };
         // Outside the library lock: a slow disk mustn't hold up everything else.
-        let camera = path.filter(|p| p.exists()).and_then(|p| crate::services::exif::read_camera(&p));
-        Ok(MediaDetails { lat, lon, camera })
+        details.camera = path.filter(|p| p.exists()).and_then(|p| crate::services::exif::read_camera(&p));
+        Ok(details)
     })
     .await
 }

@@ -72,6 +72,8 @@ export interface Message {
 export interface MediaDetails {
   lat: number | null;
   lon: number | null;
+  width: number | null;
+  height: number | null;
   camera: {
     model: string | null;
     lens: string | null;

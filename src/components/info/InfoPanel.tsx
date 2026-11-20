@@ -19,6 +19,7 @@ import { formatViewTime, formatWatch } from "../../lib/statsPeriod";
 import { useIsDark } from "../../lib/useIsDark";
 import { useMessagesStore } from "../../stores/messages";
 import { useSessionStore } from "../../stores/session";
+import { useThumbsStore } from "../../stores/thumbs";
 import { toast } from "../../stores/toast";
 import type { ItemHistory, MediaDetails, MediaPayload, Message } from "../../types";
 import { useMapEnabled } from "../map/MapView";
@@ -64,7 +65,10 @@ export function InfoPanel({
   onFavoriteChange,
 }: InfoPanelProps) {
   const media = message.media!;
-  const [details, setDetails] = useState<MediaDetails | null>(null);
+  // Keyed by file, so a re-read for the same file doesn't blank the rows first.
+  const [loaded, setLoaded] = useState<{ key: string; d: MediaDetails } | null>(null);
+  const detailsKey = `${lib}:${media.id}`;
+  const details = loaded?.key === detailsKey ? loaded.d : null;
   const [history, setHistory] = useState<ItemHistory | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const mapEnabled = useMapEnabled();
@@ -73,15 +77,23 @@ export function InfoPanel({
   const openMissing = useSessionStore((s) => s.setMissingFilesOpen);
 
   const watchable = media.kind === "video" || media.kind === "audio" || isImageMedia(media);
+  // The size is learned when the thumbnail is made; read it again once that lands.
+  const thumbMade = useThumbsStore((s) => s.fresh[detailsKey] === true);
 
   useEffect(() => {
     let live = true;
-    setDetails(null);
-    setHistory(null);
     ipc
       .mediaDetails(lib, media.id)
-      .then((d) => live && setDetails(d))
+      .then((d) => live && setLoaded({ key: `${lib}:${media.id}`, d }))
       .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [lib, media.id, thumbMade]);
+
+  useEffect(() => {
+    let live = true;
+    setHistory(null);
     if (watchable) {
       ipc
         .statsItemHistory(lib, message.id)
@@ -91,11 +103,13 @@ export function InfoPanel({
     return () => {
       live = false;
     };
-  }, [lib, media.id, message.id, watchable]);
+  }, [lib, message.id, watchable]);
 
   const reveal = () => void ipc.revealMedia(lib, media.id).catch((e) => toast.error("无法打开文件夹", e));
   const thumb = media.hasThumb ? ipc.thumbSrc(lib, media.id) : null;
   const camera = details?.camera ?? null;
+  const width = details?.width ?? media.width;
+  const height = details?.height ?? media.height;
   const geo = details && details.lat != null && details.lon != null ? { lat: details.lat, lon: details.lon } : null;
   const last = history?.views[0];
 
@@ -143,7 +157,7 @@ export function InfoPanel({
           sub={
             <Facts
               items={[
-                media.width && media.height ? `${media.width} × ${media.height}` : null,
+                width && height ? `${width} × ${height}` : null,
                 media.durationMs ? formatDuration(media.durationMs) : null,
                 formatBytes(media.sizeBytes),
               ]}
