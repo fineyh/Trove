@@ -5,6 +5,7 @@ import {
   Eye,
   File as FileIcon,
   Film,
+  Heart,
   Image as ImageIcon,
   MapPin,
   PanelRightClose,
@@ -25,6 +26,8 @@ import { ViewHistoryDialog } from "../stats/ViewHistoryDialog";
 import { IconButton } from "../ui/Button";
 import { useEscapeLayer } from "../ui/Modal";
 import { MiniMap } from "./MiniMap";
+import { TagsField } from "./TagsField";
+import { toggleFavorite } from "../../stores/favorites";
 
 interface InfoPanelProps {
   lib: string;
@@ -41,6 +44,8 @@ interface InfoPanelProps {
   onShowOnMap?: () => void;
   /** The caption was saved, for a host that holds its own copy of the message. */
   onCaptionSaved?: (caption: string | null) => void;
+  /** Dock: favorited or not, likewise. */
+  onFavoriteChange?: (favorite: boolean) => void;
 }
 
 /**
@@ -48,7 +53,16 @@ interface InfoPanelProps {
  * the top, then what the file says. The viewers and the chat's right dock
  * show the same panel.
  */
-export function InfoPanel({ lib, message, place, onClose, onOpen, onShowOnMap, onCaptionSaved }: InfoPanelProps) {
+export function InfoPanel({
+  lib,
+  message,
+  place,
+  onClose,
+  onOpen,
+  onShowOnMap,
+  onCaptionSaved,
+  onFavoriteChange,
+}: InfoPanelProps) {
   const media = message.media!;
   const [details, setDetails] = useState<MediaDetails | null>(null);
   const [history, setHistory] = useState<ItemHistory | null>(null);
@@ -92,6 +106,13 @@ export function InfoPanel({ lib, message, place, onClose, onOpen, onShowOnMap, o
     >
       <header data-drag-region className="flex h-[52px] shrink-0 items-center gap-1 pl-5 pr-[calc(var(--wc-width)+10px)]">
         <span className="flex-1 text-sm font-semibold">信息</span>
+        {/* In a viewer the favorite is on its top bar. */}
+        {place === "dock" && (
+          <FavoriteButton
+            favorite={media.favorite}
+            onClick={() => void toggleFavorite(lib, media).then((on) => on !== null && onFavoriteChange?.(on))}
+          />
+        )}
         {onClose && <IconButton label="收起" size="sm" icon={<PanelRightClose size={16} />} onClick={onClose} />}
       </header>
 
@@ -110,6 +131,7 @@ export function InfoPanel({ lib, message, place, onClose, onOpen, onShowOnMap, o
         )}
 
         <CaptionField message={message} onSaved={onCaptionSaved} />
+        <TagsField lib={lib} mediaId={media.id} />
 
         <div className="mx-2 my-2 h-px bg-app-border" />
 
@@ -193,6 +215,35 @@ export function InfoPanel({ lib, message, place, onClose, onOpen, onShowOnMap, o
 
       <ViewHistoryDialog lib={lib} message={historyOpen ? message : null} onClose={() => setHistoryOpen(false)} />
     </aside>
+  );
+}
+
+/** Filled when it's a favorite (ADR-063). The viewers' top bar has the same,
+ *  with the F key. */
+export function FavoriteButton({
+  favorite,
+  onClick,
+  size = "sm",
+  shortcut,
+}: {
+  favorite: boolean;
+  onClick: () => void;
+  size?: "sm" | "md";
+  shortcut?: boolean;
+}) {
+  return (
+    <IconButton
+      label={(favorite ? "取消收藏" : "收藏") + (shortcut ? "  F" : "")}
+      tipSide="bottom"
+      size={size}
+      icon={<Heart size={size === "sm" ? 16 : 18} fill={favorite ? "currentColor" : "none"} />}
+      aria-pressed={favorite}
+      className={favorite ? "text-app-fg" : undefined}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+    />
   );
 }
 

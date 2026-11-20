@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Copy, ExternalLink, FolderSearch, Info, PictureInPicture2, Trash2, UserSquare2 } from "lucide-react";
+import { Copy, ExternalLink, FolderSearch, Heart, HeartOff, Info, PictureInPicture2, Trash2, UserSquare2 } from "lucide-react";
 import type { Message } from "../../types";
 import * as ipc from "../../ipc/client";
 import { useSessionStore } from "../../stores/session";
@@ -7,6 +7,7 @@ import { useMessagesStore } from "../../stores/messages";
 import { useConversationsStore } from "../../stores/conversations";
 import { useLibrariesStore } from "../../stores/libraries";
 import { toast } from "../../stores/toast";
+import { setFavorite } from "../../stores/favorites";
 import { ContextMenu, type ContextMenuEntry } from "../ui/ContextMenu";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { openPlayerWindow } from "../../lib/playerWindow";
@@ -26,6 +27,8 @@ interface MessageMenuProps {
   inViewer?: boolean;
   /** The message was deleted (a viewer moves on to another item). */
   onDeleted?: (message: Message) => void;
+  /** Favorited or not from here, for a host holding its own copy. */
+  onFavoriteChange?: (mediaId: number, favorite: boolean) => void;
 }
 
 /**
@@ -33,7 +36,7 @@ interface MessageMenuProps {
  * profile drawer's media grid so both offer the same actions. Owns the delete
  * confirmation, which outlives the menu itself.
  */
-export function MessageMenu({ menu, onClose, inViewer, onDeleted }: MessageMenuProps) {
+export function MessageMenu({ menu, onClose, inViewer, onDeleted, onFavoriteChange }: MessageMenuProps) {
   const lib = useLibrariesStore((s) => s.current);
   const remove = useMessagesStore((s) => s.remove);
   const setAvatar = useConversationsStore((s) => s.setAvatar);
@@ -77,6 +80,18 @@ export function MessageMenu({ menu, onClose, inViewer, onDeleted }: MessageMenuP
           onClose();
           useSessionStore.getState().openInfo(message.id);
         },
+      });
+    }
+    // A viewer has its own favorite button.
+    if (!inViewer) {
+      const on = !media.favorite;
+      items.push({
+        label: on ? "收藏" : "取消收藏",
+        icon: on ? <Heart size={15} /> : <HeartOff size={15} />,
+        onClick: act(async () => {
+          await setFavorite(lib, media, on);
+          onFavoriteChange?.(media.id, on);
+        }, on ? "无法收藏" : "无法取消收藏"),
       });
     }
     if (reachable && (isVideo || isImage)) {

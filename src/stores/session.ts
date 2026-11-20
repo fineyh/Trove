@@ -13,7 +13,7 @@ export interface RecoveryReveal {
 }
 
 /** What fills the window beside the space bar. */
-export type MainView = "chats" | "map" | "stats";
+export type MainView = "chats" | "favorites" | "map" | "stats";
 
 interface SessionState {
   activeConversationId: number | null;

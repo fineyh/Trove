@@ -35,6 +35,8 @@ pub struct MediaPayload {
     /// Audio: loudness bars, 0–255 (ADR-058). Absent until made.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub peaks: Option<Vec<u8>>,
+    /// A favorite (ADR-063). On the file, so every message of it agrees.
+    pub favorite: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -49,16 +51,17 @@ pub struct MessagePayload {
 }
 
 /// Columns every message query selects, in the order [`row_to_message`] reads.
-const MESSAGE_COLUMNS: &str = "
+pub(crate) const MESSAGE_COLUMNS: &str = "
     m.id, m.conv_id, m.caption, m.play_count, m.created_at,
     md.id, md.kind, md.width, md.height, md.duration_ms, md.size_bytes,
     md.relpath, md.state, COALESCE(v.online, 0),
     EXISTS (SELECT 1 FROM thumbs t WHERE t.media_id = md.id),
     md.kind IN ('image', 'video') AND md.lat IS NOT NULL AND md.lon IS NOT NULL,
     md.taken_at, md.taken_offset, md.peaks,
-    COALESCE(md.thumb_scanned, 0) = 0 AND md.kind IN ('image', 'video')";
+    COALESCE(md.thumb_scanned, 0) = 0 AND md.kind IN ('image', 'video'),
+    md.favorited_at IS NOT NULL";
 
-const MESSAGE_FROM: &str = "
+pub(crate) const MESSAGE_FROM: &str = "
     FROM messages m
     LEFT JOIN media md ON md.id = m.media_id
     LEFT JOIN volumes v ON v.id = md.volume_id";
@@ -104,7 +107,7 @@ pub(crate) fn ext_of(relpath: &str) -> String {
         .unwrap_or_default()
 }
 
-fn row_to_message(row: &rusqlite::Row) -> rusqlite::Result<MessagePayload> {
+pub(crate) fn row_to_message(row: &rusqlite::Row) -> rusqlite::Result<MessagePayload> {
     let media_id: Option<i64> = row.get(5)?;
     let media = match media_id {
         Some(id) => {
@@ -127,6 +130,7 @@ fn row_to_message(row: &rusqlite::Row) -> rusqlite::Result<MessagePayload> {
                 taken_offset: row.get(17)?,
                 peaks: row.get(18)?,
                 thumb_pending: row.get::<_, Option<i64>>(19)?.unwrap_or(0) != 0,
+                favorite: row.get::<_, Option<i64>>(20)?.unwrap_or(0) != 0,
             })
         }
         None => None,
@@ -411,14 +415,14 @@ mod tests {
                                  height INTEGER, duration_ms INTEGER, size_bytes INTEGER,
                                  relpath TEXT, state TEXT NOT NULL, lat REAL, lon REAL,
                                  taken_at INTEGER, taken_offset INTEGER, peaks BLOB,
-                                 thumb_scanned INTEGER NOT NULL DEFAULT 0);
+                                 thumb_scanned INTEGER NOT NULL DEFAULT 0, favorited_at INTEGER);
              CREATE TABLE thumbs (media_id INTEGER PRIMARY KEY);
              CREATE TABLE messages (
                id INTEGER PRIMARY KEY, conv_id INTEGER NOT NULL, media_id INTEGER,
                caption TEXT, play_count INTEGER DEFAULT 0, created_at INTEGER NOT NULL
              );
              INSERT INTO volumes VALUES (1, 0), (2, 1);
-             INSERT INTO media VALUES (1, 1, 'image', NULL, NULL, NULL, 1, 'a.HEIC', 'live', 35.0, 135.7, 1556881200000, 540, NULL, 1);",
+             INSERT INTO media VALUES (1, 1, 'image', NULL, NULL, NULL, 1, 'a.HEIC', 'live', 35.0, 135.7, 1556881200000, 540, NULL, 1, NULL);",
         )
         .unwrap();
         let rows = [
@@ -529,7 +533,7 @@ mod tests {
     fn missing_files_are_never_hidden() {
         let conn = fixture();
         conn.execute_batch(
-            "INSERT INTO media VALUES (2, 2, 'image', NULL, NULL, NULL, 1, 'b.jpg', 'broken', NULL, NULL, NULL, NULL, NULL, 0);
+            "INSERT INTO media VALUES (2, 2, 'image', NULL, NULL, NULL, 1, 'b.jpg', 'broken', NULL, NULL, NULL, NULL, NULL, 0, NULL);
              INSERT INTO messages (id, conv_id, media_id, created_at) VALUES (20, 1, 2, 950);",
         )
         .unwrap();

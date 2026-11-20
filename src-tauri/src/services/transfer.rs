@@ -51,6 +51,9 @@ struct MediaRow {
     /// Audio waveform (ADR-058). `thumb_scanned` says it is done, so it must
     /// travel with it or the new library never makes it again.
     peaks: Option<Vec<u8>>,
+    /// Favorite and tags are the file's (ADR-063); they go where it goes.
+    favorited_at: Option<i64>,
+    tags: Vec<(String, i64)>,
 }
 
 struct MsgRow {
@@ -128,7 +131,7 @@ fn read(c: &Connection, conv_id: i64) -> AppResult<Snapshot> {
     let media = c
         .prepare(
             "SELECT id, volume_id, relpath, size_bytes, mtime, blake3, kind, width, height, duration_ms,
-                    state, lat, lon, meta_scanned, thumb_scanned, taken_at, taken_offset, peaks
+                    state, lat, lon, meta_scanned, thumb_scanned, taken_at, taken_offset, peaks, favorited_at
              FROM media WHERE id IN (SELECT media_id FROM messages WHERE conv_id = ?1)",
         )?
         .query_map([conv_id], |r| {
@@ -151,9 +154,23 @@ fn read(c: &Connection, conv_id: i64) -> AppResult<Snapshot> {
                 taken_at: r.get(15)?,
                 taken_offset: r.get(16)?,
                 peaks: r.get(17)?,
+                favorited_at: r.get(18)?,
+                tags: Vec::new(),
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut media = media;
+    {
+        let mut tags = c.prepare(
+            "SELECT t.name, mt.created_at FROM media_tags mt JOIN tags t ON t.id = mt.tag_id
+             WHERE mt.media_id = ?1 ORDER BY mt.created_at, t.id",
+        )?;
+        for m in &mut media {
+            m.tags = tags
+                .query_map([m.id], |r| Ok((r.get(0)?, r.get(1)?)))?
+                .collect::<rusqlite::Result<_>>()?;
+        }
+    }
 
     let thumbs = c
         .prepare(
@@ -283,6 +300,24 @@ fn write(c: &Connection, s: &Snapshot) -> AppResult<i64> {
             }
         };
         mmap.insert(m.id, id);
+        // The file may already be there through another conversation: merge.
+        if let Some(at) = m.favorited_at {
+            tx.execute(
+                "UPDATE media SET favorited_at = COALESCE(favorited_at, ?1) WHERE id = ?2",
+                params![at, id],
+            )?;
+        }
+        for (name, at) in &m.tags {
+            tx.execute(
+                "INSERT OR IGNORE INTO tags (name, created_at) VALUES (?1, ?2)",
+                params![name, at],
+            )?;
+            tx.execute(
+                "INSERT OR IGNORE INTO media_tags (media_id, tag_id, created_at)
+                 SELECT ?1, id, ?3 FROM tags WHERE name = ?2",
+                params![id, name, at],
+            )?;
+        }
     }
     for (mid, data, mime, w, h, at) in &s.thumbs {
         tx.execute(
@@ -502,5 +537,40 @@ mod tests {
             .query_row("SELECT peaks, thumb_scanned FROM media", [], |r| Ok((r.get(0)?, r.get(1)?)))
             .unwrap();
         assert_eq!((peaks, scanned), (vec![10, 20, 255], 1));
+    }
+
+    #[test]
+    fn favorites_and_tags_move_and_merge() {
+        let a = lib();
+        let b = lib();
+        let seed = "INSERT INTO volumes (id, platform_id, label, online, created_at) VALUES (1, 'v', 'D', 1, 0);
+             INSERT INTO conversations (id, name, kind, created_at, updated_at) VALUES (1, 'x', 'manual', 0, 0);
+             INSERT INTO media (id, volume_id, relpath, size_bytes, mtime, blake3, kind) VALUES (1, 1, 'a.jpg', 1, 0, 'h', 'image');
+             INSERT INTO messages (conv_id, media_id, created_at) VALUES (1, 1, 1);";
+        a.execute_batch(seed).unwrap();
+        b.execute_batch(seed).unwrap();
+        a.execute_batch(
+            "UPDATE media SET favorited_at = 42;
+             INSERT INTO tags (id, name, created_at) VALUES (1, 'Sea', 5), (2, 'cat', 6);
+             INSERT INTO media_tags VALUES (1, 1, 5), (1, 2, 6);",
+        )
+        .unwrap();
+        // The target already has the same file, tagged 'sea' in other case.
+        b.execute_batch(
+            "INSERT INTO tags (id, name, created_at) VALUES (7, 'sea', 1);
+             INSERT INTO media_tags VALUES (1, 7, 1);",
+        )
+        .unwrap();
+        write(&b, &read(&a, 1).unwrap()).unwrap();
+        let fav: Option<i64> = b.query_row("SELECT favorited_at FROM media", [], |r| r.get(0)).unwrap();
+        assert_eq!(fav, Some(42));
+        let names: Vec<String> = b
+            .prepare("SELECT t.name FROM media_tags mt JOIN tags t ON t.id = mt.tag_id ORDER BY t.name")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        assert_eq!(names, vec!["cat", "sea"]);
     }
 }

@@ -1,4 +1,4 @@
-// Temporary, view-only transform for the viewers (Lightbox / MapPhotoViewer /
+// Temporary, view-only transform for the viewers (Lightbox / ItemsViewer /
 // the player window): rotation + zoom + pan, for images AND videos. The
 // original file is never touched — we only transform the element with CSS.
 //

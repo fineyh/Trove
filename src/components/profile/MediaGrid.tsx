@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AudioLines, CloudOff, ImageOff, Loader2, Play } from "lucide-react";
+import { AudioLines, CloudOff, File as FileIcon, ImageOff, Loader2, Play } from "lucide-react";
 import type { Message } from "../../types";
 import { mediaSrc, openMedia } from "../../ipc/client";
 import { EMPTY_MEDIA, useConvMediaStore } from "../../stores/convMedia";
@@ -16,7 +16,7 @@ import { formatDuration, isImageMedia, messageTitle } from "../../lib/media";
 import { trackOf, useAudioStore } from "../../stores/audio";
 
 /** Grid click: view what can be viewed, explain what can't. */
-function openItem(m: Message, view: (id: number) => void) {
+export function openItem(m: Message, view: (id: number) => void) {
   const media = m.media!;
   if (media.status === "offline") {
     toast.info("文件所在的磁盘未连接");
@@ -136,15 +136,17 @@ export function MediaGrid({ convId }: MediaGridProps) {
   );
 }
 
-function GridItem({
+export function GridItem({
   message,
   onOpen,
   onMenu,
+  className,
 }: {
   message: Message;
   onOpen: () => void;
   /** Right-click: the same menu as the message in the chat. */
   onMenu: (x: number, y: number) => void;
+  className?: string;
 }) {
   const lib = useLibrariesStore((st) => st.current);
   const media = message.media!;
@@ -163,6 +165,7 @@ function GridItem({
   const offline = media.status === "offline";
   const missing = media.status === "missing";
   const audio = media.kind === "audio";
+  const file = media.kind === "other" && !isImage;
   const playing = useAudioStore((s) => s.playing && s.track?.lib === lib && s.track.messageId === message.id);
 
   return (
@@ -177,13 +180,19 @@ function GridItem({
         onMenu(e.clientX, e.clientY);
       }}
       data-tip={offline ? "离线" : missing ? "缺失" : undefined}
-      className={cn("relative aspect-square overflow-hidden rounded-md bg-app-subtle", missing && "cursor-default")}
+      className={cn("relative aspect-square overflow-hidden rounded-md bg-app-subtle", missing && "cursor-default", className)}
     >
       {audio ? (
         <span className="flex h-full w-full flex-col items-center justify-center gap-1 px-1.5">
           <AudioLines size={20} className={playing ? "text-app-accent" : "text-app-secondary"} />
           <span className="w-full truncate text-center text-2xs leading-4 text-app-secondary">{messageTitle(message) || "录音"}</span>
           {media.durationMs ? <span className="text-2xs leading-3 tabular-nums text-app-muted">{formatDuration(media.durationMs)}</span> : null}
+        </span>
+      ) : file ? (
+        <span className="flex h-full w-full flex-col items-center justify-center gap-1 px-1.5">
+          <FileIcon size={20} className="text-app-secondary" />
+          <span className="w-full truncate text-center text-2xs leading-4 text-app-secondary">{messageTitle(message)}</span>
+          {media.ext && <span className="text-2xs uppercase leading-3 text-app-muted">{media.ext}</span>}
         </span>
       ) : src && !failed ? (
         <img

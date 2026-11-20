@@ -7,13 +7,13 @@ import { useIsDark } from "../../lib/useIsDark";
 import { useLibrariesStore } from "../../stores/libraries";
 import { useMessagesStore } from "../../stores/messages";
 import { useSessionStore } from "../../stores/session";
-import type { GeotaggedMedia } from "../../types";
+import type { GeotaggedMedia, ViewerItem } from "../../types";
 import { IconButton } from "../ui/Button";
 import { EmptyState } from "../ui/EmptyState";
 import { useEscapeLayer } from "../ui/Modal";
 import { MapCanvas, type MapCanvasHandle } from "./MapCanvas";
 import { MapPanel } from "./MapPanel";
-import { MapPhotoViewer } from "./MapPhotoViewer";
+import { ItemsViewer } from "../info/ItemsViewer";
 import { ATTRIBUTION } from "./mapStyle";
 
 const EMPTY: GeotaggedMedia[] = [];
@@ -99,7 +99,7 @@ export default function MapOverlay({ lib }: { lib: string }) {
     [selection],
   );
 
-  const handleJump = (item: GeotaggedMedia) => {
+  const handleJump = (item: ViewerItem) => {
     setViewer(null);
     setView("chats");
     setActiveConversation(item.convId);
@@ -212,7 +212,8 @@ export default function MapOverlay({ lib }: { lib: string }) {
       )}
 
       {viewer && (
-        <MapPhotoViewer
+        <ItemsViewer
+          from="map"
           items={viewer.items}
           index={viewer.index}
           onClose={() => setViewer(null)}

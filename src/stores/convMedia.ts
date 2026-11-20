@@ -14,7 +14,7 @@ import { create } from "zustand";
 import * as ipc from "../ipc/client";
 import { currentLib, stillOn } from "./libraries";
 import { toast } from "./toast";
-import type { Message } from "../types";
+import type { MediaPayload, Message } from "../types";
 
 /** Stable empty reference — return this from selectors instead of `?? []`
  *  to keep Zustand's getSnapshot output reference-equal across renders. */
@@ -53,6 +53,8 @@ interface ConvMediaState {
   removeLocal: (convId: number, messageId: number) => void;
   /** A caption was edited (ADR-062). */
   patchCaption: (convId: number, messageId: number, caption: string | null) => void;
+  /** Something about a file changed (favorite). */
+  patchMedia: (mediaId: number, patch: Partial<MediaPayload>) => void;
 }
 
 export const useConvMediaStore = create<ConvMediaState>((set, get) => ({
@@ -155,6 +157,8 @@ export const useConvMediaStore = create<ConvMediaState>((set, get) => ({
       };
     }),
 
+  patchMedia: (mediaId, patch) => set((s) => ({ byConv: patchMediaIn(s.byConv, mediaId, patch) })),
+
   patchCaption: (convId, messageId, caption) =>
     set((s) => {
       const held = s.byConv[convId];
@@ -167,3 +171,19 @@ export const useConvMediaStore = create<ConvMediaState>((set, get) => ({
       };
     }),
 }));
+
+/** `byConv` with one file's fields changed wherever it appears. Lists without
+ *  it keep their reference, so their readers don't render. */
+export function patchMediaIn(
+  byConv: Record<number, Message[]>,
+  mediaId: number,
+  patch: Partial<MediaPayload>,
+): Record<number, Message[]> {
+  let out = byConv;
+  for (const [key, list] of Object.entries(byConv)) {
+    if (!list.some((m) => m.media?.id === mediaId)) continue;
+    if (out === byConv) out = { ...byConv };
+    out[Number(key)] = list.map((m) => (m.media?.id === mediaId ? { ...m, media: { ...m.media, ...patch } } : m));
+  }
+  return out;
+}

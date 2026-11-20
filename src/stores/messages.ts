@@ -1,10 +1,10 @@
 import { create } from "zustand";
 import * as ipc from "../ipc/client";
-import { useConvMediaStore } from "./convMedia";
+import { patchMediaIn, useConvMediaStore } from "./convMedia";
 import { useConversationsStore } from "./conversations";
 import { currentLib, stillOn } from "./libraries";
 import { toast } from "./toast";
-import type { Message } from "../types";
+import type { MediaPayload, Message } from "../types";
 
 /** Stable empty reference — return this from selectors instead of `?? []`
  *  to keep Zustand's getSnapshot output reference-equal across renders. */
@@ -35,6 +35,8 @@ interface MessagesState {
   importFiles: (convId: number, paths: string[]) => Promise<void>;
   /** The backend counted a play (`stats:played`, ADR-054). */
   applyPlayed: (messageId: number, playCount: number) => void;
+  /** Something about a file changed (favorite): every message of it. */
+  patchMedia: (mediaId: number, patch: Partial<MediaPayload>) => void;
   /** Save a media message's caption; blank clears it (ADR-062). */
   setCaption: (convId: number, messageId: number, caption: string) => Promise<void>;
   remove: (
@@ -169,6 +171,7 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
       return changed ? { byConv: out } : {};
     });
   },
+  patchMedia: (mediaId, patch) => set((s) => ({ byConv: patchMediaIn(s.byConv, mediaId, patch) })),
   setCaption: async (convId, messageId, caption) => {
     const lib = currentLib();
     await ipc.setCaption(lib, messageId, caption);
@@ -202,3 +205,4 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
     void useConversationsStore.getState().refresh();
   },
 }));
+

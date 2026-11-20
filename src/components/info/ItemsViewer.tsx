@@ -1,8 +1,9 @@
 import { ChevronLeft, ChevronRight, Loader2, MessageSquare } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import type { GeotaggedMedia, Message } from "../../types";
+import type { Message, ViewerItem } from "../../types";
 import { getMessages, mediaSrc, thumbSrc } from "../../ipc/client";
 import { useLibrariesStore } from "../../stores/libraries";
+import { toggleFavorite } from "../../stores/favorites";
 import { INFO_PANEL_WIDTH, useInfoPanelStore } from "../../stores/infoPanel";
 import { isImageMedia } from "../../lib/media";
 import { previewStyle, useDisplayableImageUrl } from "../../lib/useDisplayableImageUrl";
@@ -11,30 +12,35 @@ import { useViewTracker } from "../../lib/viewTracker";
 import { RotatableVideo } from "../ui/RotatableVideo";
 import { IconButton } from "../ui/Button";
 import { useEscapeLayer } from "../ui/Modal";
-import { InfoPanel } from "../info/InfoPanel";
-import { ViewerBar, viewerKey } from "../info/ViewerBar";
+import { InfoPanel } from "./InfoPanel";
+import { ViewerBar, viewerKey } from "./ViewerBar";
 import { MessageMenu, type MessageMenuTarget } from "../chat/MessageMenu";
 
-interface MapPhotoViewerProps {
-  items: GeotaggedMedia[];
+interface ItemsViewerProps {
+  items: ViewerItem[];
   index: number;
+  /** Which view it is over: the map's viewer sends "show on map" back to it. */
+  from: "map" | "favorites";
   onClose: () => void;
   onIndexChange: (index: number) => void;
-  onJump: (item: GeotaggedMedia) => void;
+  onJump: (item: ViewerItem) => void;
+  onFavoriteChange?: (mediaId: number, favorite: boolean) => void;
 }
 
 /**
- * Fullscreen viewer for the photos listed beside the map. Mirrors `Lightbox`'s
- * interaction skeleton but is sourced from a cross-conversation
- * `GeotaggedMedia[]` instead of a single conversation's message store.
+ * Fullscreen viewer over items from several conversations (the map's list,
+ * the favorites). Mirrors `Lightbox`'s interaction skeleton but is sourced
+ * from its own list instead of a single conversation's message store.
  */
-export function MapPhotoViewer({
+export function ItemsViewer({
   items,
   index,
+  from,
   onClose,
   onIndexChange,
   onJump,
-}: MapPhotoViewerProps) {
+  onFavoriteChange,
+}: ItemsViewerProps) {
   const current = items[index] ?? null;
   const lib = useLibrariesStore((s) => s.current) ?? "";
   const panelOpen = useInfoPanelStore((s) => s.open);
@@ -55,6 +61,17 @@ export function MapPhotoViewer({
       live = false;
     };
   }, [lib, messageId]);
+
+  // The message is this viewer's own copy: keep it in step.
+  const flipFavorite = useCallback(() => {
+    const m = message?.media;
+    if (!m || m.id !== current?.mediaId || !lib) return;
+    void toggleFavorite(lib, m).then((on) => {
+      if (on === null) return;
+      setMessage((x) => (x?.media?.id === m.id ? { ...x, media: { ...x.media, favorite: on } } : x));
+      onFavoriteChange?.(m.id, on);
+    });
+  }, [message, current?.mediaId, lib, onFavoriteChange]);
 
   const goPrev = useCallback(() => {
     if (index > 0) onIndexChange(index - 1);
@@ -93,10 +110,11 @@ export function MapPhotoViewer({
       else if (key === "-" || key === "_") zoomOut();
       else if (key === "0") resetView();
       else if (key === "i" || key === "I") togglePanel();
+      else if (key === "f" || key === "F") flipFavorite();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [goPrev, goNext, zoomIn, zoomOut, resetView, togglePanel]);
+  }, [goPrev, goNext, zoomIn, zoomOut, resetView, togglePanel, flipFavorite]);
 
   const canPreview = current?.status === "ok";
   // Must run unconditionally (before the early return) — an empty url is a no-op.
@@ -109,7 +127,7 @@ export function MapPhotoViewer({
     lib,
     current && canPreview ? current.messageId : null,
     current?.kind === "video" ? "video" : "image",
-    "map",
+    from === "map" ? "map" : "viewer",
     videoEl,
   );
 
@@ -133,6 +151,8 @@ export function MapPhotoViewer({
           onRotateRight={rotateRight}
           onMore={shown ? (r) => setMenu({ x: r.right - 180, y: r.bottom + 4, message: shown }) : undefined}
           onClose={onClose}
+          favorite={shown?.media?.favorite ?? false}
+          onFavorite={shown ? flipFavorite : undefined}
           extra={
             <IconButton
               label="在会话中打开"
@@ -233,7 +253,7 @@ export function MapPhotoViewer({
             message={shown}
             place="viewer"
             // Already on the map: close the viewer onto this photo.
-            onShowOnMap={onClose}
+            onShowOnMap={from === "map" ? onClose : undefined}
             onCaptionSaved={(c) => setMessage((m) => (m ? { ...m, caption: c } : m))}
           />
         ) : (

@@ -6,6 +6,7 @@ import { useLibrariesStore } from "../../stores/libraries";
 import { EMPTY_MEDIA, useConvMediaStore } from "../../stores/convMedia";
 import { INFO_PANEL_WIDTH, useInfoPanelStore } from "../../stores/infoPanel";
 import { useSessionStore } from "../../stores/session";
+import { toggleFavorite } from "../../stores/favorites";
 import { isImageMedia } from "../../lib/media";
 import { previewStyle, useDisplayableImageUrl } from "../../lib/useDisplayableImageUrl";
 import { useViewerTransform } from "../../lib/useViewerTransform";
@@ -120,10 +121,11 @@ export function Lightbox({ convId }: LightboxProps) {
       else if (key === "-" || key === "_") zoomOut();
       else if (key === "0") resetView();
       else if (key === "i" || key === "I") togglePanel();
+      else if ((key === "f" || key === "F") && current?.media && lib) void toggleFavorite(lib, current.media);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [activeId, goPrev, goNext, zoomIn, zoomOut, resetView, togglePanel]);
+  }, [activeId, goPrev, goNext, zoomIn, zoomOut, resetView, togglePanel, current, lib]);
 
   const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
   useViewTracker(
@@ -173,6 +175,8 @@ export function Lightbox({ convId }: LightboxProps) {
           onRotateRight={rotateRight}
           onMore={(r) => setMenu({ x: r.right - 180, y: r.bottom + 4, message: current })}
           onClose={close}
+          favorite={current.media.favorite}
+          onFavorite={() => void toggleFavorite(lib, current.media!)}
         />
 
         <div ref={stageRef} className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden">

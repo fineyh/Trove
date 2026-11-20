@@ -27,6 +27,7 @@ import type {
   BootError,
   StatsOverview,
   StorageStats,
+  TagCount,
   UnlockMethod,
   UpdateChannel,
   UpdateInfo,
@@ -430,6 +431,35 @@ export async function setCaption(lib: string, messageId: number, caption: string
 
 export async function mediaDetails(lib: string, mediaId: number): Promise<MediaDetails> {
   return invoke<MediaDetails>("media_details", { lib, mediaId });
+}
+
+// ─── Favorites and tags (ADR-063): on the file, not the message ─────────────
+
+export async function setFavorite(lib: string, mediaId: number, favorite: boolean): Promise<void> {
+  await invoke("set_favorite", { lib, mediaId, favorite });
+}
+
+/** Every favorite in the space, newest favorite first, one message each. */
+export async function listFavorites(lib: string): Promise<Message[]> {
+  return invoke<Message[]>("list_favorites", { lib });
+}
+
+/** Tags in use, most used first. */
+export async function listTags(lib: string): Promise<TagCount[]> {
+  return invoke<TagCount[]>("list_tags", { lib });
+}
+
+export async function mediaTags(lib: string, mediaId: number): Promise<string[]> {
+  return invoke<string[]>("media_tags", { lib, mediaId });
+}
+
+/** Returns the file's tags after the change. */
+export async function addMediaTag(lib: string, mediaId: number, name: string): Promise<string[]> {
+  return invoke<string[]>("add_media_tag", { lib, mediaId, name });
+}
+
+export async function removeMediaTag(lib: string, mediaId: number, name: string): Promise<string[]> {
+  return invoke<string[]>("remove_media_tag", { lib, mediaId, name });
 }
 
 // ─── Media file actions (by id; the path stays in Rust) ─────────────────────

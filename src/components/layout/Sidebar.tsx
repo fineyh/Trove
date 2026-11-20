@@ -1,4 +1,4 @@
-import { ChartNoAxesColumn, Lock, Map, MessageCircle, Plus, Settings, Settings2 } from "lucide-react";
+import { ChartNoAxesColumn, Heart, Lock, Map, MessageCircle, Plus, Settings, Settings2 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "../../lib/cn";
 import { useLibrariesStore } from "../../stores/libraries";
@@ -124,6 +124,14 @@ export function Sidebar() {
           icon={<MessageCircle size={20} />}
           active={view === "chats"}
           onClick={() => setView("chats")}
+        />
+        <IconButton
+          label="收藏"
+          tipSide="right"
+          size="lg"
+          icon={<Heart size={20} />}
+          active={view === "favorites"}
+          onClick={() => setView("favorites")}
         />
         {mapEnabled && (
           <IconButton

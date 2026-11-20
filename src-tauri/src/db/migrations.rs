@@ -7,7 +7,7 @@ const SCHEMA_SQL: &str = include_str!("schema.sql");
 
 /// 当前代码能理解的最高 schema 版本。改 `schema.sql` 时必须同时 bump 这个常量
 /// 并补一条 `V{N}_TO_V{N+1}`，否则老库升不上来、新库会被下面的守卫拒绝。
-pub const SCHEMA_LATEST: i64 = 11;
+pub const SCHEMA_LATEST: i64 = 12;
 
 const V1_TO_V2: &str = "
 ALTER TABLE conversations ADD COLUMN enc_kdf_salt BLOB;
@@ -268,6 +268,24 @@ fn v10_to_v11(conn: &Connection) -> AppResult<()> {
     Ok(())
 }
 
+/// v12 (2026-11): favorites and tags, both on the file (ADR-063).
+const V11_TO_V12: &str = "
+ALTER TABLE media ADD COLUMN favorited_at INTEGER;
+CREATE INDEX idx_media_favorite ON media(favorited_at) WHERE favorited_at IS NOT NULL;
+CREATE TABLE tags (
+  id         INTEGER PRIMARY KEY,
+  name       TEXT    NOT NULL UNIQUE COLLATE NOCASE,
+  created_at INTEGER NOT NULL
+);
+CREATE TABLE media_tags (
+  media_id   INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+  tag_id     INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (media_id, tag_id)
+) WITHOUT ROWID;
+CREATE INDEX idx_media_tags_tag ON media_tags(tag_id);
+";
+
 /// [step] for a rebuild: foreign keys off around it (a no-op inside a
 /// transaction, so it has to be here), then checked before they come back on.
 fn rebuild_step(conn: &Connection, to_version: i64, sql: &str) -> AppResult<()> {
@@ -364,6 +382,9 @@ pub fn run(conn: &Connection) -> AppResult<()> {
     }
     if version < 11 {
         v10_to_v11(conn)?;
+    }
+    if version < 12 {
+        step(conn, 12, V11_TO_V12)?;
     }
     Ok(())
 }
@@ -515,7 +536,8 @@ mod tests {
         assert!(has_column(&conn, "conversations", "avatar_data"));
         assert!(has_column(&conn, "media", "taken_at"));
         assert!(has_column(&conn, "media", "meta_scanned"));
-        for t in ["views", "view_spans", "presence"] {
+        assert!(has_column(&conn, "media", "favorited_at"));
+        for t in ["views", "view_spans", "presence", "tags", "media_tags"] {
             assert!(has_table(&conn, t), "{t}");
         }
         run(&conn).unwrap();
@@ -532,7 +554,8 @@ mod tests {
         assert!(has_column(&conn, "media", "taken_at"));
         assert!(has_column(&conn, "media", "taken_offset"));
         assert!(has_column(&conn, "media", "meta_scanned"));
-        for t in ["views", "view_spans", "presence"] {
+        assert!(has_column(&conn, "media", "favorited_at"));
+        for t in ["views", "view_spans", "presence", "tags", "media_tags"] {
             assert!(has_table(&conn, t), "{t}");
         }
         for (t, c) in [

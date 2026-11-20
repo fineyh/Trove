@@ -11,6 +11,7 @@ import { ProfileDrawer } from "./components/profile/ProfileDrawer";
 import { InfoDock } from "./components/info/InfoDock";
 import { MapView } from "./components/map/MapView";
 import { StatsView } from "./components/stats/StatsView";
+import { FavoritesView } from "./components/favorites/FavoritesView";
 import { AudioTracker } from "./components/chat/AudioMessage";
 import { useAudioStore } from "./stores/audio";
 import { LibraryLockedView } from "./components/library/LibraryLockedView";
@@ -138,6 +139,7 @@ function Shell() {
           <ChatView />
           <ProfileDrawer />
           <InfoDock />
+          <FavoritesView />
           <MapView />
           <StatsView />
         </>

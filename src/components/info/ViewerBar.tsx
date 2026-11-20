@@ -4,6 +4,7 @@ import { cn } from "../../lib/cn";
 import { viewerTime } from "../../lib/datetime";
 import { useInfoPanelStore } from "../../stores/infoPanel";
 import { IconButton } from "../ui/Button";
+import { FavoriteButton } from "./InfoPanel";
 
 interface ViewerBarProps {
   /** When the item was taken, else when it came in. */
@@ -18,6 +19,9 @@ interface ViewerBarProps {
   onClose: () => void;
   /** Buttons that only this viewer has, before the info button. */
   extra?: React.ReactNode;
+  /** The item is a favorite (ADR-063). Omitted: no favorite button. */
+  favorite?: boolean;
+  onFavorite?: () => void;
 }
 
 /**
@@ -34,6 +38,8 @@ export function ViewerBar({
   onMore,
   onClose,
   extra,
+  favorite,
+  onFavorite,
 }: ViewerBarProps) {
   const panelOpen = useInfoPanelStore((s) => s.open);
   const togglePanel = useInfoPanelStore((s) => s.toggle);
@@ -81,6 +87,7 @@ export function ViewerBar({
       <IconButton label="向右旋转" tipSide="bottom" icon={<RotateCw size={18} />} onClick={stop(onRotateRight)} />
       <span className="mx-1.5 h-4 w-px bg-app-border" />
       {extra}
+      {onFavorite && <FavoriteButton size="md" shortcut favorite={favorite === true} onClick={onFavorite} />}
       <IconButton
         label="信息  I"
         tipSide="bottom"

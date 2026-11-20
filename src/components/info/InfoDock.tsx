@@ -56,6 +56,9 @@ export function InfoDock() {
         onClose={close}
         onOpen={viewable ? () => openLightbox(message.id) : undefined}
         onCaptionSaved={(c) => setFetched((m) => (m && m.id === message.id ? { ...m, caption: c } : m))}
+        onFavoriteChange={(on) =>
+          setFetched((m) => (m?.media && m.id === message.id ? { ...m, media: { ...m.media, favorite: on } } : m))
+        }
       />
     </div>
   );

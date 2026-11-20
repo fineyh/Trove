@@ -86,6 +86,17 @@ function install() {
     img(4000, 3000, 12 * 60_000, "IMG_4021"),
     text(10 * 60_000, "晚上去鸭川散步，灯笼一路亮到四条"),
   ];
+  // Favorites and tags (ADR-063): on the file. A few to start with.
+  const favs = new Map<number, number>();
+  const tagsOf = new Map<number, string[]>();
+  messages.forEach((m: any, i) => {
+    if (!m.media) return;
+    if ([0, 4, 5, 7, 8, 12].includes(i)) favs.set(m.media.id, now - i * H);
+    m.media.favorite = favs.has(m.media.id);
+  });
+  tagsOf.set(messages[0].media!.id, ["京都", "鸟居"]);
+  tagsOf.set(messages[4].media!.id, ["京都"]);
+  tagsOf.set(messages[12].media!.id, ["夜景"]);
 
   // Geotagged media per library: a few places, each a scatter of points, so
   // the map has stacks that split as you zoom. Deterministic (seeded).
@@ -254,7 +265,7 @@ function install() {
         const g = Object.values(geo).flat().find((x) => x.messageId === id);
         return {
           id, convId: 1, caption: null, playCount: 0, createdAt: g?.createdAt ?? now,
-          media: { id: g?.mediaId ?? id, kind: g?.kind ?? "image", width: 4032, height: 3024, durationMs: g?.kind === "video" ? 18_000 : null, sizeBytes: 2_900_000, ext: g?.ext ?? "jpg", name: `IMG_${id}.${g?.ext ?? "jpg"}`, status: g?.status ?? "ok", hasThumb: true, hasGeo: true, takenAt: g?.takenAt ?? null, takenOffset: g?.takenOffset ?? null },
+          media: { id: g?.mediaId ?? id, kind: g?.kind ?? "image", width: 4032, height: 3024, durationMs: g?.kind === "video" ? 18_000 : null, sizeBytes: 2_900_000, ext: g?.ext ?? "jpg", name: `IMG_${id}.${g?.ext ?? "jpg"}`, status: g?.status ?? "ok", hasThumb: true, hasGeo: true, takenAt: g?.takenAt ?? null, takenOffset: g?.takenOffset ?? null, favorite: favs.has(g?.mediaId ?? id) },
         };
       }),
     media_details: (a) => {
@@ -266,6 +277,35 @@ function install() {
         lon: g?.lon ?? null,
         camera: kind === "image" ? { model: "iPhone 15 Pro", lens: "iPhone 15 Pro back triple camera 6.765mm f/1.78", focalMm: 24, fNumber: 1.78, exposure: "1/120", iso: 80 } : null,
       };
+    },
+    set_favorite: (a) => {
+      if (a.favorite) favs.set(a.mediaId, favs.get(a.mediaId) ?? Date.now());
+      else favs.delete(a.mediaId);
+      const m: any = messages.find((x) => x.media?.id === a.mediaId);
+      if (m) m.media.favorite = a.favorite;
+    },
+    list_favorites: () =>
+      messages
+        .filter((m) => m.media && favs.has(m.media.id))
+        .sort((x, y) => favs.get(y.media!.id)! - favs.get(x.media!.id)!),
+    list_tags: () => {
+      const n = new Map<string, number>();
+      for (const t of tagsOf.values()) for (const x of t) n.set(x, (n.get(x) ?? 0) + 1);
+      for (const x of ["猫", "旅行", "家人", "壁纸"]) if (!n.has(x)) n.set(x, 1);
+      return [...n].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
+    },
+    media_tags: (a) => tagsOf.get(a.mediaId) ?? [],
+    add_media_tag: (a) => {
+      const t = tagsOf.get(a.mediaId) ?? [];
+      const name = a.name.trim().split(/\s+/).join(" ");
+      if (!t.some((x) => x.toLowerCase() === name.toLowerCase())) t.push(name);
+      tagsOf.set(a.mediaId, t);
+      return t;
+    },
+    remove_media_tag: (a) => {
+      const t = (tagsOf.get(a.mediaId) ?? []).filter((x) => x !== a.name);
+      tagsOf.set(a.mediaId, t);
+      return t;
     },
     set_caption: (a) => {
       const m = messages.find((x) => x.id === a.messageId);

@@ -62,6 +62,9 @@ CREATE TABLE media (
   taken_offset INTEGER,
   -- Audio: loudness bars for the bubble, one byte each (ADR-058).
   peaks        BLOB,
+  -- Favorite since (UTC ms); NULL = not a favorite. On the file, not the
+  -- message: the same file in two conversations is one favorite (ADR-063).
+  favorited_at INTEGER,
   UNIQUE (volume_id, relpath)
 );
 
@@ -70,6 +73,23 @@ CREATE INDEX idx_media_size ON media(size_bytes);
 CREATE INDEX idx_media_geo ON media(lat, lon) WHERE lat IS NOT NULL;
 CREATE INDEX idx_media_thumb_todo ON media(id) WHERE thumb_scanned = 0;
 CREATE INDEX idx_media_meta_todo ON media(id) WHERE meta_scanned = 0;
+CREATE INDEX idx_media_favorite ON media(favorited_at) WHERE favorited_at IS NOT NULL;
+
+-- Tags the user puts on files (ADR-063). A tag lives while some file has it.
+CREATE TABLE tags (
+  id         INTEGER PRIMARY KEY,
+  name       TEXT    NOT NULL UNIQUE COLLATE NOCASE,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE media_tags (
+  media_id   INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+  tag_id     INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (media_id, tag_id)
+) WITHOUT ROWID;
+
+CREATE INDEX idx_media_tags_tag ON media_tags(tag_id);
 
 -- Thumbnails are a performance cache living next to their row (ADR-037):
 -- same file, same key, same transaction, gone with the media row.

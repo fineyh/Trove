@@ -49,6 +49,14 @@ export interface MediaPayload {
   takenOffset: number | null;
   /** Audio: loudness bars, 0–255, once made (ADR-058). */
   peaks?: number[];
+  /** A favorite (ADR-063). The file's, so every message of it agrees. */
+  favorite: boolean;
+}
+
+/** A tag in use and how many files have it. */
+export interface TagCount {
+  name: string;
+  count: number;
 }
 
 export interface Message {
@@ -72,6 +80,20 @@ export interface MediaDetails {
     exposure: string | null;
     iso: number | null;
   } | null;
+}
+
+/** An item in a viewer over several conversations (map, favorites). */
+export interface ViewerItem {
+  mediaId: number;
+  kind: MediaKind;
+  ext: string;
+  status: MediaStatus;
+  hasThumb: boolean;
+  convId: number;
+  messageId: number;
+  createdAt: number;
+  takenAt: number | null;
+  takenOffset: number | null;
 }
 
 export interface GeotaggedMedia {
