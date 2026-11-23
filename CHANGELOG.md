@@ -11,6 +11,30 @@ updater notes**. Before running `npm run release x.y.z`, add a matching
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-23
+### Added
+- An info panel in the viewer (press I): caption, time taken, file, camera, location, and viewing history. Captions can be edited there.
+- Favorites and tags, with a Favorites page in the sidebar.
+- Audio recordings, played right in the conversation with a waveform. Playback picks up where you left off.
+- A statistics page, and monthly and yearly recaps.
+- Drag files into a conversation, or paste files copied in File Explorer.
+- Photos and videos keep the time they were taken. Sync folders are sorted by it, and the viewer shows it.
+
+### Changed
+- Libraries are now called spaces. Their settings are split into General, Security, and Data.
+- A new map with light and dark styles and photo thumbnails as markers.
+- A conversation's default picture uses its space's color. A picture you choose is stored in the space.
+- Imported files no longer get their file name as a caption.
+- HEIC photos open much faster.
+- Zoom in the viewer is smoother, works from the first open, and works on videos.
+- Your spaces are upgraded on first launch. Older versions of Trove can't open them afterwards.
+
+### Fixed
+- Video thumbnails no longer come out blank.
+- New thumbnails show up without leaving the conversation.
+- The disk list only shows disks that are still in use.
+- Relinking a missing file opens the missing files dialog directly.
+
 ## [0.5.0] - 2026-11-13
 ### Added
 - Multiple libraries, switched from a bar on the left. Conversations can be moved between them.
