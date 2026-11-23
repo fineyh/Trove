@@ -13,27 +13,29 @@ updater notes**. Before running `npm run release x.y.z`, add a matching
 
 ## [0.6.0] - 2026-11-23
 ### Added
-- An info panel in the viewer (press I): caption, time taken, file, camera, location, and viewing history. Captions can be edited there.
-- Favorites and tags, with a Favorites page in the sidebar.
-- Audio recordings, played right in the conversation with a waveform. Playback picks up where you left off.
-- A statistics page, and monthly and yearly recaps.
-- Drag files into a conversation, or paste files copied in File Explorer.
-- Photos and videos keep the time they were taken. Sync folders are sorted by it, and the viewer shows it.
+- **Info panel** in the viewer (press I): caption, capture time, file details, camera, location, and viewing history. Captions can be edited in place.
+- **Favorites and tags** for any file, with a Favorites view in the sidebar.
+- **Audio recordings**: inline playback with a waveform, playback speed, and resume.
+- **Statistics** page with monthly and yearly recaps.
+- **Drag and drop**: drop files into a conversation, or paste files copied in File Explorer.
+- **Capture time** is read from photo and video metadata. Sync folders are sorted by it.
 
 ### Changed
-- Libraries are now called spaces. Their settings are split into General, Security, and Data.
-- A new map with light and dark styles and photo thumbnails as markers.
-- A conversation's default picture uses its space's color. A picture you choose is stored in the space.
-- Imported files no longer get their file name as a caption.
-- HEIC photos open much faster.
-- Zoom in the viewer is smoother, works from the first open, and works on videos.
-- Your spaces are upgraded on first launch. Older versions of Trove can't open them afterwards.
+- Libraries are renamed to spaces. Space settings are organized into General, Security, and Data.
+- The map now uses vector tiles, with light and dark styles and thumbnail markers.
+- Default conversation avatars use the space color. Custom avatars are stored inside the space.
+- Imported files no longer use their file name as the caption.
+- HEIC photos are decoded by the system and open several times faster.
+- Viewer zoom is smoother, works from the first open, and supports videos.
 
 ### Fixed
-- Video thumbnails no longer come out blank.
-- New thumbnails show up without leaving the conversation.
-- The disk list only shows disks that are still in use.
-- Relinking a missing file opens the missing files dialog directly.
+- Blank video thumbnails.
+- Thumbnails not appearing until the conversation was reopened.
+- Disks no longer in use staying in the disk list.
+- Relink on a missing file now opens the missing files dialog.
+
+### Upgrade notes
+- Spaces are upgraded to a new format on first launch and can no longer be opened by earlier versions. Export a backup before updating if you may need to go back.
 
 ## [0.5.0] - 2026-11-13
 ### Added
